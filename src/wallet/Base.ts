@@ -784,8 +784,33 @@ export class BaseWallet implements WalletI {
   protected async getSpendPool(
     options?: SendRequestOptionsI,
   ): Promise<{ pool: Utxo[]; ensureUtxos: Utxo[] }> {
-    const toOutpoint = (utxoId: Utxo | string) =>
-      toUtxoId(typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId);
+    // an id the wallet does not hold is a reservation that outlived its coin and is ignored, but
+    // one that cannot be an outpoint is a mistake, and ignoring it would spend the coin it names
+    const toExcludedOutpoint = (utxoId: Utxo | string) => {
+      let txid: unknown;
+      let vout: unknown;
+      if (typeof utxoId !== "string") {
+        ({ txid, vout } = utxoId);
+      } else if (/^[0-9a-f]{64}:\d+(:\d+)?$/i.test(utxoId)) {
+        ({ txid, vout } = fromUtxoId(utxoId));
+      }
+      if (
+        typeof txid !== "string" ||
+        !/^[0-9a-f]{64}$/i.test(txid) ||
+        typeof vout !== "number" ||
+        !Number.isSafeInteger(vout) ||
+        vout < 0
+      ) {
+        throw new InvalidRequestError(
+          "An excludeUtxoIds entry is not a txid:vout outpoint",
+          { field: "excludeUtxoIds", value: utxoId },
+        );
+      }
+      return `${txid.toLowerCase()}:${vout}`;
+    };
+    const excluded = new Set(
+      (options?.excludeUtxoIds ?? []).map(toExcludedOutpoint),
+    );
 
     const walletUtxos = await this.getUtxos();
     let pool = walletUtxos;
@@ -797,7 +822,6 @@ export class BaseWallet implements WalletI {
         walletUtxos,
       );
     }
-    const excluded = new Set((options?.excludeUtxoIds ?? []).map(toOutpoint));
     pool = pool.filter((utxo) => !excluded.has(toUtxoId(utxo)));
 
     const poolMap = new Map(pool.map((utxo) => [toUtxoId(utxo), utxo]));

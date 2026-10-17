@@ -147,6 +147,56 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     expect(outputs.map((output) => output.valueSatoshis)).toEqual([max]);
   });
 
+  test("an id in another case still excludes its coin", async () => {
+    const bob = await fundedWallet(10_000n);
+    const [coin] = await bob.getUtxos();
+    const request = new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n });
+
+    for (const excludeUtxoIds of [
+      [`${coin.txid.toUpperCase()}:${coin.vout}`],
+      [{ ...coin, txid: coin.txid.toUpperCase() }],
+    ]) {
+      const error = await bob
+        .send(request, { broadcast: false, excludeUtxoIds })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(InsufficientFundsError);
+    }
+  });
+
+  test("an id that is not an outpoint is refused, not ignored", async () => {
+    const bob = await fundedWallet(10_000n);
+    const [coin] = await bob.getUtxos();
+    const request = new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n });
+
+    for (const id of [
+      coin.txid,
+      `${coin.txid}:`,
+      `${coin.txid}:0x`,
+      `${coin.txid}:-1`,
+      `${coin.txid.slice(1)}:0`,
+      `${coin.txid}z:0`,
+    ]) {
+      const error = await bob
+        .send(request, { broadcast: false, excludeUtxoIds: [id] })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InvalidRequestError).field).toBe("excludeUtxoIds");
+      expect((error as InvalidRequestError).value).toBe(id);
+    }
+    const noVout = { ...coin, vout: Number.NaN };
+    const error = await bob
+      .sendMax(bob.cashaddr!, { broadcast: false, excludeUtxoIds: [noVout] })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidRequestError);
+
+    // a well-formed id of a coin the wallet does not hold is a reservation that outlived it
+    const response = await bob.send(request, {
+      broadcast: false,
+      excludeUtxoIds: [`${"ab".repeat(32)}:0`, `${coin.txid}:5`],
+    });
+    expect(inputOutpoints(response.transaction!)).toEqual([outpoint(coin)]);
+  });
+
   test("excludeUtxoIds narrows utxoIds further", async () => {
     const bob = await fundedWallet(10_000n, 20_000n, 30_000n);
     const carol = await RegTestWallet.newRandom();

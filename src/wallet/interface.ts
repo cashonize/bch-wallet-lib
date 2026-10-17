@@ -50,7 +50,7 @@ export interface WalletInfoI {
 
 export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
-  /** coins no input of the spend may use, e.g. reserved ones; ids not in the wallet are ignored */
+  /** coins no input of the spend may use, e.g. reserved ones; ids not in the wallet are ignored, malformed ones throw */
   excludeUtxoIds?: string[] | Utxo[];
   changeAddress?: string;
   slpSemiAware?: boolean; // a flag which requires an utxo to have more than 546 sats to be spendable and counted in the balance

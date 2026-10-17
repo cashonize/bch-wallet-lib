@@ -178,8 +178,9 @@ describe("a built transaction that burns tokens is refused", () => {
     const error = await burnError(burn({}));
     expect(error.category).toBe(category);
     expect(error.amount).toBe(90n);
-    // the caller can still turn the check off
-    await expect(burn({ checkTokenQuantities: false })).resolves.toBeDefined();
+    // checkTokenQuantities: false does not turn the check off
+    const unchecked = await burnError(burn({ checkTokenQuantities: false }));
+    expect(unchecked.amount).toBe(90n);
   });
 
   test("a fungible burn off a minting NFT whose NFT change is dropped", async () => {
@@ -227,6 +228,128 @@ describe("a built transaction that burns tokens is refused", () => {
     );
     expect(error.category).toBe(category);
     expect(error.nft).toEqual(nft);
+  });
+});
+
+describe("a hand-built send with checkTokenQuantities: false", () => {
+  test("is refused when it would drop fungible tokens", async () => {
+    const wallet = await fundedWallet();
+    const bob = await RegTestWallet.newRandom();
+    const category = (await wallet.tokenGenesis({ amount: 100n }))
+      .categories![0];
+
+    // no token change is built, so the 90 tokens the request does not send would be lost
+    const error = await burnError(
+      wallet.send(
+        new TokenSendRequest({
+          cashaddr: bob.tokenaddr,
+          category,
+          amount: 10n,
+        }),
+        { checkTokenQuantities: false, broadcast: false },
+      ),
+    );
+    expect(error.category).toBe(category);
+    expect(error.amount).toBe(90n);
+  });
+
+  test("is refused when a token coin it spends funds a BCH output", async () => {
+    const wallet = await fundedWallet();
+    const nft = { capability: NFTCapability.none, commitment: "01" };
+    const category = (await wallet.tokenGenesis({ nft })).categories![0];
+    const [coin] = await getTokenUtxos(wallet, category);
+
+    const error = await burnError(
+      wallet.send(
+        new SendRequest({ cashaddr: wallet.cashaddr, value: 5000n }),
+        {
+          checkTokenQuantities: false,
+          ensureUtxos: [coin],
+          broadcast: false,
+        },
+      ),
+    );
+    expect(error.nft).toEqual(nft);
+  });
+
+  // an identity mint: the authhead, a minting NFT, back at output 0 and new NFTs after it
+  test("mints off a minting NFT it brings back", async () => {
+    const wallet = await fundedWallet();
+    const bob = await RegTestWallet.newRandom();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const category = (await wallet.tokenGenesis({ amount: 10n, nft: minting }))
+      .categories![0];
+    const [authhead] = await getTokenUtxos(wallet, category);
+
+    const requests = [
+      new TokenSendRequest({
+        cashaddr: wallet.tokenaddr,
+        category,
+        amount: 10n,
+        nft: minting,
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr,
+        category,
+        nft: { capability: NFTCapability.none, commitment: "0a" },
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "0b" },
+      }),
+    ];
+    const { txId } = await wallet.send(requests, {
+      tokenOperation: "mint",
+      checkTokenQuantities: false,
+      ensureUtxos: [authhead],
+    });
+    const [kept] = await getTokenUtxos(wallet, category);
+    expect(kept).toMatchObject({
+      txid: txId,
+      vout: 0,
+      token: { category, amount: 10n, nft: minting },
+    });
+    expect(
+      (await getTokenUtxos(bob, category)).map((utxo) => utxo.token!.nft),
+    ).toEqual(
+      expect.arrayContaining([
+        { capability: NFTCapability.none, commitment: "0a" },
+        { capability: NFTCapability.mutable, commitment: "0b" },
+      ]),
+    );
+  });
+
+  test("mints the same way with the token checks left on", async () => {
+    const wallet = await fundedWallet();
+    const bob = await RegTestWallet.newRandom();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const category = (await wallet.tokenGenesis({ nft: minting }))
+      .categories![0];
+    const [authhead] = await getTokenUtxos(wallet, category);
+
+    const { txId } = await wallet.send(
+      [
+        new TokenSendRequest({
+          cashaddr: wallet.tokenaddr,
+          category,
+          nft: minting,
+        }),
+        new TokenSendRequest({
+          cashaddr: bob.tokenaddr,
+          category,
+          nft: { capability: NFTCapability.none, commitment: "0a" },
+        }),
+      ],
+      {
+        tokenOperation: "mint",
+        ensureUtxos: [authhead],
+      },
+    );
+    expect(await getTokenUtxos(wallet, category)).toMatchObject([
+      { txid: txId, vout: 0, token: { nft: minting } },
+    ]);
+    expect(await getTokenUtxos(bob, category)).toHaveLength(1);
   });
 });
 

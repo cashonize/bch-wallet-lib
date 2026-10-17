@@ -908,9 +908,10 @@ export class BaseWallet {
     if (options?.checkTokenQuantities === false) {
       checkTokenQuantities = false;
     }
-    // A send burns no token; a token operation turns checkTokenQuantities off for its own coin
-    // choice and says instead what it may burn, unless its caller turned the check off.
-    if (!tokenBurns && checkTokenQuantities) {
+    // A send burns no token, checkTokenQuantities or not: that option turns off the token input
+    // matching and change, never the conservation check. Only a token operation says what it may
+    // burn, and tokenBurn alone allows any.
+    if (!tokenBurns) {
       tokenBurns = {};
     }
 
@@ -1216,7 +1217,7 @@ export class BaseWallet {
         checkTokenQuantities: false,
         tokenOperation: "genesis",
       },
-      options?.checkTokenQuantities === false ? undefined : {},
+      {},
     );
   }
 
@@ -1307,7 +1308,7 @@ export class BaseWallet {
         checkTokenQuantities: false,
         tokenOperation: "mint",
       },
-      options?.checkTokenQuantities === false ? undefined : {},
+      {},
     );
   }
 
@@ -1456,7 +1457,7 @@ export class BaseWallet {
         ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
         tokenOperation: "burn",
       },
-      options?.checkTokenQuantities === false ? undefined : tokenBurns,
+      tokenBurns,
     );
   }
 

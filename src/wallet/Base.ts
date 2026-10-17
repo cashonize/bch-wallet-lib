@@ -1546,8 +1546,9 @@ export async function namedWalletExists(
  * @param name   user friendly wallet alias
  * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
  *
- * @throws {Error} if no StorageProvider is configured, if the row's wallet id cannot be read, or
- * if the cache record could not be removed; the row is kept in each case
+ * @throws {InvalidWalletIdError} if the row's wallet id cannot be read (e.g. a `named:` alias)
+ * @throws {Error} if no StorageProvider is configured, or if the cache record could not be
+ * removed; the row is kept in each case
  */
 export async function deleteNamedWallet(
   name: string,

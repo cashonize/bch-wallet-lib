@@ -16,6 +16,8 @@ import {
 import { Config } from "../config.js";
 import { prefixFromNetworkMap } from "../enum.js";
 import { TxI, Utxo } from "../interface.js";
+import { walletIdKind } from "../util/walletIdError.js";
+import { InvalidWalletIdError } from "../wallet/errors.js";
 import { IndexedDbCache } from "./IndexedDbCache.js";
 import { CacheProvider } from "./interface.js";
 
@@ -111,13 +113,24 @@ export function deriveWalletCacheId(source: string, network: string): string {
 
 /// The cache id of the HD wallet a stored wallet id (`toDbString()`, a database row's `wallet`)
 /// stands for, derived the way HDWallet does without constructing one; undefined for a
-/// single-address wallet, which keeps no cache record
+/// single-address wallet, which keeps no cache record. Throws InvalidWalletIdError for an id no
+/// wallet class loads
 export function walletCacheIdFromWalletId(
   walletId: string,
 ): string | undefined {
   const [walletType, network, arg1, arg2] = walletId.split(":");
-  if (!network || !(network in prefixFromNetworkMap) || !arg1) {
-    throw new Error("Not a stored wallet id");
+  const kind = walletIdKind(walletType);
+  if (!network || !(network in prefixFromNetworkMap)) {
+    throw new InvalidWalletIdError("Not a stored wallet id", {
+      kind,
+      reason: "network",
+    });
+  }
+  if (!arg1) {
+    throw new InvalidWalletIdError("Not a stored wallet id", {
+      kind,
+      reason: "missing-value",
+    });
   }
 
   switch (walletType) {
@@ -136,7 +149,11 @@ export function walletCacheIdFromWalletId(
     case "watch":
       return undefined;
     default:
-      throw new Error(`Unsupported wallet type '${walletType}'`);
+      // a known kind only: the type slot of a malformed id may hold the key
+      throw new InvalidWalletIdError(
+        kind ? `Unsupported wallet type '${kind}'` : "Unsupported wallet type",
+        { kind, reason: "kind" },
+      );
   }
 }
 

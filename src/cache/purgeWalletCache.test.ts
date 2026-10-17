@@ -8,6 +8,7 @@ import {
 } from "../wallet/Base.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
 import { RegTestWatchWallet } from "../wallet/Watch.js";
+import { InvalidWalletIdError } from "../wallet/errors.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import { IndexedDbCache } from "./IndexedDbCache.js";
 import { CacheProvider } from "./interface.js";
@@ -124,10 +125,35 @@ describe("walletCacheIdFromWalletId", () => {
     }
   });
 
-  test("throws for an id it cannot read", () => {
-    expect(() => walletCacheIdFromWalletId("enc:v1:abc:def")).toThrow();
-    expect(() => walletCacheIdFromWalletId("named:regtest:alice")).toThrow();
-    expect(() => walletCacheIdFromWalletId("")).toThrow();
+  test("throws InvalidWalletIdError for an id it cannot read, quoting no unknown part", () => {
+    const failure = (walletId: string) => {
+      try {
+        walletCacheIdFromWalletId(walletId);
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidWalletIdError);
+        return error as InvalidWalletIdError;
+      }
+      throw new Error("expected a throw");
+    };
+    expect(failure("enc:v1:abc:def")).toMatchObject({
+      reason: "network",
+      kind: undefined,
+    });
+    expect(failure("named:regtest:alice")).toMatchObject({
+      reason: "kind",
+      kind: "named",
+      message: "Unsupported wallet type 'named'",
+    });
+    expect(failure("hd:regtest")).toMatchObject({
+      reason: "missing-value",
+      kind: "hd",
+    });
+    expect(failure("")).toMatchObject({ reason: "network" });
+    // a key in the type slot is not quoted
+    const key = "L1aW4aubDFB7yfras2S1mN3bqg9nwySY8nkoLmJebSLD5BWv3ENZ";
+    const keyFailure = failure(`${key}:regtest:x`);
+    expect(keyFailure.kind).toBeUndefined();
+    expect(keyFailure.message).not.toContain(key);
   });
 });
 
@@ -179,7 +205,9 @@ describe("wallet cache records in indexeddb", () => {
       try {
         await db.addWallet("alias", "named:regtest:other");
 
-        await expect(deleteNamedWallet("alias", dbName)).rejects.toThrow();
+        await expect(deleteNamedWallet("alias", dbName)).rejects.toBeInstanceOf(
+          InvalidWalletIdError,
+        );
 
         expect(await db.walletExists("alias")).toBe(true);
       } finally {

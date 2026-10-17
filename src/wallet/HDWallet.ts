@@ -40,12 +40,7 @@ import {
   WalletInfoI,
   WatchOptions,
 } from "./interface.js";
-import {
-  OpReturnData,
-  SendRequest,
-  SendRequestArray,
-  TokenSendRequest,
-} from "./model.js";
+import { OpReturnData, SendRequest, TokenSendRequest } from "./model.js";
 import { networkPrefixError } from "../util/networkPrefixError.js";
 
 export const GAP_SIZE = 20;
@@ -1035,8 +1030,7 @@ export class HDWallet extends BaseWallet {
       | SendRequest
       | TokenSendRequest
       | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>
-      | SendRequestArray[],
+      | Array<SendRequest | TokenSendRequest | OpReturnData>,
     discardChange: boolean = false,
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,

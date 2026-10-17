@@ -32,16 +32,20 @@ describe("insufficient funds are an InsufficientFundsError", () => {
   test("too little BCH", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send([[bob.cashaddr, 10_000n]]);
+    await alice.send({ cashaddr: bob.cashaddr, value: 10_000n });
 
-    const error = await shortfall(bob.send([[alice.cashaddr, 20_000n]]));
+    const error = await shortfall(
+      bob.send({ cashaddr: alice.cashaddr, value: 20_000n }),
+    );
     expect(error.message).toMatch(/^Amount required was not met/);
     expect(error.asset).toBe("bch");
   });
 
   test("no coins at all", async () => {
     const bob = await RegTestWallet.newRandom();
-    const error = await shortfall(bob.send([[bob.cashaddr, 1_000n]]));
+    const error = await shortfall(
+      bob.send({ cashaddr: bob.cashaddr, value: 1_000n }),
+    );
     expect(error.message).toBe("There were no Unspent Outputs");
     expect(error.asset).toBe("bch");
   });
@@ -49,7 +53,7 @@ describe("insufficient funds are an InsufficientFundsError", () => {
   test("too few vout=0 coins for a genesis", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send([[bob.cashaddr, 10_000n]]);
+    await alice.send({ cashaddr: bob.cashaddr, value: 10_000n });
 
     const error = await shortfall(
       bob.tokenGenesis([{ amount: 1n }, { amount: 2n }]),
@@ -118,15 +122,21 @@ describe("a refused broadcast is a BroadcastRejectedError", () => {
   test("a double spend", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send([[bob.cashaddr, 10_000n]]);
+    await alice.send({ cashaddr: bob.cashaddr, value: 10_000n });
 
     // two spends of bob's one coin, built before either is broadcast
-    const first = await bob.send([[alice.cashaddr, 5_000n]], {
-      broadcast: false,
-    });
-    const second = await bob.send([[alice.cashaddr, 6_000n]], {
-      broadcast: false,
-    });
+    const first = await bob.send(
+      { cashaddr: alice.cashaddr, value: 5_000n },
+      {
+        broadcast: false,
+      },
+    );
+    const second = await bob.send(
+      { cashaddr: alice.cashaddr, value: 6_000n },
+      {
+        broadcast: false,
+      },
+    );
     await bob.submitTransaction(hexToBin(first.transaction));
 
     const error = await bob
@@ -145,10 +155,13 @@ describe("a refused broadcast is a BroadcastRejectedError", () => {
   test("a spend of a coin the node does not have", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send([[bob.cashaddr, 10_000n]]);
-    const spend = await bob.send([[alice.cashaddr, 5_000n]], {
-      broadcast: false,
-    });
+    await alice.send({ cashaddr: bob.cashaddr, value: 10_000n });
+    const spend = await bob.send(
+      { cashaddr: alice.cashaddr, value: 5_000n },
+      {
+        broadcast: false,
+      },
+    );
     // the same spend from a coin that never existed
     const transaction = decodeTransaction(hexToBin(spend.transaction));
     if (typeof transaction === "string") throw new Error(transaction);

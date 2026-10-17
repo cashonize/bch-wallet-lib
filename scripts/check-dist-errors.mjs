@@ -31,7 +31,7 @@ const provider = new ElectrumNetworkProvider(
 setGlobalProvider(NetworkType.Regtest, provider);
 const alice = await RegTestWallet.fromId(process.env.ALICE_ID);
 const wallet = await RegTestWallet.newRandom();
-await alice.send([[wallet.cashaddr, 10_000n]]);
+await alice.send({ cashaddr: wallet.cashaddr, value: 10_000n });
 
 const caught = (promise) =>
   promise.then(
@@ -40,18 +40,26 @@ const caught = (promise) =>
   );
 const problems = [];
 
-const shortfall = await caught(wallet.send([[wallet.cashaddr, 20_000n]]));
+const shortfall = await caught(
+  wallet.send({ cashaddr: wallet.cashaddr, value: 20_000n }),
+);
 if (!(shortfall instanceof InsufficientFundsError)) {
   problems.push(`a shortfall threw ${shortfall}`);
 }
 
 // two spends of the one coin: the second is refused as a mempool conflict
-const first = await wallet.send([[wallet.cashaddr, 5_000n]], {
-  broadcast: false,
-});
-const second = await wallet.send([[wallet.cashaddr, 6_000n]], {
-  broadcast: false,
-});
+const first = await wallet.send(
+  { cashaddr: wallet.cashaddr, value: 5_000n },
+  {
+    broadcast: false,
+  },
+);
+const second = await wallet.send(
+  { cashaddr: wallet.cashaddr, value: 6_000n },
+  {
+    broadcast: false,
+  },
+);
 await provider.sendRawTransaction(first.transaction);
 const refusal = await caught(provider.sendRawTransaction(second.transaction));
 if (!(refusal instanceof BroadcastRejectedError)) {

@@ -120,8 +120,7 @@ export type SendRequestType =
   | SendRequest
   | TokenSendRequest
   | OpReturnData
-  | Array<SendRequest | TokenSendRequest | OpReturnData>
-  | SendRequestArray[];
+  | Array<SendRequest | TokenSendRequest | OpReturnData>;
 
 export class SendRequest {
   cashaddr: string;
@@ -401,8 +400,6 @@ export class OpReturnData {
     return this.parseBinary(hexToBin(opReturnHex)).map((val) => binToUtf8(val));
   }
 }
-
-export type SendRequestArray = Array<string | bigint | Uint8Array>;
 
 /** What a send returns: the signed transaction, broadcast unless `broadcast: false` was given. */
 export interface SendResponse {

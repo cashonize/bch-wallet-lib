@@ -58,7 +58,6 @@ import {
   fromUtxoId,
   OpReturnData,
   SendRequest,
-  SendRequestArray,
   SendRequestType,
   SendResponse,
   checkBurnRequest,
@@ -885,8 +884,7 @@ export class BaseWallet implements WalletI {
       | SendRequest
       | TokenSendRequest
       | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>
-      | SendRequestArray[],
+      | Array<SendRequest | TokenSendRequest | OpReturnData>,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
     const { encodedTransaction, categories } = await this.encodeTransaction(
@@ -988,8 +986,7 @@ export class BaseWallet implements WalletI {
       | SendRequest
       | TokenSendRequest
       | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>
-      | SendRequestArray[],
+      | Array<SendRequest | TokenSendRequest | OpReturnData>,
     discardChange: boolean = false,
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,

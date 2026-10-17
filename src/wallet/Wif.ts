@@ -24,7 +24,6 @@ import { MnemonicI, SendRequestOptionsI, WalletInfoI } from "./interface.js";
 import {
   OpReturnData,
   SendRequest,
-  SendRequestArray,
   SendResponse,
   TokenSendRequest,
 } from "./model.js";
@@ -508,8 +507,7 @@ export class Wallet extends WatchWallet {
       | SendRequest
       | TokenSendRequest
       | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>
-      | SendRequestArray[],
+      | Array<SendRequest | TokenSendRequest | OpReturnData>,
     discardChange: boolean = false,
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,

@@ -15,7 +15,7 @@ describe("the caller's options object is left as it was", () => {
   test("sendMax", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send([[bob.cashaddr, 10_000n]]);
+    await alice.send({ cashaddr: bob.cashaddr, value: 10_000n });
 
     const options: SendRequestOptionsI = { broadcast: false };
     await bob.sendMax(alice.cashaddr, options);
@@ -39,7 +39,10 @@ describe("the caller's options object is left as it was", () => {
   test("waitForTransaction", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    const { txId } = await alice.send([[bob.cashaddr, 10_000n]]);
+    const { txId } = await alice.send({
+      cashaddr: bob.cashaddr,
+      value: 10_000n,
+    });
 
     const options: WaitForTransactionOptions = { txHash: txId };
     const response = await bob.waitForTransaction(options);

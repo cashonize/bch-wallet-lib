@@ -1068,8 +1068,8 @@ describe(`Wallet extrema behavior regression testing`, () => {
     );
 
     result = await wallet.send([
-      [wallet.cashaddr!, 546n],
-      ["OP_RETURN", Uint8Array.from([0x00, 0x01, 0x02])],
+      { cashaddr: wallet.cashaddr!, value: 546n },
+      OpReturnData.fromArray([Uint8Array.from([0x00, 0x01, 0x02])]),
     ]);
     transaction = await wallet.provider!.getRawTransactionObject(result.txId!);
     expect(transaction.vout[1].scriptPubKey.asm).toContain("OP_RETURN");

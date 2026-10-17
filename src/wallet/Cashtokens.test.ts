@@ -75,15 +75,14 @@ describe(`Test cashtokens`, () => {
   test("Test token genesis and max amount to send", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send([
-      [bob.cashaddr!, BigInt(await convert(0.101, "bch", "sat"))],
-    ]);
+    const value = BigInt(await convert(0.101, "bch", "sat"));
+    await alice.send([{ cashaddr: bob.cashaddr!, value }]);
     await bob.tokenGenesis({
       amount: 100n,
     });
 
     const maxAmountToSend = await bob.getMaxAmountToSend();
-    await bob.send([[alice.cashaddr!, maxAmountToSend]]);
+    await bob.send({ cashaddr: alice.cashaddr!, value: maxAmountToSend });
     expect(await bob.getBalance()).toBe(0n + 1000n);
   });
 

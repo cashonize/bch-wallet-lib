@@ -28,7 +28,10 @@ describe("a broadcast send returns the transaction it broadcast", () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
 
-    const response = await alice.send([[bob.cashaddr, 10_000n]]);
+    const response = await alice.send({
+      cashaddr: bob.cashaddr,
+      value: 10_000n,
+    });
     expectTypeOf(response.txId).toEqualTypeOf<string>();
     expectTypeOf(response.transaction).toEqualTypeOf<string>();
     await expectBroadcast(alice, response);
@@ -37,7 +40,7 @@ describe("a broadcast send returns the transaction it broadcast", () => {
   test("sendMax", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send([[bob.cashaddr, 10_000n]]);
+    await alice.send({ cashaddr: bob.cashaddr, value: 10_000n });
 
     const response = await bob.sendMax(alice.cashaddr);
     expectTypeOf(response.txId).toEqualTypeOf<string>();
@@ -68,9 +71,12 @@ test("broadcast: false returns the signed transaction it did not broadcast", asy
   const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
   const bob = await RegTestWallet.newRandom();
 
-  const response = await alice.send([[bob.cashaddr, 10_000n]], {
-    broadcast: false,
-  });
+  const response = await alice.send(
+    { cashaddr: bob.cashaddr, value: 10_000n },
+    {
+      broadcast: false,
+    },
+  );
   expectTypeOf(response.txId).toEqualTypeOf<string>();
   expect(hashTransaction(hexToBin(response.transaction))).toBe(response.txId);
   await expect(

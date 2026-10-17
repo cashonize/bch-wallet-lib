@@ -170,6 +170,27 @@ describe("a subscription that cannot be made", () => {
     await wallet.stop();
   }, 5000);
 
+  test("counts the gap only up to an address a failed scan left unwatched", async () => {
+    const wallet = await RegTestHDWallet.newRandom();
+    await wallet.watchPromise;
+    refuse.address = true;
+    await expect(wallet.scanMoreAddresses(40)).rejects.toThrow(
+      "subscription refused",
+    );
+    refuse.address = false;
+    expect(await wallet.getBalance()).toBe(0n);
+
+    // the used address leaves the scan's unwatched addresses inside the gap
+    await fund(wallet.getDepositAddress(19), 1_000n);
+    await wallet.waitForUpdate({ depositIndex: 20 });
+    // waits for the gap extension
+    expect(await wallet.getBalance()).toBe(1_000n);
+    await fund(wallet.getDepositAddress(20), 2_000n);
+    await wallet.waitForUpdate({ depositIndex: 21 });
+    expect(await wallet.getBalance()).toBe(3_000n);
+    await wallet.stop();
+  }, 5000);
+
   test("settles a watcher's read while a gap extension has failed", async () => {
     const wallet = await RegTestHDWallet.newRandom();
     await wallet.watchPromise;

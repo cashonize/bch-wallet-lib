@@ -373,11 +373,19 @@ export class HDWallet extends BaseWallet {
       // for every tracked branch.
       needsMore = this.branches.some((branch) => {
         const gap =
-          (this.statuses.get(branch)?.length ?? 0) -
-          (this.indices.get(branch) ?? 0);
+          this.watchedLength(branch) - (this.indices.get(branch) ?? 0);
         return gap < gapSize;
       });
     }
+  }
+
+  /// The addresses of a branch watched without a break: a failed discovery leaves an address
+  /// unwatched, and the gap ends there so that the next extension subscribes it again
+  private watchedLength(branch: number): number {
+    const statuses = this.statuses.get(branch)!;
+    const firstUnwatched = statuses.findIndex((status) => status === undefined);
+    if (firstUnwatched === -1) return statuses.length;
+    return firstUnwatched;
   }
 
   /// Watch addresses of a specific branch for activity
@@ -391,9 +399,7 @@ export class HDWallet extends BaseWallet {
       this.indices.set(branch, val);
     };
 
-    // from the first address not watched, which a failed discovery may have left below the end
-    let startIndex = statuses.findIndex((status) => status === undefined);
-    if (startIndex === -1) startIndex = statuses.length;
+    const startIndex = this.watchedLength(branch);
     const stopIndex = getCurrentIndex() + gapSize;
 
     const addresses = arrayRange(startIndex, stopIndex).map(
@@ -514,7 +520,7 @@ export class HDWallet extends BaseWallet {
                 }
 
                 // Maintain the gap: extend watched range if it shrank
-                const gap = statuses.length - getCurrentIndex();
+                const gap = this.watchedLength(branch) - getCurrentIndex();
                 if (gap < gapSize && discovered) {
                   // as a discovery of its own, so that a failure reaches the next read
                   void this.startDiscovery(gapSize);

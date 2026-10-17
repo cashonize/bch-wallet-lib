@@ -1,12 +1,12 @@
 import path from "path";
 import { defineConfig } from "vitest/config";
 
-const root = path.resolve(__dirname, "..");
+const root = path.resolve(import.meta.dirname, "..");
 
 export default defineConfig({
   resolve: {
     alias: {
-      "#test": path.resolve(__dirname),
+      "#test": path.resolve(import.meta.dirname),
     },
   },
   test: {
@@ -18,10 +18,10 @@ export default defineConfig({
     setupFiles: [
       "fake-indexeddb/auto",
       "node-localstorage/register",
-      path.resolve(__dirname, "mock.setup.cjs"),
+      path.resolve(import.meta.dirname, "mock.setup.cjs"),
     ],
-    globalSetup: [path.resolve(__dirname, "vitest.global-setup.cjs")],
-    attachmentsDir: path.resolve(__dirname, "attachments"),
+    globalSetup: [path.resolve(import.meta.dirname, "vitest.global-setup.cjs")],
+    attachmentsDir: path.resolve(import.meta.dirname, "attachments"),
     testTimeout: 125000,
     fileParallelism: !!process.env.USE_MOCK_PROVIDER,
     coverage: {

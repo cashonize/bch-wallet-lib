@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { delay } from "../util/delay.js";
 import {
   ElectrumTimeoutError,
   ElectrumTransport,
@@ -20,6 +21,10 @@ class FakeServer extends EventEmitter {
   connected = false;
   connects = 0;
   hangOnConnect = false;
+  // Takes every write and answers none, as a connection the OS dropped without telling the app
+  // (iOS / Safari in the background); closing it then waits out the unanswered closing handshake
+  silent = false;
+  closing = false;
   received: { id: unknown; method: string; params: unknown[] }[] = [];
   handlers = new Map<string, Handler>();
 
@@ -38,13 +43,24 @@ class FakeServer extends EventEmitter {
 
   async connect(): Promise<void> {
     this.connects++;
-    if (this.hangOnConnect) return new Promise(() => {});
+    if (this.hangOnConnect) {
+      // ElectrumWebSocket gives up after its timeout
+      await delay(this.options.timeoutInMilliSeconds);
+      this.emit("disconnected");
+      throw new Error("socket timed out");
+    }
     this.connected = true;
     this.emit("connected");
   }
 
   async disconnect(): Promise<void> {
-    if (!this.connected) return;
+    if (!this.connected || this.closing) return;
+    if (this.silent) {
+      this.closing = true;
+      await delay(100);
+      this.closing = false;
+      this.silent = false;
+    }
     this.connected = false;
     this.emit("disconnected");
   }
@@ -56,7 +72,8 @@ class FakeServer extends EventEmitter {
   }
 
   async write(data: string): Promise<boolean> {
-    if (!this.connected) throw new Error("not connected");
+    if (!this.connected || this.closing) throw new Error("not connected");
+    if (this.silent) return true;
     const { id, method, params } = JSON.parse(data);
     if (method === "server.version") {
       this.reply({ id, result: ["fake 1.0", "1.5"] });
@@ -90,6 +107,23 @@ class FakeServer extends EventEmitter {
 }
 
 const asServer = (fake: FakeServer) => fake as unknown as ElectrumServer;
+
+// A server given by URL gets a FakeServer in place of its ElectrumWebSocket, with the options the
+// transport chose for it
+const urlSockets = vi.hoisted(() => ({
+  created: [] as unknown[],
+  create: (_host: string): unknown => undefined,
+}));
+vi.mock("@electrum-cash/web-socket", () => ({
+  ElectrumWebSocket: function (host: string, options: object) {
+    const socket = urlSockets.create(host) as { options: object };
+    socket.options = options;
+    urlSockets.created.push(socket);
+    return socket;
+  },
+}));
+urlSockets.create = (host) => new FakeServer(host);
+const lastUrlSocket = () => urlSockets.created.at(-1) as FakeServer;
 
 const addressA = "bitcoincash:qrfdnsxr2lljh0ej2w6dvqx9mgdmasnlpgk99t8ch4";
 const addressB = "bitcoincash:qz5ggc6fwvf0ec2l9w6yngdw7tjqnsehhvf7dmqwyk";
@@ -393,6 +427,41 @@ describe("ElectrumTransport connecting", () => {
 
     expect(await transport.request("blockchain.relayfee")).toBe(0.00001);
     expect(later.connects).toBe(0);
+  });
+
+  test("gives up a reconnect within the connect timeout, so that close() does not wait for it", async () => {
+    transport = new ElectrumTransport("wss://fake.example:50004", {
+      connectTimeout: 50,
+      requestTimeout: 4000,
+    });
+    const fake = lastUrlSocket();
+    await transport.connect();
+    fake.drop();
+    fake.hangOnConnect = true;
+
+    await expect(transport.request("blockchain.relayfee")).rejects.toThrow(
+      "Connecting to 'fake.example' timed out after 50 ms",
+    );
+    const closing = Date.now();
+    await transport.close();
+    expect(Date.now() - closing).toBeLessThan(1000);
+  });
+
+  test("replaces a connection that went silent before sending a request again", async () => {
+    transport = new ElectrumTransport("wss://fake.example:50004", {
+      requestTimeout: 400,
+    });
+    const fake = lastUrlSocket();
+    fake.handlers.set("blockchain.relayfee", () => ({ result: 0.00001 }));
+    await transport.connect();
+    // electrum-cash only counts a send as unanswered when it is later than the last data received,
+    // in whole milliseconds
+    await delay(5);
+    fake.silent = true;
+
+    expect(await transport.request("blockchain.relayfee")).toBe(0.00001);
+    expect(fake.connects).toBe(2);
+    expect(fake.calls("blockchain.relayfee")).toHaveLength(1);
   });
 
   test("accepts only plain ws:// and wss:// URLs", () => {

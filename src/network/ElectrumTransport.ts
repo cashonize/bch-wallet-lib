@@ -18,7 +18,11 @@ type ElectrumSocket = Exclude<
 export interface ElectrumTransportOptions {
   /** Milliseconds a server gets to connect and agree on the protocol version. Default 10 000. */
   connectTimeout?: number;
-  /** Milliseconds a request waits for its response. Default 30 000. */
+  /**
+   * Milliseconds a request waits for its response. Default 30 000. A connection that stays silent
+   * for half of it (or the connect timeout, if shorter) after a send is taken for dead and replaced,
+   * so that a request that timed out is sent again on a fresh connection.
+   */
   requestTimeout?: number;
 }
 
@@ -99,6 +103,10 @@ export class ElectrumTransport implements Transport {
     return this.connecting;
   }
 
+  /**
+   * Ends the connection and every subscription. Waits for a connect attempt still under way, which
+   * for a server given by URL gives up within about the connect timeout.
+   */
   async close(): Promise<void> {
     this.epoch++;
     const client = this.client;
@@ -314,8 +322,14 @@ export class ElectrumTransport implements Transport {
       port,
       encrypted,
       // Bounds the socket's open and version negotiation, and is how long a connection may stay
-      // silent after a send before electrum-cash takes it for dead and reconnects
-      timeoutInMilliSeconds: this.requestTimeout,
+      // silent after a send before electrum-cash takes it for dead and reconnects. Shorter than a
+      // request's timeout, so that the retry finds a fresh connection rather than the closing one;
+      // and no longer than the connect timeout, as an attempt holds electrum-cash's connection lock
+      // (which close() waits for) until the socket gives up.
+      timeoutInMilliSeconds: Math.min(
+        this.connectTimeout,
+        this.requestTimeout / 2,
+      ),
       // In a browser the flag ties the socket to page visibility and connectivity events, and in Node
       // it makes the socket verify TLS certificates. A wallet stays connected while hidden, and Node
       // must verify.

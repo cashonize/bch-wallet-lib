@@ -811,6 +811,7 @@ export async function getFeeAmountSimple({
   sendRequests,
   relayFeePerByteInSatoshi,
   discardChange,
+  fee: feeStrategy,
 }: {
   utxos: Utxo[];
   sendRequests: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -818,6 +819,7 @@ export async function getFeeAmountSimple({
   relayFeePerByteInSatoshi: number;
   feePaidBy: FeePaidByEnum;
   discardChange?: boolean;
+  fee?: FeeFn;
 }): Promise<bigint> {
   const inputSizeP2pkh = 148;
   const outputSizeP2pkh = 34;
@@ -855,12 +857,15 @@ export async function getFeeAmountSimple({
   const outputTotalSize =
     sendRequests.reduce((prev, curr) => prev + outputSize(curr), 0) +
     (discardChange ? 0 : outputSizeP2pkh);
+  const txSizeBytes = inputTotalSize + outputTotalSize + 16;
 
-  return BigInt(
-    Math.ceil(
-      (inputTotalSize + outputTotalSize + 16) * relayFeePerByteInSatoshi,
-    ),
-  );
+  if (feeStrategy) {
+    return feeStrategy({
+      txSizeBytes,
+      relayFeePerByte: relayFeePerByteInSatoshi,
+    });
+  }
+  return BigInt(Math.ceil(txSizeBytes * relayFeePerByteInSatoshi));
 }
 
 // precise fee estimation

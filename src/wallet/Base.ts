@@ -928,6 +928,7 @@ export class BaseWallet implements WalletI {
       sourceAddress: placeholderCashAddr,
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
       feePaidBy: feePaidBy,
+      fee: params.options?.fee,
     });
     const spendableAmount = sumUtxoValue(fundingUtxos);
 
@@ -1207,6 +1208,7 @@ export class BaseWallet implements WalletI {
         sourceAddress: this.getDepositAddress(),
         relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
         feePaidBy: feePaidBy,
+        fee: options?.fee,
       });
     // Each round selects for the last round's estimate plus `margin` until the selected coins
     // cover their own fee, the precise one included; the estimate only grows.

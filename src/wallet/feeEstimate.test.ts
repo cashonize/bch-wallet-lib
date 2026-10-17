@@ -454,3 +454,35 @@ describe("an output that pays the fee is checked as the change is", () => {
     ]);
   });
 });
+
+describe("sendMax takes the fee options send takes", () => {
+  test("a fee strategy prices the max and the transaction", async () => {
+    const { alice, bob, coins } = await fund(5, 1000n);
+    const sendMax = (options: { fee: FeeFn }) =>
+      bob.sendMax(alice.cashaddr!, { ...options, broadcast: false });
+    const maxOf = (options: { fee: FeeFn }) =>
+      bob.getMaxAmountToSend({ outputCount: 1, options });
+
+    // the max was priced at the relay rate, and sendMax threw "Amount required was not met"
+    const absolute = { fee: feeAbsolute(1500n) };
+    expect(await maxOf(absolute)).toBe(3500n);
+    const absoluteSend = await sendMax(absolute);
+    expect(inputOutpoints(absoluteSend.transaction)).toEqual(
+      outpointsOf(coins),
+    );
+    expect(outputValues(absoluteSend.transaction)).toEqual([3500n]);
+
+    const perByte = { fee: feeFixedPerByte(3) };
+    const perByteMax = await maxOf(perByte);
+    const perByteSend = await sendMax(perByte);
+    expect(outputValues(perByteSend.transaction)).toEqual([perByteMax]);
+    expect(5000n - perByteMax).toBeGreaterThanOrEqual(
+      BigInt((perByteSend.transaction.length / 2) * 3),
+    );
+
+    // below the relay rate, which the selection's relay-rate estimate could not fit in the coins
+    const low = { fee: feeAbsolute(200n) };
+    expect(await maxOf(low)).toBe(4800n);
+    expect(outputValues((await sendMax(low)).transaction)).toEqual([4800n]);
+  });
+});

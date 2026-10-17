@@ -87,3 +87,6 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 ### Removed
 
 - The `bch-wallet-lib/encrypted-storage` entry, with `EncryptedStorageProvider`, `wrapProvider`, `changePassphrase`, `encryptPlaintextRows`, `removeEncryption` and `DecryptionError`. Wallet ids are stored as plaintext rows, as mainnet-js 3.1.7 stores them. A caller that wrapped a provider sets `BaseWallet.StorageProvider` to the provider itself; the library no longer reads `enc:v1:` rows, so one that wrote them runs `removeEncryption` with an earlier build first.
+- `StorageProvider.getInfo()` and `IndexedDBProvider.getInfo()`, which returned the constant `"indexedDB"`. A custom `StorageProvider` drops its implementation; a caller that read it knows which provider it set.
+- `IndexedDBProvider`'s second constructor parameter, `storeName`: the rows are always in the `"wallet"` store, where mainnet-js 3.1.7 keeps them. A caller that passed `"wallet"` drops the argument; one that passed another store moves its rows to `"wallet"`.
+- `WalletDbEntryI.id`: a row is `{ name, wallet }`, and no provider ever set an `id`. A caller that read `row.id` uses `row.name`, the row's key.

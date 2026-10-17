@@ -20,13 +20,6 @@ export default abstract class StorageProvider {
   abstract close(): Promise<StorageProvider>;
 
   /**
-   * Returns information about the storage provider
-   * @throws {Error} If there is no info
-   * @returns string
-   */
-  abstract getInfo(): string;
-
-  /**
    * Add a wallet to the database
    * @param name A user defined name for the wallet, and the walletId.
    * @param walletId String used to reconstruct the wallet.

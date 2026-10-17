@@ -1,13 +1,14 @@
 import { StorageProvider, WalletDbEntryI } from "../index.js";
 
+// the object store mainnet-js 3.1.7 keeps its rows in, keyed by name
+const STORE_NAME = "wallet";
+
 export default class IndexedDBProvider implements StorageProvider {
   private dbName: string;
-  private storeName: string;
   private db: IDBDatabase | null = null;
 
-  constructor(dbName = "wallet", storeName = "wallet") {
+  constructor(dbName = "wallet") {
     this.dbName = dbName;
-    this.storeName = storeName;
   }
 
   private async openDB(): Promise<IDBDatabase> {
@@ -16,8 +17,8 @@ export default class IndexedDBProvider implements StorageProvider {
       const request = indexedDB.open(this.dbName, 31);
       request.onupgradeneeded = () => {
         const db = request.result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName, { keyPath: "name" });
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: "name" });
         }
       };
       request.onsuccess = () => {
@@ -41,15 +42,11 @@ export default class IndexedDBProvider implements StorageProvider {
     return this;
   }
 
-  public getInfo() {
-    return "indexedDB";
-  }
-
   public async addWallet(name: string, walletId: string): Promise<boolean> {
     const db = await this.openDB();
     return new Promise<boolean>((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readwrite");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
       const getReq = store.get(name);
       getReq.onsuccess = () => {
         if (getReq.result) {
@@ -67,8 +64,8 @@ export default class IndexedDBProvider implements StorageProvider {
   public async getWallet(name: string): Promise<WalletDbEntryI | undefined> {
     const db = await this.openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readonly");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
       const req = store.get(name);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(requestError(req));
@@ -78,8 +75,8 @@ export default class IndexedDBProvider implements StorageProvider {
   public async getWallets(): Promise<Array<WalletDbEntryI>> {
     const db = await this.openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readonly");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(requestError(req));
@@ -89,8 +86,8 @@ export default class IndexedDBProvider implements StorageProvider {
   public async updateWallet(name: string, walletId: string): Promise<void> {
     const db = await this.openDB();
     return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readwrite");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
       const getReq = store.get(name);
       getReq.onsuccess = () => {
         if (!getReq.result) {
@@ -112,8 +109,8 @@ export default class IndexedDBProvider implements StorageProvider {
   public async deleteWallet(name: string): Promise<void> {
     const db = await this.openDB();
     return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readwrite");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
       const req = store.delete(name);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(requestError(req));

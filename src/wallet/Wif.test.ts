@@ -18,13 +18,7 @@ import { ElectrumRawTransaction } from "../network/interface.js";
 import json from "../test/json.test.js";
 import { delay } from "../util/delay.js";
 import { deriveHdPaths, getXPubKeys } from "../util/hd.js";
-import {
-  convert,
-  sumUtxoValue,
-  toBch,
-  toCurrency,
-  toSat,
-} from "../util/index.js";
+import { convert, sumUtxoValue } from "../util/index.js";
 import { CancelFn } from "./interface.js";
 import {
   OpReturnData,
@@ -709,10 +703,7 @@ describe(`Watch only Wallets`, () => {
       // Build Bob's wallet from a public address, check his balance.
       expect(alice.getPublicKeyHash()!.length).toBe(20);
       const aliceBalance = await alice.getBalance();
-      expect(toBch(aliceBalance)).toBeGreaterThan(5000);
-      expect(await alice.getBalance()).toBeGreaterThan(
-        5000n * bchParam.subUnits,
-      );
+      expect(aliceBalance).toBeGreaterThan(5000n * bchParam.subUnits);
     }
   });
 
@@ -728,13 +719,13 @@ describe(`Watch only Wallets`, () => {
         // Build Bob's wallet from a public address, check his balance.
         expect(alice.getPublicKeyHash()!.length).toBe(20);
         const aliceBalance = await alice.getBalance();
-        expect(toBch(aliceBalance)).toBeGreaterThan(5000);
         expect(
-          await toCurrency(await alice.getBalance(), "eur"),
+          await convert(Number(aliceBalance), "sat", "eur"),
         ).toBeGreaterThan(0);
         expect(
-          await toCurrency(
-            await (await RegTestWallet.newRandom()).getBalance(),
+          await convert(
+            Number(await (await RegTestWallet.newRandom()).getBalance()),
+            "sat",
             "eur",
           ),
         ).toBe(0);
@@ -1008,7 +999,7 @@ describe(`Wallet subscriptions`, () => {
 
     let waitBalanceResult = false;
     const waitBalance = delay(0).then(async () => {
-      const result = await alice.waitForBalance(toSat(0.001));
+      const result = await alice.waitForBalance(100_000n);
       expect(result).toBeGreaterThan(0n);
       waitBalanceResult = true;
     });
@@ -1037,7 +1028,7 @@ describe(`Wallet subscriptions`, () => {
         return;
       }
 
-      expect(balance).toBe(toSat(0.001));
+      expect(balance).toBe(100_000n);
       await bobBalanceWatchCancel?.();
       bobBalanceWatchResult = true;
     });

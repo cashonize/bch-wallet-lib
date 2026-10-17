@@ -12,7 +12,7 @@ import { mine } from "../mine/index.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import type NetworkProvider from "../network/NetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { sumUtxoValue, toBch } from "../util/index.js";
+import { sumUtxoValue } from "../util/index.js";
 import { createWallet } from "../wallet/createWallet.js";
 import { WalletTypeEnum } from "../wallet/enum.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
@@ -75,7 +75,7 @@ test("Should get an address history", async () => {
       },
     ]);
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.
@@ -149,7 +149,7 @@ test("Should get a history with multi-party sends", async () => {
       },
     ]);
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
 
     // Build Bob's wallet from a public address, check his balance.
@@ -228,7 +228,7 @@ test("Should cut results with a longer history to given count", async () => {
     ]);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.
@@ -291,7 +291,7 @@ test("Should handle input and fee from many utxos", async () => {
     await bob.sendMax(charlie.cashaddr!);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.

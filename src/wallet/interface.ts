@@ -47,7 +47,6 @@ export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
   /** coins no input of the spend may use, e.g. reserved ones; ids not in the wallet are ignored, malformed ones throw */
   excludeUtxoIds?: string[] | Utxo[];
-  changeAddress?: string;
   queryBalance?: boolean;
   awaitTransactionPropagation?: boolean;
   checkTokenQuantities?: boolean; // true

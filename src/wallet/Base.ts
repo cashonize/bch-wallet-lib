@@ -1041,13 +1041,6 @@ export class BaseWallet implements WalletI {
   ) {
     let sendRequests = asSendRequestObject(requests);
 
-    let changeAddress: string;
-    if (options?.changeAddress) {
-      changeAddress = options.changeAddress;
-    } else {
-      changeAddress = this.getChangeAddress();
-    }
-
     let checkTokenQuantities: boolean = true;
     if (options?.checkTokenQuantities === false) {
       checkTokenQuantities = false;
@@ -1226,7 +1219,7 @@ export class BaseWallet implements WalletI {
       signingKey: privateKey ?? placeholderPrivateKeyBin,
       fee,
       discardChange,
-      changeAddress,
+      changeAddress: this.getChangeAddress(),
       walletCache: this.walletCache,
       tokenBurns,
       tokenChange,

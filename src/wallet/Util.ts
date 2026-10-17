@@ -21,6 +21,7 @@ import {
   ElectrumRawTransactionVout,
   ElectrumRawTransactionWithInputValues,
 } from "../network/interface.js";
+import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { getTransactionHash } from "../util/transaction.js";
 
 export { getTransactionHash };
@@ -164,10 +165,10 @@ export async function decodeTransaction(
   if (loadInputValues) {
     const provider = getProvider();
     const hashes = [...new Set(transaction.vin.map((val) => val.txid))];
-    const transactions = await Promise.all(
-      hashes.map((hash) =>
-        decodeTransaction(hash, false, undefined, { provider }),
-      ),
+    const transactions = await mapConcurrent(
+      hashes,
+      DEFAULT_CONCURRENCY,
+      (hash) => decodeTransaction(hash, false, undefined, { provider }),
     );
     const transactionMap = new Map<string, ElectrumRawTransaction>();
     transactions.forEach((val) => transactionMap.set(val.hash, val));

@@ -359,8 +359,10 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     transaction: ElectrumRawTransaction,
   ): Promise<ElectrumRawTransactionWithInputValues> {
     const hashes = [...new Set(transaction.vin.map((val) => val.txid))];
-    const transactions = await Promise.all(
-      hashes.map((hash) => this.getRawTransactionObject(hash, false)),
+    const transactions = await mapConcurrent(
+      hashes,
+      DEFAULT_CONCURRENCY,
+      (hash) => this.getRawTransactionObject(hash, false),
     );
     const transactionMap = new Map<string, ElectrumRawTransaction>();
     transactions.forEach((val) => transactionMap.set(val.hash, val));

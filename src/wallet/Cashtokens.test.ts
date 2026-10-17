@@ -1,6 +1,7 @@
 import {
   binsAreEqual,
   binToHex,
+  cashAddressToLockingBytecode,
   decodeTransaction,
   hexToBin,
   utf8ToBin,
@@ -29,6 +30,30 @@ const inputOutpoints = (transactionHex: string) => {
         `${binToHex(input.outpointTransactionHash)}:${input.outpointIndex}`,
     )
     .sort();
+};
+
+// A built transaction's outputs, locking bytecode and token data as hex
+const decodeOutputs = (transactionHex: string) => {
+  const tx = decodeTransaction(hexToBin(transactionHex));
+  if (typeof tx === "string") throw new Error(tx);
+  return tx.outputs.map((output) => ({
+    lockingBytecode: binToHex(output.lockingBytecode),
+    value: output.valueSatoshis,
+    token: output.token && {
+      category: binToHex(output.token.category),
+      amount: output.token.amount,
+      nft: output.token.nft && {
+        capability: output.token.nft.capability,
+        commitment: binToHex(output.token.nft.commitment),
+      },
+    },
+  }));
+};
+
+const lockingBytecodeOf = (address: string) => {
+  const result = cashAddressToLockingBytecode(address);
+  if (typeof result === "string") throw new Error(result);
+  return binToHex(result.bytecode);
 };
 
 beforeAll(async () => {
@@ -1643,5 +1668,294 @@ describe(`Test cashtokens`, () => {
         broadcast: false,
       }),
     ).rejects.toThrow(InsufficientFundsError);
+  });
+});
+
+// Token change is what the spent token coins carry minus what the requests send (mainnet-js#247)
+describe("token change", () => {
+  const fundedWallet = async (coins = 1) => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    for (let i = 0; i < coins; i++) {
+      await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+    }
+    return bob;
+  };
+
+  // the requests' exact outputs, without the change the fix is about
+  const splitCoins = (wallet: RegTestWallet, requests: TokenSendRequest[]) =>
+    wallet.send(requests, { checkTokenQuantities: false });
+
+  const bchChange = (wallet: RegTestWallet) => ({
+    lockingBytecode: lockingBytecodeOf(wallet.cashaddr!),
+    value: expect.any(BigInt),
+    token: undefined,
+  });
+
+  test("a fungible send keeps the minting NFT of a hybrid coin it spends", async () => {
+    const bob = await fundedWallet();
+    const carol = await RegTestWallet.newRandom();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const genesis = await bob.tokenGenesis({ amount: 1000n, nft: minting });
+    const category = genesis.categories![0];
+    await splitCoins(bob, [
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: minting,
+        amount: 900n,
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        amount: 100n,
+      }),
+    ]);
+
+    // the hybrid keeps its own amount, the rest of the change is a fungible coin
+    const first = await bob.send(
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        amount: 50n,
+      }),
+    );
+    expect(decodeOutputs(first.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 50n, nft: undefined },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 900n, nft: minting },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 50n, nft: undefined },
+      },
+      bchChange(bob),
+    ]);
+
+    // sending every fungible token leaves the minting NFT on its own
+    const second = await bob.send(
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        amount: 950n,
+      }),
+    );
+    expect(decodeOutputs(second.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 950n, nft: undefined },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 0n, nft: minting },
+      },
+      bchChange(bob),
+    ]);
+    expect(await bob.getNftTokenBalance(category)).toBe(1);
+    expect(await carol.getTokenBalance(category)).toBe(1000n);
+  });
+
+  test("sending a minting NFT leaves no copy of it on the fungible change", async () => {
+    const bob = await fundedWallet();
+    const carol = await RegTestWallet.newRandom();
+    const minting = { capability: NFTCapability.minting, commitment: "01" };
+    const genesis = await bob.tokenGenesis({ amount: 1000n, nft: minting });
+    const category = genesis.categories![0];
+    await splitCoins(bob, [
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: minting,
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        amount: 1000n,
+      }),
+    ]);
+
+    const response = await bob.send(
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: minting,
+      }),
+    );
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 0n, nft: minting },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 1000n, nft: undefined },
+      },
+      bchChange(bob),
+    ]);
+    expect(await bob.getNftTokenBalance(category)).toBe(0);
+    expect(await bob.getTokenBalance(category)).toBe(1000n);
+  });
+
+  test("an immutable NFT is sendable while the wallet holds fungible tokens of its category", async () => {
+    const bob = await fundedWallet();
+    const carol = await RegTestWallet.newRandom();
+    const nft = { capability: NFTCapability.none, commitment: "aa" };
+    const genesis = await bob.tokenGenesis({ amount: 1000n, nft });
+    const category = genesis.categories![0];
+    await splitCoins(bob, [
+      new TokenSendRequest({ cashaddr: bob.tokenaddr!, category, nft }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        amount: 1000n,
+      }),
+    ]);
+
+    const response = await bob.send(
+      new TokenSendRequest({ cashaddr: carol.tokenaddr!, category, nft }),
+    );
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 0n, nft },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 1000n, nft: undefined },
+      },
+      bchChange(bob),
+    ]);
+  });
+
+  test("a send over several categories returns each category's own change", async () => {
+    const bob = await fundedWallet(3);
+    const carol = await RegTestWallet.newRandom();
+    const immutable = { capability: NFTCapability.none, commitment: "aa" };
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const mutable = { capability: NFTCapability.mutable, commitment: "01" };
+    const genesis = await bob.tokenGenesis([
+      { amount: 500n, nft: immutable },
+      { amount: 300n, nft: minting },
+      { amount: 200n, nft: mutable },
+    ]);
+    const [hybridCategory, mintingCategory, mutableCategory] =
+      genesis.categories!;
+    await splitCoins(bob, [
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category: hybridCategory,
+        nft: immutable,
+        amount: 500n,
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category: mintingCategory,
+        nft: minting,
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category: mintingCategory,
+        amount: 300n,
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category: mutableCategory,
+        nft: mutable,
+        amount: 200n,
+      }),
+    ]);
+
+    // fungible tokens off the hybrid, the minting NFT, and the mutable NFT with a new commitment
+    const mutated = { capability: NFTCapability.mutable, commitment: "02" };
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category: hybridCategory,
+        amount: 200n,
+      }),
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category: mintingCategory,
+        nft: minting,
+      }),
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category: mutableCategory,
+        nft: mutated,
+      }),
+    ]);
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category: hybridCategory, amount: 200n, nft: undefined },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category: mintingCategory, amount: 0n, nft: minting },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category: mutableCategory, amount: 0n, nft: mutated },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category: hybridCategory, amount: 300n, nft: immutable },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category: mintingCategory, amount: 300n, nft: undefined },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category: mutableCategory, amount: 200n, nft: undefined },
+      },
+      bchChange(bob),
+    ]);
+  });
+
+  test("a token coin in ensureUtxos of a category the send does not name comes back as change", async () => {
+    const bob = await fundedWallet();
+    const carol = await RegTestWallet.newRandom();
+    const nft = { capability: NFTCapability.none, commitment: "cc" };
+    const genesis = await bob.tokenGenesis({ amount: 10n, nft, value: 2000n });
+    const category = genesis.categories![0];
+    const [tokenCoin] = await bob.getTokenUtxos(category);
+
+    const response = await bob.send(
+      new SendRequest({ cashaddr: carol.cashaddr!, value: 5000n }),
+      { ensureUtxos: [tokenCoin] },
+    );
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.cashaddr!),
+        value: 5000n,
+        token: undefined,
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 2000n,
+        token: { category, amount: 10n, nft },
+      },
+      bchChange(bob),
+    ]);
   });
 });

@@ -541,6 +541,120 @@ export async function getSuitableUtxos(
   }
 }
 
+/**
+ * getTokenChangeRequests - the token change of a send: what the spent token inputs carry minus
+ * what the requests send, per category and per NFT (mainnet-js#247)
+ *
+ * An NFT input no request sends comes back as it was, with its own fungible amount as far as the
+ * category's fungible change covers it; the rest of that change goes to one fungible-only output.
+ *
+ * @param inputs  The token inputs the transaction spends
+ * @param requests  The requested token outputs
+ * @param changeAddress  The token-aware address the change goes to
+ */
+export function getTokenChangeRequests(
+  inputs: Utxo[],
+  requests: TokenSendRequest[],
+  changeAddress: string,
+): TokenSendRequest[] {
+  const tokenInputs = inputs.filter((input) => input.token);
+  const sent = new Set<Utxo>();
+
+  // an NFT request sends the input with the same NFT, matched as getSuitableUtxos claims them
+  const unmatched: TokenSendRequest[] = [];
+  for (const request of requests) {
+    if (
+      request.nft?.capability === undefined &&
+      request.nft?.commitment === undefined
+    ) {
+      continue;
+    }
+    const input = tokenInputs.find(
+      (val) =>
+        !sent.has(val) &&
+        val.token!.category === request.category &&
+        val.token!.nft?.capability === request.nft?.capability &&
+        val.token!.nft?.commitment === request.nft?.commitment,
+    );
+    if (input) {
+      sent.add(input);
+    } else {
+      unmatched.push(request);
+    }
+  }
+  // a minting or mutable NFT sent with another commitment is a minting or mutable input changed
+  for (const request of unmatched) {
+    if (
+      request.nft?.capability !== NFTCapability.minting &&
+      request.nft?.capability !== NFTCapability.mutable
+    ) {
+      continue;
+    }
+    const input = tokenInputs.find(
+      (val) =>
+        !sent.has(val) &&
+        val.token!.category === request.category &&
+        val.token!.nft?.capability === request.nft?.capability,
+    );
+    if (input) {
+      sent.add(input);
+    }
+  }
+
+  const changeRequests: TokenSendRequest[] = [];
+  const categories = tokenInputs
+    .map((val) => val.token!.category)
+    .filter((val, idx, arr) => arr.indexOf(val) === idx);
+  for (const category of categories) {
+    const categoryInputs = tokenInputs.filter(
+      (val) => val.token!.category === category,
+    );
+    const categoryRequests = requests.filter(
+      (val) => val.category === category,
+    );
+    let change =
+      categoryInputs.reduce((sum, val) => sum + val.token!.amount, 0n) -
+      categoryRequests.reduce((sum, val) => sum + val.amount, 0n);
+    if (change < 0n) {
+      throw new InsufficientFundsError("Not enough token amount to send", {
+        asset: "token",
+        category,
+      });
+    }
+
+    for (const input of categoryInputs) {
+      const nft = input.token!.nft;
+      if (!nft || sent.has(input)) continue;
+      let amount = input.token!.amount;
+      if (amount > change) {
+        amount = change;
+      }
+      change -= amount;
+      changeRequests.push(
+        new TokenSendRequest({
+          cashaddr: changeAddress,
+          category,
+          amount,
+          nft: { capability: nft.capability, commitment: nft.commitment },
+          // the input's own value, which is above dust for the token data it carried
+          value: input.satoshis,
+        }),
+      );
+    }
+    if (change > 0n) {
+      changeRequests.push(
+        new TokenSendRequest({
+          cashaddr: changeAddress,
+          category,
+          amount: change,
+          value: categoryRequests[0]?.value,
+        }),
+      );
+    }
+  }
+  return changeRequests;
+}
+
 // model-based imprecise and fast fee estimation
 export async function getFeeAmountSimple({
   utxos,

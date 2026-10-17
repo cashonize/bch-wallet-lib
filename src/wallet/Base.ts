@@ -20,6 +20,7 @@ import {
   getFeeAmount,
   getFeeAmountSimple,
   getSuitableUtxos,
+  getTokenChangeRequests,
   placeholderPrivateKeyBin,
 } from "../transaction/Wif.js";
 import { checkUtxos } from "../util/checkUtxos.js";
@@ -995,10 +996,8 @@ export class BaseWallet implements WalletI {
       utxos = utxos.filter((val) => !val.token);
     }
 
-    const addTokenChangeOutputs = (
-      inputs: Utxo[],
-      outputs: SendRequestType[],
-    ) => {
+    // the fungible token utxos of each requested category are spent in full
+    const ensureTokenInputs = (inputs: Utxo[], outputs: SendRequestType[]) => {
       // Allow for implicit token burn if the total amount sent is less than user had
       // allow for token genesis, creating more tokens than we had before (0)
       if (!checkTokenQuantities) {
@@ -1034,55 +1033,59 @@ export class BaseWallet implements WalletI {
             category,
           });
         }
-        if (diff >= 0) {
-          let available = 0n;
-          let change = 0n;
-          const ensureUtxos: Utxo[] = [];
-          for (const token of tokenInputs.filter((val) => val.token?.amount)) {
-            ensureUtxos.push(token);
-            available += token.token!.amount;
-            if (available >= outputAmountSum) {
-              change = available - outputAmountSum;
-              //break;
-            }
-          }
-          if (ensureUtxos.length) {
-            // a copy: the caller's options stay as they were, e.g. for a retry
-            options = { ...options };
-            options.ensureUtxos = [
-              ...(options.ensureUtxos ?? []),
-              ...ensureUtxos,
-            ].filter(
-              (val, index, array) =>
-                array.findIndex(
-                  (other) => other.txid === val.txid && other.vout === val.vout,
-                ) === index,
-            );
-          }
-          if (change > 0) {
-            outputs.push(
-              new TokenSendRequest({
-                cashaddr: toTokenaddr(this.getChangeAddress()),
-                amount: change,
-                category: category,
-                nft: tokenOutputs[0].nft,
-                value: tokenOutputs[0].value,
-              }),
-            );
-          }
+        const ensureUtxos = tokenInputs.filter((val) => val.token?.amount);
+        if (ensureUtxos.length) {
+          // a copy: the caller's options stay as they were, e.g. for a retry
+          options = { ...options };
+          options.ensureUtxos = [
+            ...(options.ensureUtxos ?? []),
+            ...ensureUtxos,
+          ].filter(
+            (val, index, array) =>
+              array.findIndex(
+                (other) => other.txid === val.txid && other.vout === val.vout,
+              ) === index,
+          );
         }
       }
     };
-    addTokenChangeOutputs(utxos, sendRequests);
+    ensureTokenInputs(utxos, sendRequests);
 
     const bestHeight = await this.provider.getBlockHeight();
-    const spendAmount = await sumSendRequestAmounts(sendRequests);
-
     if (utxos.length === 0) {
       throw new InsufficientFundsError("There were no Unspent Outputs", {
         asset: "bch",
       });
     }
+
+    // The token change is derived from the token inputs this send spends: the selection below
+    // takes the same ones, as its token matching does not depend on the amount required, and it
+    // is given the requests without the change so that the change cannot pull in other coins
+    const requestedOutputs = [...sendRequests];
+    if (checkTokenQuantities) {
+      const tokenInputs = await getSuitableUtxos(
+        utxos,
+        0n,
+        bestHeight,
+        feePaidBy,
+        requestedOutputs,
+        options?.ensureUtxos || [],
+        options?.tokenOperation,
+      );
+      const tokenRequests = requestedOutputs.filter(
+        (val) => val instanceof TokenSendRequest,
+      );
+      sendRequests.push(
+        ...getTokenChangeRequests(
+          tokenInputs,
+          tokenRequests,
+          toTokenaddr(this.getChangeAddress()),
+        ),
+      );
+    }
+
+    const spendAmount = await sumSendRequestAmounts(sendRequests);
+
     if (typeof spendAmount !== "bigint") {
       throw Error("Couldn't get spend amount when building transaction");
     }
@@ -1101,7 +1104,7 @@ export class BaseWallet implements WalletI {
       spendAmount + feeEstimate,
       bestHeight,
       feePaidBy,
-      sendRequests,
+      requestedOutputs,
       options?.ensureUtxos || [],
       options?.tokenOperation,
       {

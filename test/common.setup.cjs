@@ -24,6 +24,22 @@ module.exports = async function (cwd) {
 
   console.log("Starting regtest network...");
 
+  // REGTEST_BACKEND=local runs BCHN and Fulcrum binaries from test/local, otherwise Docker
+  if (process.env.REGTEST_BACKEND === "local") {
+    // the browser config's instance runs this global setup a second time, in the same process
+    if (global.localRegtest) return;
+    const started = spawnSync(`./test/local/start.sh`, null, {
+      shell: false,
+      stdio: "inherit",
+      cwd: cwd,
+    });
+    if (started.status !== 0) {
+      throw new Error("test/local/start.sh failed to start the local regtest");
+    }
+    global.localRegtest = true;
+    return;
+  }
+
   let output = spawnSync("docker", ["ps"], {
     shell: false,
     stdio: "ignore",

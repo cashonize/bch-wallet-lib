@@ -22,7 +22,8 @@ The in-memory chain is [@paryonusd/mem-cash](https://github.com/ParyonUSD/paryon
 ```bash
 pnpm install
 pnpm test           # unit and integration tests on the in-memory chain, no Docker
-pnpm test:regtest   # the same suite against BCHN + Fulcrum in Docker (pnpm regtest:up first)
+pnpm test:regtest   # the same suite against BCHN + Fulcrum in Docker, started and stopped by the run
+pnpm test:regtest:local  # the same, on local BCHN + Fulcrum binaries instead of Docker (below)
 pnpm test:browser   # browser tests in headless Chromium, on the in-memory chain (pnpm exec playwright install chromium first)
 pnpm typecheck
 pnpm lint           # oxlint, type-aware
@@ -30,6 +31,18 @@ pnpm format         # oxfmt
 pnpm build          # tsc to dist/
 pnpm check:dist-imports  # after build: the entries import runtime dependencies only
 ```
+
+### Regtest without Docker
+
+`pnpm test:regtest:local` (and `test:browser:regtest:local`) starts the regtest the Docker setup describes on local binaries, runs the suite and stops it again: BCHN 29.1.0 or later (the May 2026 rules are active from block 1 on regtest; 29.0.0 needs `-upgrade12activationtime`) and Fulcrum 2.x, from `~/BCH-infra/bchn/bin/bitcoind` and `~/BCH-infra/fulcrum/Fulcrum` or `BITCOIND_PATH` and `FULCRUM_PATH`. Every start is a fresh chain with 815 blocks mined to the test address of `.env.regtest`, RPC `alice`/`password` on 127.0.0.1:18443, Fulcrum on 60001 (tcp) and 60003 (ws). The node binds to localhost and never dials a peer.
+
+```bash
+pnpm regtest:local:up     # start it by hand (fails if a port is taken)
+SKIP_REGTEST_INIT=1 pnpm test:regtest:local src/wallet/Wif.test.ts   # run against it, leave it up
+pnpm regtest:local:down
+```
+
+Each start makes a new directory `$REGTEST_DIR/run-<time>` (default `~/BCH-infra/regtest-bch-wallet-lib`, about 20 MB each) with the node's `debug.log` and `fulcrum.log`; `current` points at the last one. Old runs are not removed.
 
 ## License
 

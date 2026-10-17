@@ -11,10 +11,12 @@ import {
 } from "@bitauth/libauth";
 import { bchParam } from "../chain.js";
 import { UnitEnum } from "../enum.js";
-import { TxI } from "../interface.js";
+import { HeaderI, TxI, Utxo } from "../interface.js";
 import NetworkProvider from "../network/NetworkProvider.js";
 import { ExchangeRate } from "../rate/ExchangeRate.js";
+import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { sanitizeUnit } from "../util/sanitizeUnit.js";
+import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
 
 // P2S, P2PK and bare multisig have no CashAddress; they get a placeholder like OP_RETURN outputs do
@@ -48,6 +50,8 @@ export const getHistory = async ({
   start = 0,
   count = -1,
   rawHistory,
+  utxos,
+  concurrency = DEFAULT_CONCURRENCY,
 }: {
   addresses: string[];
   provider: NetworkProvider;
@@ -57,6 +61,10 @@ export const getHistory = async ({
   start?: number;
   count?: number;
   rawHistory?: TxI[];
+  /** The current utxos of `addresses`, token coins included; without them the balance is read per address */
+  utxos?: Utxo[];
+  /** Requests in flight at most, for each step of the load */
+  concurrency?: number;
 }): Promise<TransactionHistoryItem[]> => {
   if (!addresses.length) {
     return [];
@@ -71,10 +79,8 @@ export const getHistory = async ({
     history = rawHistory.slice(start, start + count);
   } else {
     const allHistory = (
-      await Promise.all(
-        addresses.map(async (address) =>
-          provider.getHistory(address, fromHeight, toHeight),
-        ),
+      await mapConcurrent(addresses, concurrency, (address) =>
+        provider.getHistory(address, fromHeight, toHeight),
       )
     ).flat();
 
@@ -104,14 +110,15 @@ export const getHistory = async ({
   }
   const uniqueHeights = [...uniqueHeightsSet];
 
-  // Batch fetch headers and history transactions in parallel
+  // one batch after the other, so that no more than `concurrency` requests are in flight
   const historyHashes = history.map((tx) => tx.tx_hash);
-  const [headerMap, txHexMap] = await Promise.all([
-    uniqueHeights.length > 0
-      ? provider.getHeaders(uniqueHeights)
-      : Promise.resolve(new Map()),
-    provider.getRawTransactions(historyHashes),
-  ] as const);
+  const txHexMap = await provider.getRawTransactions(historyHashes, {
+    concurrency,
+  });
+  let headerMap = new Map<number, HeaderI>();
+  if (uniqueHeights.length > 0) {
+    headerMap = await provider.getHeaders(uniqueHeights, { concurrency });
+  }
 
   const timestampMap: Record<number, number> = {};
   for (const [height, header] of headerMap) {
@@ -160,7 +167,9 @@ export const getHistory = async ({
 
   // Batch fetch prevout transactions
   const prevoutHashes = [...prevoutHashSet];
-  const prevoutHexMap = await provider.getRawTransactions(prevoutHashes);
+  const prevoutHexMap = await provider.getRawTransactions(prevoutHashes, {
+    concurrency,
+  });
 
   // Build prevout transaction map (decode all prevout txs)
   const prevoutTransactionMap: Record<string, TransactionCommon> = {};
@@ -374,10 +383,17 @@ export const getHistory = async ({
         : b.blockHeight - a.blockHeight) || a.valueChange - b.valueChange,
   );
 
-  // backfill the balances
-  let prevBalance = (
-    await Promise.all(addresses.map((address) => provider.getBalance(address)))
-  ).reduce((a, b) => Number(a) + Number(b), 0);
+  // backfill the balances from the current one: get_balance counts the satoshis of token coins too
+  let currentBalance: bigint;
+  if (utxos) {
+    currentBalance = sumUtxoValue(utxos);
+  } else {
+    const balances = await mapConcurrent(addresses, concurrency, (address) =>
+      provider.getBalance(address),
+    );
+    currentBalance = balances.reduce((a, b) => a + b, 0n);
+  }
+  let prevBalance = Number(currentBalance);
 
   let prevValueChange = 0;
   historyItems.forEach((tx) => {

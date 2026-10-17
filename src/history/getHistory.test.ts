@@ -6,12 +6,16 @@ import {
   hexToBin,
   Opcodes,
 } from "@bitauth/libauth";
+import { countRequests } from "#test/countRequests.js";
 import { mine } from "../mine/index.js";
+import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { toBch } from "../util/index.js";
+import { sumUtxoValue, toBch } from "../util/index.js";
 import { createWallet } from "../wallet/createWallet.js";
 import { WalletTypeEnum } from "../wallet/enum.js";
+import { RegTestHDWallet } from "../wallet/HDWallet.js";
 import { RegTestWallet } from "../wallet/Wif.js";
+import { getHistory } from "./getHistory.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -418,4 +422,137 @@ test("Should report outpoints and locking bytecode, and give scripts without an 
   ]);
   expect(spendTx.valueChange).toBe(1800);
   expect(spendTx.fee).toBe(200);
+});
+
+describe("history load", () => {
+  // the balance per address as before: get_balance, which counts the satoshis of token coins too
+  const balanceFromServer = async (
+    provider: ElectrumNetworkProvider,
+    addresses: string[],
+  ) => {
+    let sum = 0n;
+    for (const address of addresses) sum += await provider.getBalance(address);
+    return sum;
+  };
+
+  test("an HD wallet's history takes its balance from the utxos, with the concurrency asked for", async () => {
+    const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+    const hd = await RegTestHDWallet.newRandom();
+    // 12 funding transactions at 6 heights, on 12 addresses
+    for (let i = 0; i < 12; i++) {
+      await miner.send({
+        cashaddr: hd.getDepositAddress(i),
+        value: 10000n + BigInt(i),
+      });
+      if (i % 2) await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
+    }
+    await hd.waitForUpdate({ depositIndex: 12 });
+    const genesis = await hd.tokenGenesis({
+      cashaddr: hd.getTokenDepositAddress(12),
+      amount: 500n,
+      nft: { capability: "minting", commitment: "ab" },
+    });
+    await hd.waitForUpdate({ depositIndex: 13 });
+    // left in the mempool, spending coins of several addresses
+    await hd.send({ cashaddr: miner.getDepositAddress(), value: 25000n });
+    await hd.waitForUpdate({ changeIndex: 2 });
+
+    const provider = hd.provider as ElectrumNetworkProvider;
+    const { counts, restore } = countRequests(provider);
+    const history = await hd.getHistory({});
+    const withTwo = { ...counts.byMethod };
+    counts.maxInFlight = 0;
+    await hd.getHistory({ concurrency: 2 });
+    const maxInFlightWithTwo = counts.maxInFlight;
+    restore();
+
+    expect(counts.byMethod["blockchain.address.get_balance"]).toBeUndefined();
+    expect(withTwo["blockchain.address.get_balance"]).toBeUndefined();
+    expect(maxInFlightWithTwo).toBe(2);
+
+    const utxos = await hd.getUtxos();
+    expect(
+      utxos.some((utxo) => utxo.token?.category === genesis.categories![0]),
+    ).toBe(true);
+    const addresses = (
+      hd as unknown as { getUsedAddresses(): string[] }
+    ).getUsedAddresses();
+    // 13 deposit addresses and the change of the genesis and the send
+    expect(addresses.length).toBe(15);
+    const serverBalance = await balanceFromServer(provider, addresses);
+    expect(sumUtxoValue(utxos)).toBe(serverBalance);
+    expect(history.length).toBe(14);
+    expect(history[0].blockHeight).toBe(0);
+    expect(history[0].balance).toBe(Number(serverBalance));
+
+    // the same items as the balance read per address from the server, as before
+    const reference = await getHistory({
+      addresses,
+      provider,
+      rawHistory: await hd.getRawHistory(),
+    });
+    expect(history).toEqual(reference);
+  });
+
+  test("the first load of an HD wallet's history keeps at most 10 requests in flight", async () => {
+    const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+    const hd = await RegTestHDWallet.newRandom();
+    for (let i = 0; i < 12; i++) {
+      await miner.send({ cashaddr: hd.getDepositAddress(i), value: 10000n });
+    }
+    await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
+    await hd.waitForUpdate({ depositIndex: 12 });
+
+    const { counts, restore } = countRequests(
+      hd.provider as ElectrumNetworkProvider,
+    );
+    const history = await hd.getHistory({});
+    restore();
+
+    expect(history.length).toBe(12);
+    // 12 transactions and their prevouts, none cached
+    expect(counts.byMethod["blockchain.transaction.get"]).toBeGreaterThan(12);
+    expect(counts.maxInFlight).toBe(10);
+  });
+
+  test("a single-address wallet's history takes its balance from the utxos", async () => {
+    const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+    const bob = await RegTestWallet.newRandom();
+    await miner.send({ cashaddr: bob.cashaddr!, value: 20000n });
+    await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
+    await bob.tokenGenesis({ amount: 7n });
+
+    const provider = bob.provider as ElectrumNetworkProvider;
+    const { counts, restore } = countRequests(provider);
+    const history = await bob.getHistory();
+    restore();
+
+    expect(counts.byMethod["blockchain.address.get_balance"]).toBeUndefined();
+    const serverBalance = await balanceFromServer(provider, [bob.cashaddr!]);
+    expect(history[0].balance).toBe(Number(serverBalance));
+    expect(history).toEqual(
+      await getHistory({ addresses: [bob.cashaddr!], provider }),
+    );
+  });
+
+  test("without utxos the balance and history are read per address, bounded", async () => {
+    const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+    const wallets = await Promise.all(
+      Array.from({ length: 6 }, () => RegTestWallet.newRandom()),
+    );
+    for (const wallet of wallets) {
+      await miner.send({ cashaddr: wallet.cashaddr!, value: 5000n });
+    }
+    const addresses = wallets.map((wallet) => wallet.cashaddr!);
+    const provider = wallets[0].provider as ElectrumNetworkProvider;
+
+    const { counts, restore } = countRequests(provider);
+    const history = await getHistory({ addresses, provider, concurrency: 3 });
+    restore();
+
+    expect(counts.byMethod["blockchain.address.get_history"]).toBe(6);
+    expect(counts.byMethod["blockchain.address.get_balance"]).toBe(6);
+    expect(counts.maxInFlight).toBe(3);
+    expect(history[0].balance).toBe(30000);
+  });
 });

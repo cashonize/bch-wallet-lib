@@ -176,23 +176,13 @@ describe("Wallet should function in the browser", () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
 
-    let waitTxResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForTransaction({
-        getBalance: true,
-        getTransactionInfo: true,
-      });
-      expect(result.balance).toBeGreaterThan(0n);
-      expect(result.transactionInfo!.hash.length).toBe(64);
-      waitTxResult = true;
-    }, 0);
-
-    let waitBalanceResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForBalance(100000n);
-      expect(result).toBeGreaterThan(0n);
-      waitBalanceResult = true;
-    }, 0);
+    // started right away rather than from a timer, so alice is subscribed before an instant
+    // chain like mem-cash has the send in its first status
+    const waitTx = alice.waitForTransaction({
+      getBalance: true,
+      getTransactionInfo: true,
+    });
+    const waitBalance = alice.waitForBalance(100000n);
 
     let bobBalanceWatchResult = false;
     const bobBalanceWatchCancel = await bob.watchBalance(
@@ -209,9 +199,12 @@ describe("Wallet should function in the browser", () => {
       value: 100000n,
     });
 
+    const txResult = await waitTx;
+    expect(txResult.balance).toBeGreaterThan(0n);
+    expect(txResult.transactionInfo!.hash.length).toBe(64);
+    expect(await waitBalance).toBeGreaterThan(0n);
+
     await new Promise((resolve) => setTimeout(resolve, 5000));
-    expect(waitTxResult).toBe(true);
-    expect(waitBalanceResult).toBe(true);
     expect(bobBalanceWatchResult).toBe(true);
   });
 

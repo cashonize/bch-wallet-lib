@@ -84,11 +84,7 @@ export type {
   SendResponse,
 } from "./wallet/model.js";
 // transaction utilities
-export {
-  decodeTransaction,
-  type DecodeTransactionOptions,
-  getTransactionHash,
-} from "./wallet/Util.js";
+export { getTransactionHash } from "./util/transaction.js";
 export {
   RegTestWatchWallet,
   TestNetWatchWallet,

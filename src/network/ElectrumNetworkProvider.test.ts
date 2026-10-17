@@ -1,9 +1,6 @@
 import { countRequests } from "#test/countRequests.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { NetworkType } from "../enum.js";
-import { decodeTransaction } from "../wallet/Util.js";
 import { RegTestWallet } from "../wallet/Wif.js";
-import { getNetworkProvider } from "./default.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 import { createMockProvider } from "./MockNetworkProvider.js";
 
@@ -90,12 +87,4 @@ test("the input values of a transaction are read at most 10 at a time", async ()
   );
   expect(counts.byMethod["blockchain.transaction.get"]).toBe(13);
   expect(counts.maxInFlight).toBe(10);
-
-  // the same through decodeTransaction, which reads them on the global provider
-  const global = getNetworkProvider(NetworkType.Regtest);
-  const decodeCounts = countRequests(global as ElectrumNetworkProvider);
-  const decoded = await decodeTransaction(txId!, true, NetworkType.Regtest);
-  decodeCounts.restore();
-  expect(decoded.vin.length).toBe(12);
-  expect(decodeCounts.counts.maxInFlight).toBe(10);
 });

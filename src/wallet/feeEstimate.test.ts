@@ -1,6 +1,11 @@
 import { binToHex, decodeTransaction, hexToBin } from "@bitauth/libauth";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
+import {
+  feeAbsolute,
+  feeFixedPerByte,
+  FeeFn,
+} from "../transaction/coin-control/index.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   SendRequest,
@@ -243,5 +248,32 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     expect(outputValues(response.transaction)).toEqual([4950n]);
     const { paid } = await feeCheck(bob, response.transaction, coins);
     expect(paid).toBe(6000n - 4950n);
+  });
+
+  test("a fee strategy above the relay rate is funded by the selection", async () => {
+    const { alice, bob, coins } = await fund(10, 1000n);
+    const send = (fee: FeeFn) =>
+      bob.send(new SendRequest({ cashaddr: alice.cashaddr!, value: 3000n }), {
+        fee,
+        broadcast: false,
+      });
+    const paidOf = async (transactionHex: string) =>
+      (await feeCheck(bob, transactionHex, coins)).paid;
+
+    // four coins cover the relay-rate estimate, but at 2 sat/byte their 608 bytes ask for 1216
+    // sats; a check against the estimate alone built them paying 1000
+    const perByte = await send(feeFixedPerByte(2));
+    const perByteSize = perByte.transaction.length / 2;
+    expect(decode(perByte.transaction).inputs.length).toBe(6);
+    expect(await paidOf(perByte.transaction)).toBe(BigInt(perByteSize * 2));
+    expect(outputValues(perByte.transaction)).toEqual([
+      3000n,
+      6000n - 3000n - BigInt(perByteSize * 2),
+    ]);
+
+    const absolute = await send(feeAbsolute(4000n));
+    expect(decode(absolute.transaction).inputs.length).toBe(8);
+    expect(await paidOf(absolute.transaction)).toBe(4000n);
+    expect(outputValues(absolute.transaction)).toEqual([3000n, 1000n]);
   });
 });

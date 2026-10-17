@@ -23,7 +23,8 @@ import {
   TokenSendRequest,
 } from "./model.js";
 import { WatchWallet } from "./Watch.js";
-import { networkPrefixError } from "../util/networkPrefixError.js";
+import { networkPrefixError, walletIdKind } from "../util/walletIdError.js";
+import { InvalidWalletIdError } from "./errors.js";
 //#endregion Imports
 
 export interface WalletOptions {
@@ -40,6 +41,16 @@ export interface WalletOptions {
 /**
  * Class to manage a bitcoin cash wallet.
  */
+// what a walletId of each type this class loads lacks when its value part is empty; a named
+// id's empty name is fromNamedId's to refuse
+const missingValueMessages: Record<string, string> = {
+  [WalletTypeEnum.Wif]: "refusing to create wallet from empty WIF",
+  [WalletTypeEnum.PrivateKey]:
+    "refusing to create wallet from empty private key",
+  [WalletTypeEnum.Seed]: "refusing to create wallet from empty mnemonic",
+  [WalletTypeEnum.Watch]: "address is required to create a watch-only wallet",
+};
+
 export class Wallet extends WatchWallet {
   readonly derivationPath: string = Config.DefaultParentDerivationPath + "/0/0";
   readonly mnemonic!: string;
@@ -202,7 +213,14 @@ export class Wallet extends WatchWallet {
       walletId.split(":");
 
     if (this.network !== networkGiven) {
-      throw networkPrefixError(networkGiven, this.network);
+      throw networkPrefixError(walletType, networkGiven, this.network);
+    }
+
+    if (!arg1 && Object.hasOwn(missingValueMessages, walletType)) {
+      throw new InvalidWalletIdError(missingValueMessages[walletType], {
+        kind: walletType,
+        reason: "missing-value",
+      });
     }
 
     // "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6"
@@ -234,7 +252,10 @@ export class Wallet extends WatchWallet {
         return this.fromSeed(arg1);
 
       default:
-        throw Error(`Unknown wallet type '${walletType}'`);
+        throw new InvalidWalletIdError(`Unknown wallet type '${walletType}'`, {
+          kind: walletIdKind(walletType),
+          reason: "kind",
+        });
     }
   };
 

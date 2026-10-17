@@ -58,6 +58,7 @@ test("the entry exports the utilities Cashonize uses and none of the removed one
     "convert",
     "decodeHeader",
     "decodeWif",
+    "InvalidWalletIdError",
     "InvalidWifError",
     "ExchangeRate",
     "getAddrsByXpubKey",

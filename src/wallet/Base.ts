@@ -32,6 +32,7 @@ import { WalletTypeEnum } from "./enum.js";
 import {
   InsufficientFundsError,
   InvalidRequestError,
+  InvalidWalletIdError,
   UtxoNotAvailableError,
 } from "./errors.js";
 import {
@@ -302,9 +303,16 @@ export class BaseWallet {
    * accepted only when it is the one of the wallet's network, the only one named() reads.
    */
   protected fromNamedId(name: string, dbName?: string): Promise<this> {
+    if (!name) {
+      throw new InvalidWalletIdError(
+        "Named wallets must have a non-empty name",
+        { kind: WalletTypeEnum.Named, reason: "missing-value" },
+      );
+    }
     if (dbName && dbName !== prefixFromNetworkMap[this.network]) {
-      throw Error(
+      throw new InvalidWalletIdError(
         `a named walletId of a ${this.network} wallet can only name the database ${prefixFromNetworkMap[this.network]}`,
+        { kind: WalletTypeEnum.Named, reason: "database" },
       );
     }
     return this.named(name);

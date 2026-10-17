@@ -15,7 +15,7 @@ import { ElectrumRawTransaction } from "../network/interface.js";
 import { decodeWif } from "../util/decodeWif.js";
 import { delay } from "../util/delay.js";
 import { convert } from "../util/index.js";
-import { InvalidWifError } from "./errors.js";
+import { InvalidWalletIdError, InvalidWifError } from "./errors.js";
 import { CancelFn } from "./interface.js";
 import {
   OpReturnData,
@@ -231,6 +231,99 @@ describe(`Test creation of wallet from walletId`, () => {
         expect(error).toBeInstanceOf(Error);
         expect(error.message).toBe(message);
       }
+    });
+
+    test("A walletId that cannot be read throws InvalidWalletIdError with its kind and reason", async () => {
+      const wif = "KysvoRyDkxQycBGj49K8oC3minAfoXnVmkcgx6UsZx3g2VvyGCAa";
+      const cases: [
+        () => Promise<unknown>,
+        { kind: string | undefined; reason: string },
+      ][] = [
+        [() => Wallet.fromId(`wif:${wif}`), { kind: "wif", reason: "network" }],
+        [
+          () => Wallet.fromId(`wif:testnet:${wif}`),
+          { kind: "wif", reason: "network" },
+        ],
+        // a bare WIF has no type part to report
+        [() => Wallet.fromId(wif), { kind: undefined, reason: "network" }],
+        [() => HDWallet.fromId(`hd:${wif}`), { kind: "hd", reason: "network" }],
+        [
+          async () => (new WatchWallet() as any).fromId(wif),
+          { kind: undefined, reason: "network" },
+        ],
+        [
+          () => Wallet.fromId(`hd:mainnet:${wif}`),
+          { kind: "hd", reason: "kind" },
+        ],
+        [
+          () => Wallet.fromId(`q2k:mainnet:${wif}`),
+          { kind: undefined, reason: "kind" },
+        ],
+        [
+          () => HDWallet.fromId(`wif:mainnet:${wif}`),
+          { kind: "wif", reason: "kind" },
+        ],
+        [
+          async () => (new WatchWallet() as any).fromId(`wif:mainnet:${wif}`),
+          { kind: "wif", reason: "kind" },
+        ],
+        [
+          () => Wallet.fromId("wif:mainnet:"),
+          { kind: "wif", reason: "missing-value" },
+        ],
+        [
+          () => Wallet.fromId("privkey:mainnet"),
+          { kind: "privkey", reason: "missing-value" },
+        ],
+        [
+          () => Wallet.fromId("seed:mainnet:"),
+          { kind: "seed", reason: "missing-value" },
+        ],
+        [
+          () => Wallet.fromId("watch:mainnet:"),
+          { kind: "watch", reason: "missing-value" },
+        ],
+        [
+          async () => (new WatchWallet() as any).fromId("watch:mainnet"),
+          { kind: "watch", reason: "missing-value" },
+        ],
+        [
+          () => Wallet.fromId("named:mainnet:"),
+          { kind: "named", reason: "missing-value" },
+        ],
+        [
+          () => HDWallet.fromId("named:mainnet"),
+          { kind: "named", reason: "missing-value" },
+        ],
+        [
+          () => HDWallet.fromId("hd:mainnet::0:0"),
+          { kind: "hd", reason: "missing-value" },
+        ],
+        [
+          () => Wallet.fromId("named:mainnet:wallet_1:bchtest"),
+          { kind: "named", reason: "database" },
+        ],
+        [
+          () => HDWallet.fromId("named:mainnet:wallet_1:bchtest"),
+          { kind: "named", reason: "database" },
+        ],
+      ];
+      for (const [fn, fields] of cases) {
+        const error: unknown = await fn().then(
+          () => Error("expected an error"),
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(InvalidWalletIdError);
+        expect(error).toMatchObject({
+          name: "InvalidWalletIdError",
+          ...fields,
+        });
+        expect((error as Error).message).not.toContain(wif);
+      }
+      // what the wallet makes of a key is the WIF's to say, not the id's
+      await expect(
+        TestNetWallet.fromId(`wif:testnet:${wif}`),
+      ).rejects.toBeInstanceOf(InvalidWifError);
     });
 
     test("Expect Error passing hd wallet", async () => {

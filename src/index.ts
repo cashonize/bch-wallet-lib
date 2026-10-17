@@ -59,6 +59,7 @@ export {
 export {
   InsufficientFundsError,
   InvalidRequestError,
+  InvalidWalletIdError,
   InvalidWifError,
   TokenBurnError,
   UtxoNotAvailableError,

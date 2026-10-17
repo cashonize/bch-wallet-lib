@@ -72,8 +72,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
    - The minting utxo and its return address as options on `tokenMint`.
    - The outpoint of each requested output in `SendResponse`.
 5. **Public HD address info.** Add `addressInfo(branch, index)` returning `{address, tokenAddress, publicKeyHash, used, txCount, utxos}`, and make `getUsedAddresses(branch)` public. Also derive addresses on untracked branches, such as the defi chain 7, without counting them in the balance. Cashonize reads `walletCache` and the raw history maps directly (`addressRows.ts`, `hdAddresses.vue`, `hdAddressSelect.vue`, `wizSigning.ts`, `cauldronPools.ts`).
-6. **Errors that are still plain `Error`s or not `Error`s.**
-   - Wallet id parsing and the relay-fee settings throw plain `Error`s.
+6. Done in round 3: typed errors for a `utxoIds` coin not in the wallet, the IndexedDB cache, walletIds and WIFs (the WIF rows are in section 4). The relay-fee setting errors stay plain `Error`s: they are programmer errors.
 7. **Storage helpers that don't stop at one bad row.** `pruneWalletCaches` throws "Not a stored wallet id" on one unreadable stored id, which blocks every later prune; skip such ids (Cashonize's old prune did). `getNamedWalletId` returns `''` for an empty stored id; return `undefined`.
 8. **The burn allowance (round-2 final review, medium).** The coin-control hooks are removed, so `outputOrdering` not being held to a permutation is moot, and `tokenBurns` is internal to the token operations. What stays open: the allowance `tokenBurn` computes is too wide, listing an NFT the burn keeps as burnable and not counting NFTs.
 9. **History.** Let `getRawTransactions` and `getHeaders` fail per item; one failure still rejects the whole call. An HD wallet's address discovery still subscribes, and fetches for, every address of a gap extension at once.

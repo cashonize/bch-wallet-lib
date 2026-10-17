@@ -34,13 +34,14 @@ import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
+import { InvalidWalletIdError } from "./errors.js";
 import {
   CancelFn,
   SendRequestOptionsI,
   WalletFactoryOptions,
 } from "./interface.js";
 import { OpReturnData, SendRequest, TokenSendRequest } from "./model.js";
-import { networkPrefixError } from "../util/networkPrefixError.js";
+import { networkPrefixError, walletTypeError } from "../util/walletIdError.js";
 
 export const GAP_SIZE = 20;
 
@@ -829,7 +830,7 @@ export class HDWallet extends BaseWallet {
       walletId.split(":");
 
     if (this.network != networkGiven) {
-      throw networkPrefixError(networkGiven, this.network);
+      throw networkPrefixError(walletType, networkGiven, this.network);
     }
 
     if (walletType === WalletTypeEnum.Named) {
@@ -838,13 +839,14 @@ export class HDWallet extends BaseWallet {
     }
 
     if (walletType !== WalletTypeEnum.Hd) {
-      throw Error(
-        `fromId called on a ${walletType} wallet, expected a ${WalletTypeEnum.Hd} wallet`,
-      );
+      throw walletTypeError(walletType, WalletTypeEnum.Hd);
     }
 
     if (!arg1) {
-      throw Error("refusing to create wallet from a walletId without a key");
+      throw new InvalidWalletIdError(
+        "refusing to create wallet from a walletId without a key",
+        { kind: walletType, reason: "missing-value" },
+      );
     }
 
     // the whole prefix: a Czech mnemonic can start with "zprvu"

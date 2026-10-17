@@ -22,8 +22,9 @@ import { toCashaddr, toTokenaddr } from "../util/deriveCashaddr.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
+import { InvalidWalletIdError } from "./errors.js";
 import { CancelFn } from "./interface.js";
-import { networkPrefixError } from "../util/networkPrefixError.js";
+import { networkPrefixError, walletTypeError } from "../util/walletIdError.js";
 import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 
@@ -442,12 +443,17 @@ export class WatchWallet extends BaseWallet {
 
     // checked first: a walletType is only quoted back once the id has a network part
     if (this.network != networkGiven) {
-      throw networkPrefixError(networkGiven, this.network);
+      throw networkPrefixError(walletType, networkGiven, this.network);
     }
 
     if (walletType !== WalletTypeEnum.Watch) {
-      throw Error(
-        `fromId called on a ${walletType} wallet, expected a ${WalletTypeEnum.Watch} wallet`,
+      throw walletTypeError(walletType, WalletTypeEnum.Watch);
+    }
+
+    if (!arg1) {
+      throw new InvalidWalletIdError(
+        "address is required to create a watch-only wallet",
+        { kind: walletType, reason: "missing-value" },
       );
     }
 

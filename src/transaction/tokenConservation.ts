@@ -6,7 +6,7 @@ import { TokenBurnError } from "../wallet/errors.js";
 export interface TokenBurnAllowance {
   /** per category, the fungible amount that may be destroyed */
   fungible?: Record<string, bigint>;
-  /** NFTs that may be destroyed, any number of each */
+  /** NFTs that may be destroyed, one per entry: list an NFT twice to destroy two of it */
   nfts?: Array<{
     category: string;
     capability: NFTCapability;
@@ -93,6 +93,9 @@ export function checkTokenConservation(
     const mintingSpent = inputNfts.some(
       (nft) => nft.capability === NFTCapability.minting,
     );
+    const burnable = (allowed.nfts ?? []).filter(
+      (val) => val.category === category,
+    );
     for (const nft of unmatched) {
       if (
         nft.capability === NFTCapability.minting &&
@@ -107,13 +110,15 @@ export function checkTokenConservation(
       ) {
         continue;
       }
-      const burnAllowed = allowed.nfts?.some(
+      const burnIndex = burnable.findIndex(
         (val) =>
-          val.category === category &&
           val.capability === nft.capability &&
           val.commitment === nft.commitment,
       );
-      if (burnAllowed) continue;
+      if (burnIndex !== -1) {
+        burnable.splice(burnIndex, 1);
+        continue;
+      }
       throw new TokenBurnError(
         `The transaction would burn a ${nft.capability} NFT of category ${category} with commitment "${nft.commitment}"`,
         {

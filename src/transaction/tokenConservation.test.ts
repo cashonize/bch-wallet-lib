@@ -162,6 +162,21 @@ describe("checkTokenConservation", () => {
     expect(error.nft).toEqual(immutable("02"));
   });
 
+  test("lets an allowed NFT burn destroy one NFT, not every copy of it", () => {
+    const inputs = [input(0n, immutable("01")), input(0n, immutable("01"))];
+    const allowed = { nfts: [{ category, ...immutable("01") }] };
+    expect(() =>
+      checkTokenConservation(inputs, [output(0n, immutable("01"))], allowed),
+    ).not.toThrow();
+    const error = burnError(() => checkTokenConservation(inputs, [], allowed));
+    expect(error.nft).toEqual(immutable("01"));
+    expect(() =>
+      checkTokenConservation(inputs, [], {
+        nfts: [allowed.nfts[0], allowed.nfts[0]],
+      }),
+    ).not.toThrow();
+  });
+
   test("leaves tokens created from nothing to the consensus check", () => {
     expect(() =>
       checkTokenConservation([], [output(10n, immutable("01"), other)], {}),

@@ -1,6 +1,6 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { getTokenBalance, getTokenUtxos } from "#test/balances.js";
-import { NFTCapability } from "../interface.js";
+import { NFTCapability, Utxo } from "../interface.js";
 import { TokenBurnError } from "./errors.js";
 import {
   OpReturnData,
@@ -12,9 +12,11 @@ import {
 import { RegTestWallet } from "./Wif.js";
 
 // Stands in for a regression in the change: the token outputs going back to this address are
-// lost from the transaction the wallet builds, after the change was computed.
+// lost from the transaction the wallet builds, after the change was computed. `extraInputs`
+// stands in for one in the coin choice: the selection adds these coins to what it picked.
 const dropped = vi.hoisted(() => ({
   tokenaddr: undefined as string | undefined,
+  extraInputs: [] as Utxo[],
 }));
 vi.mock("../transaction/Wif.js", async (importOriginal) => {
   const original =
@@ -30,6 +32,12 @@ vi.mock("../transaction/Wif.js", async (importOriginal) => {
     );
   return {
     ...original,
+    getSuitableUtxos: async (
+      ...args: Parameters<typeof original.getSuitableUtxos>
+    ) => [
+      ...(await original.getSuitableUtxos(...args)),
+      ...dropped.extraInputs,
+    ],
     buildEncodedTransaction: (
       args: Parameters<typeof original.buildEncodedTransaction>[0],
     ) =>
@@ -49,6 +57,7 @@ afterAll(async () => {
 });
 afterEach(() => {
   dropped.tokenaddr = undefined;
+  dropped.extraInputs = [];
 });
 
 const fundedWallet = async () => {
@@ -153,6 +162,33 @@ describe("a built transaction that burns tokens is refused", () => {
     expect(error.amount).toBe(90n);
     // the caller can still turn the check off
     await expect(burn({ checkTokenQuantities: false })).resolves.toBeDefined();
+  });
+
+  test("a burn of one NFT that would destroy an identical one too", async () => {
+    const wallet = await fundedWallet();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const nft = { capability: NFTCapability.none, commitment: "01" };
+    const category = (await wallet.tokenGenesis({ nft: minting }))
+      .categories![0];
+    await wallet.tokenMint([
+      new TokenMintRequest({ category, nft }),
+      new TokenMintRequest({ category, nft }),
+    ]);
+    const coins = (await getTokenUtxos(wallet, category)).filter(
+      (utxo) => utxo.token!.nft!.capability === NFTCapability.none,
+    );
+    expect(coins).toHaveLength(2);
+    // the burn spends the first coin; the selection adds the second
+    dropped.extraInputs = [coins[1]];
+
+    const error = await burnError(
+      wallet.tokenBurn(new TokenBurnRequest({ category, nft }), "", {
+        excludeUtxoIds: [coins[1]],
+        broadcast: false,
+      }),
+    );
+    expect(error.category).toBe(category);
+    expect(error.nft).toEqual(nft);
   });
 });
 

@@ -2324,4 +2324,128 @@ describe("NFT requests backed by a minting NFT", () => {
       .sort();
     expect(commitments).toEqual(["", "01", "bb"]);
   });
+
+  test("a new mutable NFT before the sent minting NFT does not spend a mutable NFT", async () => {
+    const { bob, category } = await oneBaton();
+    await bob.tokenMint(
+      new TokenMintRequest({
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "01" },
+      }),
+    );
+    const mutableCoin = (await bob.getTokenUtxos(category)).find(
+      (utxo) => utxo.token!.nft?.capability === NFTCapability.mutable,
+    )!;
+
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "bb" },
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "" },
+      }),
+    ]);
+
+    expect(inputOutpoints(response.transaction)).not.toContain(
+      outpoint(mutableCoin),
+    );
+    const commitments = (await bob.getTokenUtxos(category))
+      .map((utxo) => utxo.token!.nft!.commitment)
+      .sort();
+    expect(commitments).toEqual(["", "01", "bb"]);
+  });
+
+  test("a mutable NFT spent for its fungible tokens next to a sent minting NFT comes back as change", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    const carol = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+    const genesis = await bob.tokenGenesis({
+      amount: 1000n,
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    const category = genesis.categories![0];
+    await bob.tokenMint(
+      new TokenMintRequest({
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "01" },
+      }),
+    );
+    await bob.send([
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        amount: 500n,
+        nft: { capability: NFTCapability.minting, commitment: "" },
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        amount: 500n,
+        nft: { capability: NFTCapability.mutable, commitment: "01" },
+      }),
+    ]);
+    const mutableCoin = (await bob.getTokenUtxos(category)).find(
+      (utxo) => utxo.token!.nft?.capability === NFTCapability.mutable,
+    )!;
+    expect(mutableCoin.token!.amount).toBe(500n);
+
+    // the baton's 500 fall short of the 600, so the mutable NFT is spent for its fungible tokens
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "" },
+      }),
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "bb" },
+      }),
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        amount: 600n,
+      }),
+    ]);
+
+    expect(inputOutpoints(response.transaction)).toContain(
+      outpoint(mutableCoin),
+    );
+    const bobCoins = (await bob.getTokenUtxos(category))
+      .map((utxo) => ({
+        nft: utxo.token!.nft,
+        amount: utxo.token!.amount,
+      }))
+      .sort((a, b) =>
+        (a.nft?.capability ?? "").localeCompare(b.nft?.capability ?? ""),
+      );
+    expect(bobCoins).toEqual([
+      {
+        nft: { capability: NFTCapability.minting, commitment: "" },
+        amount: 0n,
+      },
+      {
+        nft: { capability: NFTCapability.mutable, commitment: "01" },
+        amount: 400n,
+      },
+    ]);
+    const carolCoins = (await carol.getTokenUtxos(category))
+      .map((utxo) => ({
+        nft: utxo.token!.nft,
+        amount: utxo.token!.amount,
+      }))
+      .sort((a, b) => Number(!!a.nft) - Number(!!b.nft));
+    expect(carolCoins).toEqual([
+      { nft: undefined, amount: 600n },
+      {
+        nft: { capability: NFTCapability.mutable, commitment: "bb" },
+        amount: 0n,
+      },
+    ]);
+  });
 });

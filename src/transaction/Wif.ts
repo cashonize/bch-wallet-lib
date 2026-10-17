@@ -346,9 +346,17 @@ export async function getSuitableUtxos(
     (sum, u) => sum + BigInt(u.satoshis),
     BigInt(0),
   );
-  const tokenRequests = requests.filter(
+  const allTokenRequests = requests.filter(
     (val) => val instanceof TokenSendRequest,
   ) as TokenSendRequest[];
+  // mutable requests go last, so that a minting coin any other request spends is selected by the
+  // time a new mutable NFT looks for one to back it, whatever order the caller gave
+  const isMutableRequest = (request: TokenSendRequest) =>
+    request.nft?.capability === NFTCapability.mutable;
+  const tokenRequests = [
+    ...allTokenRequests.filter((request) => !isMutableRequest(request)),
+    ...allTokenRequests.filter(isMutableRequest),
+  ];
 
   const usedIndices = new Set<number>();
 
@@ -672,11 +680,25 @@ export function getTokenChangeRequests(
       unmatched.push(request);
     }
   }
-  // a minting or mutable NFT sent with another commitment is a minting or mutable input changed
+  // a minting or mutable NFT sent with another commitment is a minting or mutable input changed,
+  // except a mutable NFT of a category whose minting input is spent: that input backs it, and the
+  // mutable inputs come back as they were
+  const mintingSpent = (category: string) =>
+    tokenInputs.some(
+      (val) =>
+        val.token!.category === category &&
+        val.token!.nft?.capability === NFTCapability.minting,
+    );
   for (const request of unmatched) {
     if (
       request.nft?.capability !== NFTCapability.minting &&
       request.nft?.capability !== NFTCapability.mutable
+    ) {
+      continue;
+    }
+    if (
+      request.nft.capability === NFTCapability.mutable &&
+      mintingSpent(request.category)
     ) {
       continue;
     }

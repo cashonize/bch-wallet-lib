@@ -127,7 +127,7 @@ describe("a subscription that cannot be made", () => {
     const address = await newAddress();
     await fund(address, 5_000n);
     refuse.address = true;
-    const wallet = await RegTestWatchWallet.watchOnly(address);
+    const wallet = await new RegTestWatchWallet()["watchOnly"](address);
     await expect(wallet.getUtxos()).rejects.toThrow("subscription refused");
 
     refuse.address = false;
@@ -243,7 +243,7 @@ describe("a single-address wallet's fetch that fails", () => {
     const address = await newAddress();
     await fund(address, 5_000n);
     refuse.fetch = true;
-    const wallet = await RegTestWatchWallet.watchOnly(address);
+    const wallet = await new RegTestWatchWallet()["watchOnly"](address);
     await expect(wallet.getBalance()).rejects.toThrow("connection lost");
     // the failed watch is ended, not left to be notified
     await delay(20);

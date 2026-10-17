@@ -147,7 +147,7 @@ describe("MockNetworkProvider", () => {
       const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
       await provider.addUtxo(address, randomUtxo({ satoshis: 100000n }));
 
-      const wallet = await RegTestWallet.watchOnly(address);
+      const wallet = await RegTestWallet.fromId(`watch:regtest:${address}`);
       const balance = await wallet.getBalance();
       expect(balance).toBe(100000n);
 

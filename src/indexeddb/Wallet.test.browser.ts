@@ -70,8 +70,8 @@ describe("Wallet should function in the browser", () => {
 
   test("Should return watch testnet balance", async () => {
     if (process.env.ALICE_TESTNET_ADDRESS) {
-      const alice = await TestNetWallet.watchOnly(
-        process.env.ALICE_TESTNET_ADDRESS,
+      const alice = await TestNetWallet.fromId(
+        `watch:testnet:${process.env.ALICE_TESTNET_ADDRESS}`,
       );
       const result = await alice.getBalance();
       expect(result).toBeGreaterThan(0n);
@@ -94,8 +94,8 @@ describe("Wallet should function in the browser", () => {
 
   test("Should return testnet balance in usd", async () => {
     if (process.env.ALICE_TESTNET_ADDRESS) {
-      const alice = await TestNetWallet.watchOnly(
-        process.env.ALICE_TESTNET_ADDRESS,
+      const alice = await TestNetWallet.fromId(
+        `watch:testnet:${process.env.ALICE_TESTNET_ADDRESS}`,
       );
       const result = await alice.getBalance();
       expect(result).toBeGreaterThan(0);

@@ -1,12 +1,10 @@
 import {
   assertSuccess,
-  binToHex,
   CashAddressNetworkPrefix,
   decodeCashAddress,
   decodeCashAddressFormatWithoutPrefix,
   encodeCashAddress,
   hash160,
-  secp256k1,
 } from "@bitauth/libauth";
 import {
   SingleAddressWalletCache,
@@ -22,7 +20,6 @@ import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
 import { TxI, Utxo } from "../interface.js";
 import { toCashaddr, toTokenaddr } from "../util/deriveCashaddr.js";
-import { derivePrefix } from "../util/derivePublicKeyHash.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
@@ -33,7 +30,6 @@ import { runCallback } from "../util/watch.js";
 
 export interface WatchWalletOptions {
   name?: string;
-  publicKey?: Uint8Array;
   publicKeyCompressed?: Uint8Array;
   publicKeyHash?: Uint8Array;
   address?: string;
@@ -45,7 +41,6 @@ export interface WatchWalletOptions {
 export class WatchWallet extends BaseWallet {
   declare readonly walletCache: WalletCacheI;
   readonly publicKeyCompressed?: Uint8Array;
-  readonly publicKey?: Uint8Array;
   readonly publicKeyHash!: Uint8Array;
   readonly cashaddr!: string;
   readonly tokenaddr!: string;
@@ -84,38 +79,17 @@ export class WatchWallet extends BaseWallet {
     this.walletType = walletType;
   }
 
-  /// Initialize the watch-only wallet given the options - publicKey variations
-  /// This internal method is called by the various static constructors
+  /// Initialize the watch-only wallet given the options - public key or address variations
+  /// This internal method is called by watchOnly and by Wallet's initialize
   protected async initialize({
     name = "",
-    publicKey,
     publicKeyCompressed,
     publicKeyHash,
     address,
   }: WatchWalletOptions = {}): Promise<this> {
-    if (publicKey?.length) {
-      // @ts-ignore
-      this.publicKey = publicKey;
-
-      if (!publicKeyCompressed) {
-        publicKeyCompressed = assertSuccess(
-          secp256k1.compressPublicKey(publicKey),
-        );
-      }
-    }
-
     if (publicKeyCompressed?.length) {
       // @ts-ignore
       this.publicKeyCompressed = publicKeyCompressed;
-
-      if (!publicKey) {
-        publicKey = assertSuccess(
-          secp256k1.uncompressPublicKey(publicKeyCompressed),
-        );
-        // @ts-ignore
-        this.publicKey = publicKey;
-      }
-
       publicKeyHash = hash160(publicKeyCompressed);
     }
 
@@ -400,35 +374,6 @@ export class WatchWallet extends BaseWallet {
     return this.tokenaddr;
   }
 
-  // returns the public key hash for an address
-  public getPublicKeyHash(hex = false): string | Uint8Array {
-    return hex ? binToHex(this.publicKeyHash) : this.publicKeyHash;
-  }
-
-  // returns the public key hash for an address
-  public getPublicKey(hex = false): string | Uint8Array {
-    if (this.publicKey) {
-      return hex ? binToHex(this.publicKey) : this.publicKey;
-    } else {
-      throw Error(
-        "The public key for this wallet is not known, perhaps the wallet was created to watch the *hash* of a public key? i.e. a cashaddress.",
-      );
-    }
-  }
-
-  // returns the public key hash for an address
-  public getPublicKeyCompressed(hex = false): string | Uint8Array {
-    if (this.publicKeyCompressed) {
-      return hex
-        ? binToHex(this.publicKeyCompressed)
-        : this.publicKeyCompressed;
-    } else {
-      throw Error(
-        "The compressed public key for this wallet is not known, perhaps the wallet was created to watch the *hash* of a public key? i.e. a cashaddress.",
-      );
-    }
-  }
-
   /**
    * utxos Get unspent outputs for the wallet
    *
@@ -524,95 +469,6 @@ export class WatchWallet extends BaseWallet {
     this.walletType = WalletTypeEnum.Watch;
 
     return this.initialize({ address, name: this.name });
-  }
-
-  /**
-   * watchOnly - create a watch-only wallet
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param address   cashaddress, token aware cashaddress of a wallet
-   *
-   * @returns instantiated wallet
-   */
-  public static async watchOnly<T extends typeof WatchWallet>(
-    this: T,
-    address: string,
-  ) {
-    if (!address?.length)
-      throw Error("address is required to create a watch-only wallet");
-
-    return new this().watchOnly(address) as InstanceType<T>;
-  }
-
-  /**
-   * fromCashaddr - create a watch-only wallet in the network derived from the address
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param address   cashaddress of a wallet
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromCashaddr<T extends typeof WatchWallet>(
-    this: T,
-    address: string,
-  ): Promise<InstanceType<T>> {
-    if (!address?.length)
-      throw Error("address is required to create a watch-only wallet");
-
-    const prefix = derivePrefix(address);
-    const networkType = networkPrefixMap[prefix] as NetworkType;
-    return new this("", networkType).watchOnly(address) as InstanceType<T>;
-  }
-
-  /**
-   * fromTokenaddr - create a watch-only wallet in the network derived from the address
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param address   token aware cashaddress of a wallet
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromTokenaddr<T extends typeof WatchWallet>(
-    this: T,
-    address: string,
-  ): Promise<InstanceType<T>> {
-    if (!address?.length)
-      throw Error("address is required to create a watch-only wallet");
-
-    const prefix = derivePrefix(address);
-    const networkType = networkPrefixMap[prefix] as NetworkType;
-    return new this("", networkType).watchOnly(address) as InstanceType<T>;
-  }
-
-  /**
-   * fromPublicKey - create a watch-only wallet in the network derived from the compressed or uncompressed public key
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param publicKey   compressed or uncompressed public key
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromPublicKey<T extends typeof WatchWallet>(
-    this: T,
-    publicKey: Uint8Array,
-  ): Promise<InstanceType<T>> {
-    this.walletType = WalletTypeEnum.Watch;
-
-    return new this(
-      "",
-      networkPrefixMap[this.networkPrefix] as NetworkType,
-    ).initialize({
-      publicKey: publicKey.length === 33 ? undefined : publicKey,
-      publicKeyCompressed: publicKey.length === 33 ? publicKey : undefined,
-    }) as InstanceType<T>;
   }
 }
 

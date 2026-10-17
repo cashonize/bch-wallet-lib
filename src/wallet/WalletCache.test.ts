@@ -39,7 +39,7 @@ describe("Wallet cache initialization", () => {
   });
 
   test("Watch wallet should have walletCache without private key", async () => {
-    const wallet = await RegTestWatchWallet.watchOnly(
+    const wallet = await new RegTestWatchWallet()["watchOnly"](
       "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0",
     );
     expect(wallet.walletCache).toBeDefined();
@@ -65,7 +65,7 @@ describe("single-address wallet cache", () => {
     const wallets = [
       funded,
       await RegTestWallet.newRandom(),
-      await RegTestWatchWallet.watchOnly(funded.cashaddr),
+      await new RegTestWatchWallet()["watchOnly"](funded.cashaddr),
     ];
     try {
       for (const wallet of wallets) {

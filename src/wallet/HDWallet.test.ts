@@ -165,7 +165,7 @@ describe("HDWallet", () => {
     // it threw on single-address and watch-only wallets
     const single = await RegTestWallet.newRandom();
     expect(single.getTokenChangeAddress()).toBe(single.tokenaddr);
-    const watch = await RegTestWatchWallet.watchOnly(single.cashaddr);
+    const watch = await new RegTestWatchWallet()["watchOnly"](single.cashaddr);
     expect(watch.getTokenChangeAddress()).toBe(single.tokenaddr);
   });
 
@@ -542,23 +542,31 @@ describe("HDWallet", () => {
 
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getDepositAddress(0))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getDepositAddress(0)}`,
+        )
       ).getBalance(),
     ).toBe(100000n);
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getDepositAddress(1))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getDepositAddress(1)}`,
+        )
       ).getBalance(),
     ).toBe(100000n);
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getDepositAddress(2))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getDepositAddress(2)}`,
+        )
       ).getBalance(),
     ).toBe(0n);
 
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getChangeAddress(0))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getChangeAddress(0)}`,
+        )
       ).getBalance(),
     ).toBe(0n);
 
@@ -572,23 +580,31 @@ describe("HDWallet", () => {
 
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getDepositAddress(0))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getDepositAddress(0)}`,
+        )
       ).getBalance(),
     ).toBe(0n);
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getDepositAddress(1))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getDepositAddress(1)}`,
+        )
       ).getBalance(),
     ).toBe(0n);
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getDepositAddress(2))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getDepositAddress(2)}`,
+        )
       ).getBalance(),
     ).toBe(0n);
 
     expect(
       await (
-        await RegTestWallet.watchOnly(hdWallet.getChangeAddress(0))
+        await RegTestWallet.fromId(
+          `watch:regtest:${hdWallet.getChangeAddress(0)}`,
+        )
       ).getBalance(),
     ).toBeGreaterThan(50000n - 1000n);
 

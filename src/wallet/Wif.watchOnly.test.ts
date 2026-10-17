@@ -21,13 +21,13 @@ describe(`Test creation of wallet from walletId`, () => {
     expect(w.cashaddr!).toBe(ADDRESS);
     expect(w.cashaddr!).toBe(ADDRESS);
     expect(w.tokenaddr!).toBe(ADDRESS_TOKEN);
-    let w2 = await RegTestWallet.watchOnly(w.cashaddr!);
+    let w2 = await RegTestWallet.fromId(`watch:regtest:${w.cashaddr!}`);
 
     expect(w2.cashaddr!).toBe(ADDRESS);
     expect(w2.cashaddr!).toBe(ADDRESS);
     expect(w2.tokenaddr!).toBe(ADDRESS_TOKEN);
 
-    let w3 = await RegTestWallet.watchOnly(ADDRESS_TOKEN);
+    let w3 = await RegTestWallet.fromId(`watch:regtest:${ADDRESS_TOKEN}`);
     expect(w3.cashaddr!).toBe(ADDRESS);
     expect(w3.cashaddr!).toBe(ADDRESS);
     expect(w3.tokenaddr!).toBe(ADDRESS_TOKEN);
@@ -37,8 +37,8 @@ describe(`Test creation of wallet from walletId`, () => {
     const ADDRESS =
       "bitcoincash:pvykylj7uk385669fjse37r2eknx35ngaalx805q2hul62lmx2fq2v5dx6g8w";
 
-    let w = await Wallet.watchOnly(
-      "bitcoincash:pvykylj7uk385669fjse37r2eknx35ngaalx805q2hul62lmx2fq2v5dx6g8w",
+    let w = await Wallet.fromId(
+      `watch:mainnet:bitcoincash:pvykylj7uk385669fjse37r2eknx35ngaalx805q2hul62lmx2fq2v5dx6g8w`,
     );
 
     expect(w.cashaddr!.startsWith("bitcoincash:")).toBeTruthy();
@@ -48,8 +48,8 @@ describe(`Test creation of wallet from walletId`, () => {
   test("Get create a p2sh watch address", async () => {
     const ADDRESS = "bitcoincash:pzvts0uztwg32yvrx7xz9lp572dgnt20sy0dj993vx";
 
-    let w = await Wallet.watchOnly(
-      "bitcoincash:pzvts0uztwg32yvrx7xz9lp572dgnt20sy0dj993vx",
+    let w = await Wallet.fromId(
+      `watch:mainnet:bitcoincash:pzvts0uztwg32yvrx7xz9lp572dgnt20sy0dj993vx`,
     );
 
     expect(w.cashaddr!.startsWith("bitcoincash:")).toBeTruthy();

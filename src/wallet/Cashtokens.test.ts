@@ -72,8 +72,8 @@ afterAll(async () => {
 
 describe(`Test cashtokens`, () => {
   test.skipIf(!liveTests)("Test chipnet request", async () => {
-    const wallet = await TestNetWallet.watchOnly(
-      "bchtest:pzszr88euuuy87uarx9krcuh5psy4zzghsm2033xk4",
+    const wallet = await TestNetWallet.fromId(
+      `watch:testnet:bchtest:pzszr88euuuy87uarx9krcuh5psy4zzghsm2033xk4`,
     );
     const utxos = await getTokenUtxos(wallet);
     expect(utxos[0].token?.category).toBeDefined();

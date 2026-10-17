@@ -33,7 +33,6 @@ export interface WalletOptions {
   derivationPath?: string;
   privateKey?: Uint8Array;
   privateKeyWif?: string;
-  publicKey?: Uint8Array;
   publicKeyCompressed?: Uint8Array;
   publicKeyHash?: Uint8Array;
   address?: string;
@@ -70,7 +69,6 @@ export class Wallet extends WatchWallet {
     derivationPath,
     privateKey,
     privateKeyWif,
-    publicKey,
     publicKeyCompressed,
     publicKeyHash,
     address,
@@ -127,18 +125,14 @@ export class Wallet extends WatchWallet {
       // @ts-ignore
       this.privateKeyWif = privateKeyWif;
 
-      publicKey = assertSuccess(
-        secp256k1.derivePublicKeyUncompressed(this.privateKey),
-      );
       publicKeyCompressed = assertSuccess(
-        secp256k1.compressPublicKey(publicKey!),
+        secp256k1.derivePublicKeyCompressed(this.privateKey),
       );
     }
 
     // rest cases are for watch wallets
     await super.initialize({
       name,
-      publicKey,
       publicKeyCompressed,
       publicKeyHash,
       address,

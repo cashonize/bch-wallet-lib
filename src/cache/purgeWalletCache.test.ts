@@ -113,7 +113,7 @@ describe("walletCacheIdFromWalletId", () => {
       single,
       await RegTestWallet.fromWIF(single.privateKeyWif),
       await RegTestWallet.fromId(`privkey:regtest:${"11".repeat(32)}`),
-      await RegTestWatchWallet.watchOnly(single.getDepositAddress()),
+      await new RegTestWatchWallet()["watchOnly"](single.getDepositAddress()),
     ];
     try {
       for (const wallet of wallets) {

@@ -31,7 +31,9 @@ test("Should derive cashaddr", async () => {
 });
 
 test("Test address conversion", async () => {
-  const wallet = await RegTestWallet.watchOnly(process.env.ADDRESS!);
+  const wallet = await RegTestWallet.fromId(
+    `watch:regtest:${process.env.ADDRESS!}`,
+  );
 
   // p2pkh
   expect(toTokenaddr(wallet.cashaddr)).toBe(wallet.tokenaddr);

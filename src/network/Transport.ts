@@ -10,8 +10,10 @@ export interface Transport {
   close(): Promise<void>;
   /**
    * Resolves with the result; rejects with an Error for a server error, a lost connection or a timeout.
-   * A server error carries the JSON-RPC error's numeric `code`, on its `cause` (as electrum-cash
-   * gives it) or on the Error itself (as mem-cash does); the provider tells refusals apart by it.
+   * A server error carries the JSON-RPC error's numeric `code` and string `message`, on its `cause`
+   * (as electrum-cash gives it) or on the Error itself (as mem-cash does); the provider tells
+   * refusals apart by it, so a connection error must not carry that shape (a DOMException does not
+   * count).
    * `params` is a positional list, typed `any` because mem-cash types it per method as a tuple.
    */
   request(method: string, params?: any): Promise<unknown>;

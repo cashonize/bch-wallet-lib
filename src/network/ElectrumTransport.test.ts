@@ -8,6 +8,7 @@ import {
   type ElectrumServer,
 } from "./ElectrumTransport.js";
 import { BroadcastRejectedError } from "./errors.js";
+import type { Transport } from "./Transport.js";
 
 type Reply = { result: unknown } | { error: { code: number; message: string } };
 type Handler = (params: unknown[], call: number) => Reply | undefined;
@@ -589,5 +590,44 @@ describe("a broadcast through the provider", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toBeInstanceOf(BroadcastRejectedError);
+  });
+});
+
+describe("a broadcast through another Transport", () => {
+  // a Transport whose broadcast fails as given, and whose subscriptions never report
+  const failingTransport = (failure: Error): Transport => ({
+    connect: async () => {},
+    close: async () => {},
+    request: async (method) => {
+      if (method === "blockchain.transaction.broadcast") throw failure;
+      return null;
+    },
+    subscribe: async () => async () => {},
+  });
+
+  test.each([
+    ["a DOMException", new DOMException("The socket closed", "NetworkError")],
+    [
+      "an Error caused by a CloseEvent",
+      new Error("Connection lost", {
+        cause: { type: "close", code: 1006, reason: "", wasClean: false },
+      }),
+    ],
+  ])("a connection failure that is %s is not a refusal", async (_, failure) => {
+    const error = await new ElectrumNetworkProvider(failingTransport(failure))
+      .sendRawTransaction("0200")
+      .catch((e: unknown) => e);
+
+    expect(error).toBe(failure);
+  });
+
+  test("a JSON-RPC error on the Error itself is a refusal", async () => {
+    const failure = Object.assign(new Error("Missing inputs"), { code: 1 });
+    const error = await new ElectrumNetworkProvider(failingTransport(failure))
+      .sendRawTransaction("0200")
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BroadcastRejectedError);
+    expect((error as BroadcastRejectedError).reason).toBe("Missing inputs");
   });
 });

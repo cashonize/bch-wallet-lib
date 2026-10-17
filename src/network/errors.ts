@@ -43,15 +43,26 @@ export class BroadcastRejectedError extends Error {
 /**
  * The code of the JSON-RPC error a server answered with, or undefined for an error of the
  * connection (lost, closed, timed out). electrum-cash gives the server's error object as the
- * error's cause, mem-cash's transport puts the code on the error itself.
+ * error's cause, mem-cash's transport puts the code on the error itself. A JSON-RPC error carries
+ * a message next to its code; a DOMException or a CloseEvent has a numeric code too, but is the
+ * connection failing, after which the transaction may still have reached the node.
  */
 export function serverErrorCode(error: unknown): number | undefined {
   if (!(error instanceof Error)) return undefined;
-  const cause = error.cause as { code?: unknown } | undefined;
-  if (typeof cause?.code === "number") return cause.code;
-  const code = (error as { code?: unknown }).code;
-  if (typeof code === "number") return code;
+  if (isRpcError(error.cause)) return error.cause.code;
+  if (isRpcError(error)) return error.code;
   return undefined;
+}
+
+function isRpcError(
+  value: unknown,
+): value is { code: number; message: string } {
+  if (typeof value !== "object" || value === null) return false;
+  if (typeof DOMException !== "undefined" && value instanceof DOMException) {
+    return false;
+  }
+  const { code, message } = value as { code?: unknown; message?: unknown };
+  return typeof code === "number" && typeof message === "string";
 }
 
 // Fulcrum and ElectrumX wrap the node's answer as "<WRAPPER>\n\n<answer>\n", ElectrumX followed by

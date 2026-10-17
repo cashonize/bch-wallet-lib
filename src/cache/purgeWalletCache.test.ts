@@ -84,12 +84,12 @@ async function withIndexedDbCache(
 
 describe("walletCacheIdFromWalletId", () => {
   test("derives the cache id each HD wallet keys its cache record by", async () => {
-    const hd = await RegTestHDWallet.fromSeed(MNEMONIC);
+    const hd = await RegTestHDWallet.fromId(`hd:regtest:${MNEMONIC}`);
     const wallets: BaseWallet[] = [
       hd,
-      await RegTestHDWallet.fromSeed(MNEMONIC, "m/44'/145'/1'"),
-      await RegTestHDWallet.fromXPriv(hd.xPriv),
-      await RegTestHDWallet.fromXPub(hd.xPub),
+      await RegTestHDWallet.fromId(`hd:regtest:${MNEMONIC}:m/44'/145'/1'`),
+      await RegTestHDWallet.fromId(`hd:regtest:${hd.xPriv}`),
+      await RegTestHDWallet.fromId(`hd:regtest:${hd.xPub}`),
     ];
     try {
       const cacheIds = new Set<string>();

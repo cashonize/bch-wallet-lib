@@ -236,22 +236,6 @@ describe(`Test creation of wallet from walletId`, () => {
           () => HDWallet.fromId("hd:mainnet::0:0"),
           "refusing to create wallet from a walletId without a key",
         ],
-        [
-          () => HDWallet.fromSeed(""),
-          "refusing to create wallet from empty mnemonic",
-        ],
-        [
-          () => HDWallet.fromXPriv(""),
-          "refusing to create wallet from empty xPriv",
-        ],
-        [
-          () => HDWallet.fromXPub(""),
-          "refusing to create wallet from empty xPub",
-        ],
-        [
-          () => (HDWallet as any).fromXPriv(undefined),
-          "refusing to create wallet from empty xPriv",
-        ],
         // an empty key given to initialize, which fromId and the statics no longer pass
         [
           async () => (new HDWallet() as any).initialize({ mnemonic: "" }),

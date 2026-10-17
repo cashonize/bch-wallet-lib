@@ -183,9 +183,8 @@ describe("a subscription that cannot be made", () => {
     await fund(address, 5_000n);
 
     refuse.addresses.add(address);
-    const wallet = await RegTestHDWallet.fromSeed(
-      seedWallet.mnemonic!,
-      seedWallet.derivation,
+    const wallet = await RegTestHDWallet.fromId(
+      `hd:regtest:${seedWallet.mnemonic!}:${seedWallet.derivation}`,
     );
     await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
     expect(provider.subscriptions).toBe(39);
@@ -198,27 +197,12 @@ describe("a subscription that cannot be made", () => {
     await wallet.stop();
   }, 5000);
 
-  test("rejects an HD wallet's scanMoreAddresses, and a later scan subscribes what it missed", async () => {
-    const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
-    refuse.address = true;
-    // beyond the addresses already watched, so the scan subscribes new ones
-    await expect(wallet.scanMoreAddresses(40)).rejects.toThrow(
-      "subscription refused",
-    );
-    // reads need only the gap that is watched
-    expect(await wallet.getBalance()).toBe(0n);
-    refuse.address = false;
-    await wallet.scanMoreAddresses(40);
-    expect(provider.subscriptions).toBe(80);
-    await wallet.stop();
-  }, 5000);
-
   test("counts the gap only up to an address a failed scan left unwatched", async () => {
     const wallet = await RegTestHDWallet.newRandom();
     await wallet.watchPromise;
     refuse.address = true;
-    await expect(wallet.scanMoreAddresses(40)).rejects.toThrow(
+    // a discovery with a wider gap than the wallet's, as a used address far out would start
+    await expect(wallet["startDiscovery"](40)).rejects.toThrow(
       "subscription refused",
     );
     refuse.address = false;
@@ -302,9 +286,8 @@ describe("a fetch that fails during HD address discovery", () => {
     await fund(seedWallet.getDepositAddress(0), 5_000n);
 
     refuse.fetch = true;
-    const wallet = await RegTestHDWallet.fromSeed(
-      seedWallet.mnemonic!,
-      seedWallet.derivation,
+    const wallet = await RegTestHDWallet.fromId(
+      `hd:regtest:${seedWallet.mnemonic!}:${seedWallet.derivation}`,
     );
     await expect(wallet.getUtxos()).rejects.toThrow("connection lost");
 
@@ -365,10 +348,11 @@ describe("a fetch that fails during HD address discovery", () => {
       return getUtxosNew(...args);
     };
 
-    const wallet = await RegTestHDWallet.fromSeed(
-      seedWallet.mnemonic!,
-      seedWallet.derivation,
-    );
+    // what fromId does, minus the parsing: the moves below are timed against the discovery's start
+    const wallet = await new RegTestHDWallet()["initialize"]({
+      mnemonic: seedWallet.mnemonic,
+      derivation: seedWallet.derivation,
+    });
     await wallet.setProvider(newProvider);
     await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
     // the fetch of the address's first status ends after it failed

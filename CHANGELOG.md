@@ -153,6 +153,8 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 
 - `BaseWallet.namedExists` (static, and the protected method it called), which constructed a wallet to look the name up. Use the new free function `namedWalletExists(name, dbName?)`.
 
+- `HDWallet.fromSeed(mnemonic, path?, depositIndex?, changeIndex?)`, `HDWallet.fromXPub(xpub)` and `HDWallet.fromXPriv(xprv)`, merged into `HDWallet.fromId`: use `fromId("hd:<network>:<mnemonic>:<path>:<depositIndex>:<changeIndex>")` (the path and indices may be left out, e.g. ``fromId(`hd:mainnet:${mnemonic}`)``), `fromId("hd:<network>:<xprv>")` and `fromId("hd:<network>:<xpub>")`, the forms `toDbString()` writes. `HDWallet.scanMoreAddresses`, the `HDWalletEvents` type, and `getChangeTokenAddress`, the deprecated alias of `getTokenChangeAddress`.
+
 ### Changed
 
 - The watches take no options: `watchBalance(callback)`, `watchTokenTransactions(callback)`, `watchBlocks(callback, skipCurrentHeight?)`, and the internal `watchStatus`, `watchTransactionHashes` and `watchTransactions`. `WatchOptions` and its `onError` are removed: a callback's throw or rejection, and a read the watch makes for it that fails, always go to `console.error`, and the watch goes on. Drop the options argument; a caller that needs the error catches it in its callback.

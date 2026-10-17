@@ -42,11 +42,11 @@ describe("HDWallet", () => {
     const wallet = await Wallet.fromSeed(
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
     );
-    const walletSeed = await HDWallet.fromSeed(
-      "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
+    const walletSeed = await HDWallet.fromId(
+      `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage`,
     );
-    const walletPriv = await HDWallet.fromXPriv(expectedXprv);
-    const walletPub = await HDWallet.fromXPub(expectedXpub);
+    const walletPriv = await HDWallet.fromId(`hd:mainnet:${expectedXprv}`);
+    const walletPub = await HDWallet.fromId(`hd:mainnet:${expectedXpub}`);
 
     expect(walletSeed.xPub).toBe(expectedXpub);
     expect(walletSeed.xPriv).toBe(expectedXprv);
@@ -69,13 +69,12 @@ describe("HDWallet", () => {
     const mnemonic =
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
 
-    const accountWallet = await HDWallet.fromSeed(mnemonic);
+    const accountWallet = await HDWallet.fromId(`hd:mainnet:${mnemonic}`);
     expect(accountWallet.singleBranch).toBe(false);
     expect([...accountWallet.branches]).toEqual([0, 1]);
 
-    const singleBranchWallet = await HDWallet.fromSeed(
-      mnemonic,
-      "m/44'/0'/0'/0",
+    const singleBranchWallet = await HDWallet.fromId(
+      `hd:mainnet:${mnemonic}:m/44'/0'/0'/0`,
     );
     expect(singleBranchWallet.singleBranch).toBe(true);
     expect([...singleBranchWallet.branches]).toEqual([0]);
@@ -138,9 +137,8 @@ describe("HDWallet", () => {
   it("rejects construction from a depth-5 (address-level) node", async () => {
     // m/44'/0'/0'/0/0 is depth 5; the node can't derive further children.
     await expect(
-      HDWallet.fromSeed(
-        "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
-        "m/44'/0'/0'/0/0",
+      HDWallet.fromId(
+        `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0'/0/0`,
       ),
     ).rejects.toThrow(/too deep/i);
   });
@@ -156,14 +154,13 @@ describe("HDWallet", () => {
   });
 
   it("getTokenChangeAddress returns the token form of the change address", async () => {
-    const w = await HDWallet.fromSeed(
-      "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
+    const w = await HDWallet.fromId(
+      `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage`,
     );
     expect(w.getTokenChangeAddress(2)).toBe(toTokenaddr(w.getChangeAddress(2)));
     expect(w.getTokenChangeAddress()).toBe(toTokenaddr(w.getChangeAddress()));
     expect(w.getTokenChangeAddress()).not.toBe(w.getTokenDepositAddress());
     // the deprecated name
-    expect(w.getChangeTokenAddress(2)).toBe(w.getTokenChangeAddress(2));
 
     // it threw on single-address and watch-only wallets
     const single = await RegTestWallet.newRandom();
@@ -206,7 +203,9 @@ describe("HDWallet", () => {
   it("toDbString for a depth-4 wallet round-trips into a single-branch wallet", async () => {
     const mnemonic =
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
-    const original = await HDWallet.fromSeed(mnemonic, "m/44'/0'/0'/0");
+    const original = await HDWallet.fromId(
+      `hd:mainnet:${mnemonic}:m/44'/0'/0'/0`,
+    );
     expect(original.singleBranch).toBe(true);
 
     const dbString = original.toDbString();
@@ -253,9 +252,8 @@ describe("HDWallet", () => {
     );
 
     const seedWallet = await RegTestHDWallet.newRandom();
-    const w = await RegTestHDWallet.fromSeed(
-      seedWallet.mnemonic!,
-      "m/44'/0'/0'/0",
+    const w = await RegTestHDWallet.fromId(
+      `hd:regtest:${seedWallet.mnemonic!}:m/44'/0'/0'/0`,
     );
     expect(w.singleBranch).toBe(true);
     expect([...w.branches]).toEqual([0]);
@@ -271,8 +269,8 @@ describe("HDWallet", () => {
   });
 
   it("should serialize", async () => {
-    const wallet = await HDWallet.fromSeed(
-      "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
+    const wallet = await HDWallet.fromId(
+      `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage`,
     );
     expect(wallet.toDbString()).toBe(
       "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0':0:0",
@@ -283,12 +281,12 @@ describe("HDWallet", () => {
       "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0':0:0",
     );
 
-    const xPrivWallet = await HDWallet.fromXPriv(expectedXprv);
+    const xPrivWallet = await HDWallet.fromId(`hd:mainnet:${expectedXprv}`);
     expect(xPrivWallet.toDbString()).toBe(
       "hd:mainnet:xprv9yHV1hFYFTfNmUpXP2S3XbBTz61AeXKRLx7Eyp4r53DiwadSoMVMJfm5fvtxBc3NFKfozcH42LM66Kb5VaxdLvGk43JWahCegx6iaEJbkB2:0:0",
     );
 
-    const xPubWallet = await HDWallet.fromXPub(expectedXpub);
+    const xPubWallet = await HDWallet.fromId(`hd:mainnet:${expectedXpub}`);
     expect(xPubWallet.toDbString()).toBe(
       "hd:mainnet:xpub6CGqRCnS5qDfyxtzV3y3tj8CY7qf3z3GiB2qnCUTdNkhpNxbLtobrU5ZXBVPG3rzPcBUpJAoj3K1u1jyDwKuduL71gLPm27Tckc85apgQRr:0:0",
     );
@@ -302,9 +300,9 @@ describe("HDWallet", () => {
   it("restores an xprv, tprv or xpub walletId", async () => {
     const mnemonic =
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
-    const fromSeed = await HDWallet.fromSeed(mnemonic);
+    const fromSeed = await HDWallet.fromId(`hd:mainnet:${mnemonic}`);
 
-    const xPrivWallet = await HDWallet.fromXPriv(expectedXprv);
+    const xPrivWallet = await HDWallet.fromId(`hd:mainnet:${expectedXprv}`);
     const xPrivRestored = await HDWallet.fromId(xPrivWallet.toDbString());
     expect(xPrivRestored.mnemonic).toBeUndefined();
     expect(xPrivRestored.xPriv).toBe(expectedXprv);
@@ -313,16 +311,16 @@ describe("HDWallet", () => {
       fromSeed.getDepositAddress(0),
     );
 
-    const xPubWallet = await HDWallet.fromXPub(expectedXpub);
+    const xPubWallet = await HDWallet.fromId(`hd:mainnet:${expectedXpub}`);
     const xPubRestored = await HDWallet.fromId(xPubWallet.toDbString());
     expect(xPubRestored.xPriv).toBeUndefined();
     expect(xPubRestored.xPub).toBe(expectedXpub);
     expect(xPubRestored.toDbString()).toBe(xPubWallet.toDbString());
 
-    const testnetSeed = await TestNetHDWallet.fromSeed(mnemonic);
+    const testnetSeed = await TestNetHDWallet.fromId(`hd:testnet:${mnemonic}`);
     const tPriv = testnetSeed.xPriv;
     expect(tPriv.startsWith("tprv")).toBe(true);
-    const tPrivWallet = await TestNetHDWallet.fromXPriv(tPriv);
+    const tPrivWallet = await TestNetHDWallet.fromId(`hd:testnet:${tPriv}`);
     const tPrivRestored = await TestNetHDWallet.fromId(
       tPrivWallet.toDbString(),
     );
@@ -340,7 +338,7 @@ describe("HDWallet", () => {
     // a Czech mnemonic, the only BIP39 word with "prv" at index 1
     const mnemonic =
       "zprvu abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace adresa";
-    const wallet = await HDWallet.fromSeed(mnemonic);
+    const wallet = await HDWallet.fromId(`hd:mainnet:${mnemonic}`);
     const restored = await HDWallet.fromId(wallet.toDbString());
     expect(restored.mnemonic).toBe(mnemonic);
     expect(restored.getDepositAddress(0)).toBe(wallet.getDepositAddress(0));
@@ -417,9 +415,6 @@ describe("HDWallet", () => {
       value: 100000n,
     });
     expect(hdWallet.indices.get(0)!).toBe(5);
-
-    await hdWallet.scanMoreAddresses(30);
-    expect(hdWallet.indices.get(0)!).toBe(31);
   });
 
   it("should scan beyond gap to find real deposit index", async () => {
@@ -443,9 +438,8 @@ describe("HDWallet", () => {
     await seedWallet.waitForUpdate({ depositIndex: 21 });
 
     // Restore wallet from same seed, starting from index 0
-    const restoredWallet = await RegTestHDWallet.fromSeed(
-      seedWallet.mnemonic!,
-      seedWallet.derivation,
+    const restoredWallet = await RegTestHDWallet.fromId(
+      `hd:regtest:${seedWallet.mnemonic!}:${seedWallet.derivation}`,
     );
     await restoredWallet.watchPromise;
 
@@ -493,9 +487,8 @@ describe("HDWallet", () => {
     expect(hdWallet.indices.get(1)!).toBe(2);
 
     // Restore wallet from same seed and verify depositIndex is correct
-    const restoredWallet = await RegTestHDWallet.fromSeed(
-      hdWallet.mnemonic!,
-      hdWallet.derivation,
+    const restoredWallet = await RegTestHDWallet.fromId(
+      `hd:regtest:${hdWallet.mnemonic!}:${hdWallet.derivation}`,
     );
     await restoredWallet.watchPromise;
 

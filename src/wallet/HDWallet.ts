@@ -40,14 +40,6 @@ import { networkPrefixError } from "../util/networkPrefixError.js";
 
 export const GAP_SIZE = 20;
 
-export interface HDWalletEvents {
-  /**
-   * Emitted when data has been received over the socket.
-   * @eventProperty
-   */
-  data: [string];
-}
-
 export interface HDWalletOptions {
   name?: string;
   /**
@@ -130,7 +122,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /// Create an uninitialized HDWallet, this method should not be called directly
-  /// Instead static methods such as `newRandom` or `fromSeed` should be used
+  /// Instead static methods such as `newRandom` or `fromId` should be used
   constructor(network: NetworkType = NetworkType.Mainnet) {
     super(network);
 
@@ -325,11 +317,6 @@ export class HDWallet extends BaseWallet {
     this.walletWatchCallbacks = [];
     // no write of the cache is left for later; one that fails is a cache entry lost, not an error
     await this.walletCache.flush().catch(() => {});
-  }
-
-  /// Scan more addresses for activity beyond the current gap limit, extending the watched range as needed
-  public async scanMoreAddresses(amount: number = GAP_SIZE) {
-    await this.startDiscovery(amount);
   }
 
   /// Run address discovery once the one in progress has ended. If it fails, the next read runs
@@ -808,46 +795,8 @@ export class HDWallet extends BaseWallet {
     return this.getTokenAddressByBranch(CHANGE_BRANCH, index);
   }
 
-  /** @deprecated Use {@link getTokenChangeAddress}. */
-  public getChangeTokenAddress(index: number = -1): string {
-    return this.getTokenChangeAddress(index);
-  }
-
   public hasAddress(address: string): boolean {
     return this.walletCache.get(address) !== undefined;
-  }
-
-  /**
-   * fromSeed - create a wallet using the seed phrase and derivation path.
-   *
-   * The default derivation path is `Config.DefaultParentDerivationPath`
-   * (`m/44'/0'/0'` -- account level). Address derivation under that path is
-   * controlled by the wallet's `branches` list (default `[0, 1]`).
-   *
-   * @param seed BIP39 mnemonic
-   * @param derivationPath BIP44 derivation path applied to the seed (down to,
-   *   typically, the account level). Defaults to `m/44'/0'/0'`.
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromSeed<T extends typeof HDWallet>(
-    this: T,
-    seed: string,
-    derivationPath?: string,
-    depositIndex?: number,
-    changeIndex?: number,
-  ): Promise<InstanceType<T>> {
-    if (!seed?.length) {
-      throw Error("refusing to create wallet from empty mnemonic");
-    }
-    const indices: Record<number, number> = {};
-    if (depositIndex !== undefined) indices[DEPOSIT_BRANCH] = depositIndex;
-    if (changeIndex !== undefined) indices[CHANGE_BRANCH] = changeIndex;
-    return new this().initialize({
-      mnemonic: seed,
-      derivation: derivationPath,
-      indices: Object.keys(indices).length ? indices : undefined,
-    }) as Promise<InstanceType<T>>;
   }
 
   /**
@@ -871,45 +820,9 @@ export class HDWallet extends BaseWallet {
   }
 
   /**
-   * fromXPub - create a watch-only wallet using the HD Wallet Public key
-   *
-   * @param xPub   HD Wallet Public Key
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromXPub<T extends typeof HDWallet>(
-    this: T,
-    xPub: string,
-  ): Promise<InstanceType<T>> {
-    if (!xPub?.length) {
-      throw Error("refusing to create wallet from empty xPub");
-    }
-    return new this().initialize({
-      xPub: xPub,
-    }) as Promise<InstanceType<T>>;
-  }
-
-  /**
-   * fromXPriv - create a wallet using the HD Wallet Private key
-   *
-   * @param xPub   HD Wallet Private Key
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromXPriv<T extends typeof HDWallet>(
-    this: T,
-    xPriv: string,
-  ): Promise<InstanceType<T>> {
-    if (!xPriv?.length) {
-      throw Error("refusing to create wallet from empty xPriv");
-    }
-    return new this().initialize({
-      xPriv: xPriv,
-    }) as Promise<InstanceType<T>>;
-  }
-
-  /**
-   * fromId - create a wallet from encoded walletId string
+   * fromId - create a wallet from encoded walletId string: `hd:<network>:<mnemonic>[:<derivation
+   * path>[:<deposit index>:<change index>]]`, `hd:<network>:<xprv or xpub>[:<deposit index>:<change
+   * index>]` or `named:<network>:<name>`
    *
    * @param walletId   walletId options to steer the creation process
    *

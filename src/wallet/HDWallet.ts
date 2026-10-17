@@ -31,6 +31,7 @@ import {
   getNextUnusedIndices,
 } from "../util/hd.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
+import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
@@ -449,7 +450,7 @@ export class HDWallet extends BaseWallet {
               failed = true;
               statuses[index] = undefined as any;
               watchCancels[index]?.().catch(() => {});
-              reject(error);
+              reject(toError(error));
             };
 
             const callback = async (

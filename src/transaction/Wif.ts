@@ -128,7 +128,7 @@ export async function buildP2pkhNonHdTransaction({
     { maximumTokenCommitmentLength: 128 },
   );
   if (tokenValidationResult !== true && fee > 0) {
-    throw tokenValidationResult;
+    throw new Error(tokenValidationResult);
   }
 
   return { transaction: result.transaction, sourceOutputs: sourceOutputs };
@@ -198,7 +198,7 @@ export function prepareInputs({
 
     const lockingBytecode = cashAddressToLockingBytecode(i.address);
     if (typeof lockingBytecode === "string") {
-      throw lockingBytecode;
+      throw new Error(lockingBytecode);
     }
 
     sourceOutputs.push({
@@ -891,7 +891,7 @@ export async function signUnsignedTransaction(
 
   const decoded = decodeTransaction(transaction);
   if (typeof decoded === "string") {
-    throw decoded;
+    throw new Error(decoded);
   }
 
   const template = importWalletTemplate(walletTemplateP2pkhNonHd);
@@ -921,7 +921,12 @@ export async function signUnsignedTransaction(
 
   const result = generateTransaction(transactionTemplate);
   if (!result.success) {
-    throw result.errors;
+    const details = result.errors
+      .flatMap(({ errors }) => errors.map(({ error }) => error))
+      .join("; ");
+    throw new Error(`Could not sign the transaction: ${details}`, {
+      cause: result.errors,
+    });
   }
 
   return encodeTransaction(result.transaction);

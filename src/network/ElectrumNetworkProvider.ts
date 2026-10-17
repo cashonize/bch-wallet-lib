@@ -14,6 +14,7 @@ import {
 } from "../interface.js";
 import { decodeHeader } from "../util/header.js";
 import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
+import { toError } from "../util/toError.js";
 import { getTransactionHash } from "../util/transaction.js";
 import { runCallback, waitOnWatch } from "../util/watch.js";
 import { CancelFn } from "../wallet/interface.js";
@@ -415,7 +416,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
       });
       // broadcast once subscribed, so that the transaction's first status is not missed
       this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-        onError,
+        (error) => onError(toError(error)),
       );
       return cancel;
     });

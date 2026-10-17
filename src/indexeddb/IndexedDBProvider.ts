@@ -24,7 +24,7 @@ export default class IndexedDBProvider implements StorageProvider {
         this.db = request.result;
         resolve(this.db);
       };
-      request.onerror = () => reject(request.error);
+      request.onerror = () => reject(requestError(request));
     });
   }
 
@@ -57,10 +57,10 @@ export default class IndexedDBProvider implements StorageProvider {
         } else {
           const addReq = store.add({ name, wallet: walletId });
           addReq.onsuccess = () => resolve(true);
-          addReq.onerror = () => reject(addReq.error);
+          addReq.onerror = () => reject(requestError(addReq));
         }
       };
-      getReq.onerror = () => reject(getReq.error);
+      getReq.onerror = () => reject(requestError(getReq));
     });
   }
 
@@ -71,7 +71,7 @@ export default class IndexedDBProvider implements StorageProvider {
       const store = tx.objectStore(this.storeName);
       const req = store.get(name);
       req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+      req.onerror = () => reject(requestError(req));
     });
   }
 
@@ -82,7 +82,7 @@ export default class IndexedDBProvider implements StorageProvider {
       const store = tx.objectStore(this.storeName);
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
+      req.onerror = () => reject(requestError(req));
     });
   }
 
@@ -98,10 +98,10 @@ export default class IndexedDBProvider implements StorageProvider {
         } else {
           const putReq = store.put({ name, wallet: walletId });
           putReq.onsuccess = () => resolve();
-          putReq.onerror = () => reject(putReq.error);
+          putReq.onerror = () => reject(requestError(putReq));
         }
       };
-      getReq.onerror = () => reject(getReq.error);
+      getReq.onerror = () => reject(requestError(getReq));
     });
   }
 
@@ -116,7 +116,12 @@ export default class IndexedDBProvider implements StorageProvider {
       const store = tx.objectStore(this.storeName);
       const req = store.delete(name);
       req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      req.onerror = () => reject(requestError(req));
     });
   }
+}
+
+// A failed request's error is a DOMException; it is null only while the request has not failed
+function requestError(request: IDBRequest): Error {
+  return request.error ?? new Error("The IndexedDB request failed");
 }

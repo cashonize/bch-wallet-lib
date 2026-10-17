@@ -22,7 +22,7 @@ export function getXPubKey(
 
   let node = deriveHdPath(hdNode, derivationPath);
   if (typeof node === "string") {
-    throw node;
+    throw new Error(node);
   }
   let parentPublicNode = deriveHdPublicNode(node);
 

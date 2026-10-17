@@ -140,7 +140,7 @@ export const getHistory = async ({
     const txHex = txHexMap.get(tx.tx_hash)!;
     const transactionCommon = decodeTransaction(hexToBin(txHex));
     if (typeof transactionCommon === "string") {
-      throw transactionCommon;
+      throw new Error(transactionCommon);
     }
 
     const transaction = transactionCommon as Transaction;
@@ -184,7 +184,7 @@ export const getHistory = async ({
 
       const decoded = decodeTransaction(hexToBin(hex));
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
       prevoutTransactionMap[hash] = decoded;
     }

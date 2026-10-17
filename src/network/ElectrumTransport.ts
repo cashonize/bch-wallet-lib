@@ -6,6 +6,7 @@ import {
   type RPCParameter,
 } from "@electrum-cash/network";
 import { ElectrumWebSocket } from "@electrum-cash/web-socket";
+import { toError } from "../util/toError.js";
 import type { Transport, Unsubscribe } from "./Transport.js";
 
 /** A server URL (`wss://host:port` or `ws://host:port`), or an electrum-cash socket set up by the caller. */
@@ -347,11 +348,6 @@ export class ElectrumTransport implements Transport {
 
 function subscriptionKey(method: string, params: unknown[]): string {
   return `${method}${JSON.stringify(params)}`;
-}
-
-function toError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  return new Error(String(error));
 }
 
 // Settles as `latest` does, unless `earlier` resolves first

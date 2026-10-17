@@ -1,6 +1,7 @@
 import {
   binToHex,
   cashAddressToLockingBytecode,
+  encodeCashAddress,
   encodeTransaction,
   flattenBinArray,
   hexToBin,
@@ -9,6 +10,7 @@ import {
 import { countRequests } from "#test/countRequests.js";
 import { mine } from "../mine/index.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
+import type NetworkProvider from "../network/NetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { sumUtxoValue, toBch } from "../util/index.js";
 import { createWallet } from "../wallet/createWallet.js";
@@ -554,5 +556,54 @@ describe("history load", () => {
     expect(counts.byMethod["blockchain.address.get_balance"]).toBe(6);
     expect(counts.maxInFlight).toBe(3);
     expect(history[0].balance).toBe(30000);
+  });
+});
+
+describe("a transaction the server sends that does not decode", () => {
+  const address = encodeCashAddress({
+    prefix: "bchreg",
+    type: "p2pkh",
+    payload: new Uint8Array(20),
+  }).address;
+  const txid = "33".repeat(32);
+  // a transaction spending an output of `txid`, so that its prevout is fetched
+  const spending = binToHex(
+    encodeTransaction({
+      version: 2,
+      locktime: 0,
+      inputs: [
+        {
+          outpointTransactionHash: hexToBin(txid),
+          outpointIndex: 0,
+          sequenceNumber: 0,
+          unlockingBytecode: Uint8Array.of(),
+        },
+      ],
+      outputs: [{ lockingBytecode: Uint8Array.of(0x51), valueSatoshis: 1n }],
+    }),
+  );
+  const provider = (raw: Record<string, string>) =>
+    ({
+      getHeaders: async () => new Map(),
+      getRawTransactions: async (hashes: string[]) =>
+        new Map(hashes.map((hash) => [hash, raw[hash]])),
+    }) as unknown as NetworkProvider;
+
+  test("in the history", async () => {
+    const error = await getHistory({
+      addresses: [address],
+      provider: provider({ [txid]: "00" }),
+      rawHistory: [{ tx_hash: txid, height: 0 }],
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+  });
+
+  test("as a spent transaction", async () => {
+    const error = await getHistory({
+      addresses: [address],
+      provider: provider({ ["44".repeat(32)]: spending, [txid]: "00" }),
+      rawHistory: [{ tx_hash: "44".repeat(32), height: 0 }],
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
   });
 });

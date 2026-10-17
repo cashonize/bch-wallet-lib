@@ -27,9 +27,8 @@ export class InsufficientFundsError extends Error {
  * with neither fungible tokens nor an NFT. `field` names the request field (`category`,
  * `nft.commitment`, `amount`, `nft`), `value` holds what was given. Also thrown, before the
  * transaction is built, for a send option that cannot be honored, with `field` naming the
- * option: an `excludeUtxoIds` entry that is not a `txid:vout` outpoint, a token coin in
- * `ensureUtxos` of a max send, or a `coinSelection` or `inputOrdering` hook returning other
- * coins than it may (`value` the offending `txid:vout`).
+ * option: an `excludeUtxoIds` entry that is not a `txid:vout` outpoint, or a token coin in
+ * `ensureUtxos` of a max send (`value` the offending `txid:vout`).
  */
 export class InvalidRequestError extends Error {
   readonly field: string;
@@ -72,10 +71,9 @@ export class UtxoNotAvailableError extends Error {
 
 /**
  * Thrown before a built transaction is signed when its outputs destroy tokens its inputs carry
- * and the operation did not ask for that: a regression or a coin-control hook (e.g. an
- * `outputOrdering` that drops the token change) would otherwise burn them. `category` is the
- * token category; `amount` the fungible tokens missing from the outputs (0n when an NFT is),
- * `nft` the NFT missing from them.
+ * and the operation did not ask for that: a regression in the change or the coin choice would
+ * otherwise burn them. `category` is the token category; `amount` the fungible tokens missing
+ * from the outputs (0n when an NFT is), `nft` the NFT missing from them.
  */
 export class TokenBurnError extends Error {
   readonly category: string;

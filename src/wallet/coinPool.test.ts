@@ -3,7 +3,11 @@ import { disconnectProviders, initProviders } from "#test/providers.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { selectBranchAndBound } from "../transaction/coin-control/selection.js";
 import type { CoinSelectionContext } from "../transaction/coin-control/types.js";
-import { InsufficientFundsError, UtxoNotAvailableError } from "./errors.js";
+import {
+  InsufficientFundsError,
+  InvalidRequestError,
+  UtxoNotAvailableError,
+} from "./errors.js";
 import {
   SendRequest,
   TokenBurnRequest,
@@ -493,5 +497,78 @@ describe("ensureUtxos must be in the pool", () => {
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(InsufficientFundsError);
+  });
+});
+
+describe("sendMax spends only what it counts", () => {
+  // what the inputs hold beyond the outputs: the fee, for a transaction of the wallet's own coins
+  const feeOf = (transactionHex: string, coins: Utxo[]) => {
+    const values = new Map(
+      coins.map((utxo) => [outpoint(utxo), utxo.satoshis]),
+    );
+    const tx = decoded(transactionHex);
+    const inputs = tx.inputs.reduce(
+      (sum, input) =>
+        sum +
+        values.get(
+          `${binToHex(input.outpointTransactionHash)}:${input.outpointIndex}`,
+        )!,
+      0n,
+    );
+    return (
+      inputs - tx.outputs.reduce((sum, out) => sum + out.valueSatoshis, 0n)
+    );
+  };
+
+  test("a token coin in ensureUtxos is refused, its satoshis would go to the miners", async () => {
+    const bob = await fundedWallet(100_000n);
+    const genesis = await bob.tokenGenesis({ amount: 100n, value: 50_000n });
+    const category = genesis.categories![0];
+    const [tokenCoin] = await bob.getTokenUtxos(category);
+    const carol = await RegTestWallet.newRandom();
+
+    for (const spend of [
+      () =>
+        bob.sendMax(carol.cashaddr!, {
+          broadcast: false,
+          ensureUtxos: [tokenCoin],
+        }),
+      () => bob.getMaxAmountToSend({ options: { ensureUtxos: [tokenCoin] } }),
+    ]) {
+      const error = await spend().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InvalidRequestError).field).toBe("ensureUtxos");
+      expect((error as InvalidRequestError).value).toBe(outpoint(tokenCoin));
+    }
+  });
+
+  test("a BCH coin in ensureUtxos goes first, and the fee stays at the relay rate", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n, 30_000n);
+    const carol = await RegTestWallet.newRandom();
+    const coins = await bob.getUtxos();
+    const pinned = coins.find((utxo) => utxo.satoshis === 30_000n)!;
+    const utxoIds = coins.filter((utxo) => utxo.satoshis !== 10_000n);
+
+    const max = await bob.getMaxAmountToSend({
+      options: { utxoIds, ensureUtxos: [pinned] },
+    });
+    const response = await bob.sendMax(carol.cashaddr!, {
+      broadcast: false,
+      utxoIds,
+      ensureUtxos: [pinned],
+    });
+    const tx = decoded(response.transaction!);
+    expect(
+      `${binToHex(tx.inputs[0].outpointTransactionHash)}:${tx.inputs[0].outpointIndex}`,
+    ).toBe(outpoint(pinned));
+    expect(inputOutpoints(response.transaction!)).toEqual(
+      utxoIds.map(outpoint).sort(),
+    );
+    expect(tx.outputs.map((output) => output.valueSatoshis)).toEqual([max]);
+    const size = BigInt(response.transaction!.length / 2);
+    const fee = feeOf(response.transaction!, coins);
+    // sendMax's size estimate leaves a margin over the 1 sat/byte relay rate, as without ensureUtxos
+    expect(fee).toBeGreaterThanOrEqual(size);
+    expect(fee).toBeLessThan(2n * size);
   });
 });

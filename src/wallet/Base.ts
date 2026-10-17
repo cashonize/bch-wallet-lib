@@ -38,7 +38,11 @@ import {
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { runCallback, waitOnWatch } from "../util/watch.js";
 import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
-import { InsufficientFundsError, UtxoNotAvailableError } from "./errors.js";
+import {
+  InsufficientFundsError,
+  InvalidRequestError,
+  UtxoNotAvailableError,
+} from "./errors.js";
 import { decodeTransaction } from "./Util.js";
 import {
   CancelFn,
@@ -846,6 +850,14 @@ export class BaseWallet implements WalletI {
 
     // get inputs
     const { pool, ensureUtxos } = await this.getSpendPool(params.options);
+    // a BCH sweep has no token change to price, so a token coin's satoshis would go to the miners
+    const tokenCoin = ensureUtxos.find((utxo) => utxo.token);
+    if (tokenCoin) {
+      throw new InvalidRequestError(
+        `Utxo ${toUtxoId(tokenCoin)} in ensureUtxos holds tokens, which a max send does not send`,
+        { field: "ensureUtxos", value: toUtxoId(tokenCoin) },
+      );
+    }
     let utxos = pool;
     if (!params.options?.utxoIds) {
       utxos = pool.filter((utxo) => !utxo.token);
@@ -960,7 +972,8 @@ export class BaseWallet implements WalletI {
     });
 
     // pinned as well: the selection would stop at the coins that cover the amount, leaving the
-    // ones worth less than their own input fee unspent and their share of the fee to the miners
+    // ones worth less than their own input fee unspent and their share of the fee to the miners.
+    // The caller's ensureUtxos, all BCH coins of the pool and so among them, go first as in send.
     const ensureIds = new Set(ensureUtxos.map(toUtxoId));
     const inputs = [
       ...ensureUtxos,

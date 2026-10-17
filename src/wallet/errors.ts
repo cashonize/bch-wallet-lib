@@ -22,7 +22,9 @@ export class InsufficientFundsError extends Error {
  * Thrown before anything is built or fetched when a request's token data cannot go on chain as
  * given: a malformed category or commitment, a fungible amount out of range, or a token output
  * with neither fungible tokens nor an NFT. `field` names the request field (`category`,
- * `nft.commitment`, `amount`, `nft`), `value` holds what was given.
+ * `nft.commitment`, `amount`, `nft`), `value` holds what was given. Also thrown for a send option
+ * that cannot be honored, with `field` naming the option: a token coin in `ensureUtxos` of a max
+ * send (`value` its `txid:vout`).
  */
 export class InvalidRequestError extends Error {
   readonly field: string;

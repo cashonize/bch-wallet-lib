@@ -1407,7 +1407,15 @@ export class BaseWallet implements WalletI {
       requestsByCategory.set(request.category, bucket);
     }
 
-    const utxos = await this.getUtxos();
+    let utxos: Utxo[] = await this.getUtxos();
+    if (options?.utxoIds) {
+      utxos = checkUtxos(
+        options.utxoIds.map((utxoId: UtxoId | string) =>
+          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
+        ),
+        utxos,
+      );
+    }
     const ensureUtxos: Utxo[] = [];
     const outputs: TokenSendRequest[] = [];
 
@@ -1494,7 +1502,15 @@ export class BaseWallet implements WalletI {
       throw new Error("tokenBurn requires at least one request");
     }
 
-    const utxos = await this.getUtxos();
+    let utxos: Utxo[] = await this.getUtxos();
+    if (options?.utxoIds) {
+      utxos = checkUtxos(
+        options.utxoIds.map((utxoId: UtxoId | string) =>
+          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
+        ),
+        utxos,
+      );
+    }
     const ensureUtxos: Utxo[] = [];
     const changeSendRequests: TokenSendRequest[] = [];
 

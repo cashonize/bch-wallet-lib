@@ -17,7 +17,19 @@ import {
   TokenMintRequest,
   TokenSendRequest,
 } from "./model.js";
+import { InsufficientFundsError } from "./errors.js";
 import { RegTestWallet, TestNetWallet } from "./Wif.js";
+
+const inputOutpoints = (transactionHex: string) => {
+  const tx = decodeTransaction(hexToBin(transactionHex));
+  if (typeof tx === "string") throw new Error(tx);
+  return tx.inputs
+    .map(
+      (input) =>
+        `${binToHex(input.outpointTransactionHash)}:${input.outpointIndex}`,
+    )
+    .sort();
+};
 
 beforeAll(async () => {
   await initProviders();
@@ -1544,5 +1556,92 @@ describe(`Test cashtokens`, () => {
     expect(burnResponse.txId).toBeDefined();
     expect(await bob.getTokenBalance(catA)).toBe(70n);
     expect(await bob.getTokenBalance(catB)).toBe(0n);
+  });
+
+  test("tokenMint takes its minting NFT from utxoIds only", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+
+    const genesisResponse = await bob.tokenGenesis({
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    const category = genesisResponse.categories![0];
+    // a second minting NFT of the same category
+    await bob.tokenMint({
+      category,
+      nft: { capability: NFTCapability.minting, commitment: "02" },
+    });
+
+    const batons = (await bob.getTokenUtxos(category)).filter(
+      (utxo) => utxo.token?.nft?.capability === NFTCapability.minting,
+    );
+    expect(batons.length).toBe(2);
+    const bchUtxos = (await bob.getUtxos()).filter((utxo) => !utxo.token);
+    expect(bchUtxos.length).toBe(1);
+
+    // the baton tokenMint would pick first stays outside utxoIds
+    const allowed = [batons[1], bchUtxos[0]];
+    const response = await bob.tokenMint(
+      {
+        category,
+        nft: { capability: NFTCapability.none, commitment: "03" },
+      },
+      false,
+      { utxoIds: allowed, broadcast: false },
+    );
+    expect(inputOutpoints(response.transaction!)).toEqual(
+      allowed.map((utxo) => `${utxo.txid}:${utxo.vout}`).sort(),
+    );
+
+    await expect(
+      bob.tokenMint(
+        { category, nft: { capability: NFTCapability.none, commitment: "" } },
+        false,
+        { utxoIds: [bchUtxos[0]], broadcast: false },
+      ),
+    ).rejects.toThrow(InsufficientFundsError);
+  });
+
+  test("tokenBurn takes its token inputs from utxoIds only", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+
+    const genesisResponse = await bob.tokenGenesis({ amount: 100n });
+    const category = genesisResponse.categories![0];
+    // split the fungible tokens over two utxos
+    await bob.send(
+      new TokenSendRequest({ cashaddr: bob.tokenaddr!, category, amount: 30n }),
+    );
+
+    const tokenUtxos = await bob.getTokenUtxos(category);
+    expect(tokenUtxos.length).toBe(2);
+    const bchUtxos = (await bob.getUtxos()).filter((utxo) => !utxo.token);
+    expect(bchUtxos.length).toBe(1);
+
+    // the token utxo tokenBurn would pick first stays outside utxoIds
+    const target = tokenUtxos[1];
+    const allowed = [target, bchUtxos[0]];
+    const response = await bob.tokenBurn(
+      new TokenBurnRequest({ category, amount: 10n }),
+      "burn",
+      { utxoIds: allowed, broadcast: false },
+    );
+    expect(inputOutpoints(response.transaction!)).toEqual(
+      allowed.map((utxo) => `${utxo.txid}:${utxo.vout}`).sort(),
+    );
+    const tx = decodeTransaction(hexToBin(response.transaction!));
+    if (typeof tx === "string") throw new Error(tx);
+    const tokenOutputs = tx.outputs.filter((output) => output.token);
+    expect(tokenOutputs.length).toBe(1);
+    expect(tokenOutputs[0].token!.amount).toBe(target.token!.amount - 10n);
+
+    await expect(
+      bob.tokenBurn(new TokenBurnRequest({ category, amount: 10n }), "burn", {
+        utxoIds: [bchUtxos[0]],
+        broadcast: false,
+      }),
+    ).rejects.toThrow(InsufficientFundsError);
   });
 });

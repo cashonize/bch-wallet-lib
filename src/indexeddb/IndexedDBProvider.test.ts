@@ -1,6 +1,7 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   BaseWallet,
+  getNamedWalletId,
   HDWallet,
   RegTestWallet,
   TestNetWallet,
@@ -111,4 +112,20 @@ test("deleteWallet removes a row and is a no-op when absent", async () => {
   // Missing names should not throw.
   await expect(db.deleteWallet("never-existed")).resolves.toBeUndefined();
   await db.close();
+});
+
+test("getNamedWalletId reads the mainnet database by default and returns undefined for a missing name", async () => {
+  BaseWallet.StorageProvider = IndexedDBProvider;
+  const name = `named-id-${Math.random()}`;
+  const mainnetDb = new IndexedDBProvider("bitcoincash");
+  await mainnetDb.init();
+  await mainnetDb.addWallet(name, "wif:mainnet:stored-id");
+  await mainnetDb.close();
+
+  expect(await getNamedWalletId(name)).toBe("wif:mainnet:stored-id");
+  expect(await getNamedWalletId(name, "bitcoincash")).toBe(
+    "wif:mainnet:stored-id",
+  );
+  await expect(getNamedWalletId(name, "bchtest")).resolves.toBeUndefined();
+  await expect(getNamedWalletId(`${name}-missing`)).resolves.toBeUndefined();
 });

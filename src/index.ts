@@ -67,7 +67,7 @@ export { MAX_OP_RETURN_BYTES } from "./constant.js";
 // utils
 export * from "./util/index.js";
 // wallets - explicit exports for tree-shaking
-export { BaseWallet } from "./wallet/Base.js";
+export { BaseWallet, getNamedWalletId } from "./wallet/Base.js";
 // wallet utilities, models, interfaces - barrel re-export is fine (small items)
 export * from "./wallet/createWallet.js";
 export { FeePaidByEnum, WalletTypeEnum } from "./wallet/enum.js";

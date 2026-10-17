@@ -1721,9 +1721,10 @@ export const _checkContextSafety = function (wallet: BaseWallet) {
  * getNamedWalletId - get the full wallet id from the database
  *
  * @param name   user friendly wallet alias
- * @param dbName name under which the wallet will be stored in the database
+ * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
  *
- * @returns boolean
+ * @throws {Error} if no StorageProvider is configured
+ * @returns the stored wallet id, or undefined if there is no wallet of that name
  */
 export async function getNamedWalletId(
   name: string,
@@ -1733,18 +1734,14 @@ export async function getNamedWalletId(
     throw Error("Named wallets must have a non-empty name");
   }
 
-  dbName = dbName ? dbName : (dbName as string);
+  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
   let db = getStorageProvider(dbName);
 
   if (db) {
     await db.init();
     let savedWalletRecord = await db.getWallet(name);
     await db.close();
-    if (savedWalletRecord !== undefined) {
-      return savedWalletRecord.wallet;
-    } else {
-      throw Error(`No record was found for ${name} in db: ${dbName}`);
-    }
+    return savedWalletRecord?.wallet;
   } else {
     throw Error(
       "No database was available or configured to store the named wallet.",

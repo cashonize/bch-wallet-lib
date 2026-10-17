@@ -88,6 +88,12 @@ function once(cancel: CancelFn): CancelFn {
   return () => (done ??= cancel());
 }
 
+// The options a token operation passes on to its send
+interface TokenOperationOptions extends SendRequestOptionsI {
+  /** what the operation may burn; undefined when its caller turned the token check off */
+  tokenBurns?: TokenBurnAllowance;
+}
+
 /**
  * A class to hold features used by all wallets
  * @class  BaseWallet
@@ -975,6 +981,19 @@ export class BaseWallet implements WalletI {
     return { txId, transaction, categories };
   }
 
+  // A token operation's send: the burns the operation allows reach the token conservation check
+  protected async sendTokenOperation(
+    requests: Array<SendRequest | TokenSendRequest | OpReturnData>,
+    options: TokenOperationOptions,
+  ): Promise<SendResponse> {
+    const { encodedTransaction, categories } = await this.encodeTransaction(
+      requests,
+      undefined,
+      options,
+    );
+    return this._send(encodedTransaction, categories, options);
+  }
+
   /**
    * encodeTransaction Encode and sign a transaction given a list of sendRequests, options and estimate fees.
    * @param  {SendRequest[]} sendRequests SendRequests
@@ -988,7 +1007,7 @@ export class BaseWallet implements WalletI {
       | OpReturnData
       | Array<SendRequest | TokenSendRequest | OpReturnData>,
     discardChange: boolean = false,
-    options?: SendRequestOptionsI,
+    options?: TokenOperationOptions,
     privateKey?: Uint8Array,
   ) {
     let sendRequests = asSendRequestObject(requests);
@@ -1395,7 +1414,10 @@ export class BaseWallet implements WalletI {
         }),
     );
 
-    return this.send([...genesisSendRequests, ...(sendRequests as any)], {
+    const extraRequests = sendRequests as Array<
+      SendRequest | TokenSendRequest | OpReturnData
+    >;
+    return this.sendTokenOperation([...genesisSendRequests, ...extraRequests], {
       ...options,
       utxoIds: utxos,
       ensureUtxos: pinnedInputs,
@@ -1483,7 +1505,7 @@ export class BaseWallet implements WalletI {
       }
     }
 
-    return this.send(outputs, {
+    return this.sendTokenOperation(outputs, {
       ...options,
       ensureUtxos,
       checkTokenQuantities: false,
@@ -1619,7 +1641,7 @@ export class BaseWallet implements WalletI {
     }
 
     const opReturn = OpReturnData.fromString(message || "");
-    return this.send([opReturn, ...changeSendRequests], {
+    return this.sendTokenOperation([opReturn, ...changeSendRequests], {
       ...options,
       checkTokenQuantities: false,
       ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,

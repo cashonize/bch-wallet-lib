@@ -22,7 +22,7 @@ import {
 } from "./model.js";
 import { HDWallet } from "./HDWallet.js";
 import { WatchWallet } from "./Watch.js";
-import { RegTestWallet, TestNetWallet, Wallet, WifWallet } from "./Wif.js";
+import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
 import { liveTests } from "#test/live.js";
 import { waitForBalance } from "#test/balances.js";
 
@@ -165,10 +165,6 @@ describe(`Test creation of wallet from walletId`, () => {
       const cases: [() => Promise<unknown>, string][] = [
         [() => Wallet.fromWIF(""), "refusing to create wallet from empty WIF"],
         [
-          () => WifWallet.fromWIF(""),
-          "refusing to create wallet from empty WIF",
-        ],
-        [
           () => Wallet.fromId("wif:mainnet:"),
           "refusing to create wallet from empty WIF",
         ],
@@ -177,20 +173,8 @@ describe(`Test creation of wallet from walletId`, () => {
           "refusing to create wallet from empty WIF",
         ],
         [
-          () => Wallet.fromPrivateKey(""),
-          "refusing to create wallet from empty private key",
-        ],
-        [
-          () => Wallet.fromPrivateKey(new Uint8Array()),
-          "refusing to create wallet from empty private key",
-        ],
-        [
           () => Wallet.fromId("privkey:mainnet:"),
           "refusing to create wallet from empty private key",
-        ],
-        [
-          () => Wallet.fromSeed(""),
-          "refusing to create wallet from empty mnemonic",
         ],
         [
           () => Wallet.fromId("seed:mainnet:"),
@@ -352,7 +336,7 @@ describe(`WIF validation`, () => {
     const regtest = await RegTestWallet.fromWIF(testnetWif);
     expect(binToHex(regtest.privateKey!)).toBe(binToHex(key));
     expect(regtest.cashaddr).toBe(
-      (await RegTestWallet.fromPrivateKey(key)).cashaddr,
+      (await RegTestWallet.fromId(`privkey:regtest:${binToHex(key)}`)).cashaddr,
     );
   });
 });

@@ -3,7 +3,7 @@ import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { Config } from "../config.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWatchWallet } from "./Watch.js";
-import { RegTestWallet, RegTestWifWallet } from "./Wif.js";
+import { RegTestWallet } from "./Wif.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -15,13 +15,6 @@ afterAll(async () => {
 describe("Wallet cache initialization", () => {
   test("Seed wallet should have walletCache with at least one entry", async () => {
     const wallet = await RegTestWallet.newRandom();
-    expect(wallet.walletCache).toBeDefined();
-    expect(wallet.walletCache!.get(wallet.cashaddr)).toBeDefined();
-    expect(wallet.walletCache!.get(wallet.cashaddr)!.privateKey).toBeDefined();
-  });
-
-  test("Wif wallet should have walletCache with at least one entry", async () => {
-    const wallet = await RegTestWifWallet.newRandom();
     expect(wallet.walletCache).toBeDefined();
     expect(wallet.walletCache!.get(wallet.cashaddr)).toBeDefined();
     expect(wallet.walletCache!.get(wallet.cashaddr)!.privateKey).toBeDefined();

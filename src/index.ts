@@ -91,11 +91,4 @@ export {
   TestNetWatchWallet,
   WatchWallet,
 } from "./wallet/Watch.js";
-export {
-  RegTestWallet,
-  RegTestWifWallet,
-  TestNetWallet,
-  TestNetWifWallet,
-  Wallet,
-  WifWallet,
-} from "./wallet/Wif.js";
+export { RegTestWallet, TestNetWallet, Wallet } from "./wallet/Wif.js";

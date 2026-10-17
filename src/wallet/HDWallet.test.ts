@@ -39,8 +39,8 @@ const expectedXprv =
 
 describe("HDWallet", () => {
   it("should create a new HDWallet instance", async () => {
-    const wallet = await Wallet.fromSeed(
-      "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
+    const wallet = await Wallet.fromId(
+      "seed:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage",
     );
     const walletSeed = await HDWallet.fromId(
       `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage`,
@@ -98,7 +98,7 @@ describe("HDWallet", () => {
   it("should track arbitrary integer branches via the `branches` option", async () => {
     const mnemonic =
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
-    const wallet = await Wallet.fromSeed(mnemonic);
+    const wallet = await Wallet.fromId(`seed:mainnet:${mnemonic}`);
 
     // The static helpers don't expose `branches`; reach into initialize().
     const w = new HDWallet();

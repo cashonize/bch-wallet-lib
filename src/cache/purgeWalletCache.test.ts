@@ -8,7 +8,7 @@ import {
 } from "../wallet/Base.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
 import { RegTestWatchWallet } from "../wallet/Watch.js";
-import { RegTestWallet, RegTestWifWallet } from "../wallet/Wif.js";
+import { RegTestWallet } from "../wallet/Wif.js";
 import { IndexedDbCache } from "./IndexedDbCache.js";
 import { CacheProvider } from "./interface.js";
 import {
@@ -108,10 +108,10 @@ describe("walletCacheIdFromWalletId", () => {
   });
 
   test("gives none for a single-address wallet, which keeps no cache record", async () => {
-    const single = await RegTestWallet.fromSeed(MNEMONIC);
+    const single = await RegTestWallet.fromId(`seed:regtest:${MNEMONIC}`);
     const wallets: BaseWallet[] = [
       single,
-      await RegTestWifWallet.fromWIF(single.privateKeyWif),
+      await RegTestWallet.fromWIF(single.privateKeyWif),
       await RegTestWallet.fromId(`privkey:regtest:${"11".repeat(32)}`),
       await RegTestWatchWallet.watchOnly(single.getDepositAddress()),
     ];

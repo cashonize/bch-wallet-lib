@@ -2,7 +2,6 @@ export class Config {
   // enforces all token-related methods to specify tokenaddr as recepient and change cashaddr
   static EnforceCashTokenReceiptAddresses = false;
   static DefaultParentDerivationPath = "m/44'/0'/0'";
-  static DefaultIpfsGateway = "https://dweb.link/ipfs/";
   // default currency for balance and rate conversions
   static DefaultCurrency = "usd";
   // caches the raw transactions in browser's indexedDB instead of memory
@@ -12,10 +11,6 @@ export class Config {
   // the highest blockchain.relayfee in satoshis per byte the wallet trusts; a server rate above it is
   // ignored and sends pay 1 sat/byte
   static MaxRelayFeePerByte = 10;
-
-  public static setIpfsGateway(ipfsGateway: string) {
-    this.DefaultIpfsGateway = ipfsGateway;
-  }
 
   // custom exchange rate function
   public static GetExchangeRateFn:

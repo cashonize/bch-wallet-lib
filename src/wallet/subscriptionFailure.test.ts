@@ -4,6 +4,7 @@ import { removeGlobalProvider, setGlobalProvider } from "../network/default.js";
 import { MockNetworkProvider } from "../network/MockNetworkProvider.js";
 import { delay } from "../util/delay.js";
 import { RegTestHDWallet } from "./HDWallet.js";
+import { RegTestWatchWallet } from "./Watch.js";
 import { RegTestWallet } from "./Wif.js";
 
 // A subscription that cannot be made settles what waits on it instead of leaving it pending
@@ -72,6 +73,12 @@ async function fund(address: string, satoshis: bigint) {
 
 const txHash = "00".repeat(32);
 
+async function newAddress() {
+  const wallet = await RegTestWallet.newRandom();
+  await wallet.stop();
+  return wallet.cashaddr;
+}
+
 describe("a subscription that cannot be made", () => {
   test("rejects waitForTransaction for a txHash", async () => {
     const wallet = await RegTestWallet.newRandom();
@@ -96,11 +103,52 @@ describe("a subscription that cannot be made", () => {
     );
   }, 5000);
 
-  test("settles a single-address wallet's first status watch", async () => {
+  test("rejects a single-address wallet's reads, and the next read subscribes again", async () => {
     refuse.address = true;
     const wallet = await RegTestWallet.newRandom();
+    await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
+    await expect(wallet.getUtxos()).rejects.toThrow("subscription refused");
+    await expect(wallet.getRawHistory()).rejects.toThrow(
+      "subscription refused",
+    );
+    await expect(wallet.getHistory()).rejects.toThrow("subscription refused");
+    await expect(wallet.watchStatus(() => {})).rejects.toThrow(
+      "subscription refused",
+    );
+    expect(provider.subscriptions).toBe(0);
+
+    refuse.address = false;
     expect(await wallet.getBalance()).toBe(0n);
+    expect(provider.subscriptions).toBe(1);
+    // the address is watched again
+    await fund(wallet.cashaddr, 5_000n);
+    await delay(100);
+    expect(await wallet.getBalance()).toBe(5_000n);
     await wallet.stop();
+  }, 5000);
+
+  test("rejects a watch-only wallet's reads, and the next read subscribes again", async () => {
+    const address = await newAddress();
+    await fund(address, 5_000n);
+    refuse.address = true;
+    const wallet = await RegTestWatchWallet.watchOnly(address);
+    await expect(wallet.getUtxos()).rejects.toThrow("subscription refused");
+
+    refuse.address = false;
+    const utxos = await wallet.getUtxos();
+    expect(utxos.map((utxo) => utxo.satoshis)).toEqual([5_000n]);
+    await wallet.stop();
+  }, 5000);
+
+  test("does not subscribe a single-address wallet again once it is stopped", async () => {
+    refuse.address = true;
+    const wallet = await RegTestWallet.newRandom();
+    await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
+    await wallet.stop();
+
+    refuse.address = false;
+    await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
+    expect(provider.subscriptions).toBe(0);
   }, 5000);
 
   test("rejects an HD wallet's reads, and the next read runs its discovery again", async () => {
@@ -206,6 +254,46 @@ describe("a subscription that cannot be made", () => {
 
     refuse.address = false;
     expect(await wallet.getBalance()).toBe(1_000n);
+    await wallet.stop();
+  }, 5000);
+});
+
+describe("a single-address wallet's fetch that fails", () => {
+  test("on the first status, rejects the reads, and the next read fetches again", async () => {
+    const address = await newAddress();
+    await fund(address, 5_000n);
+    refuse.fetch = true;
+    const wallet = await RegTestWatchWallet.watchOnly(address);
+    await expect(wallet.getBalance()).rejects.toThrow("connection lost");
+    // the failed watch is ended, not left to be notified
+    await delay(20);
+    expect(provider.subscriptions).toBe(0);
+
+    refuse.fetch = false;
+    expect(await wallet.getBalance()).toBe(5_000n);
+    expect(provider.subscriptions).toBe(1);
+    await wallet.stop();
+  }, 5000);
+
+  test("later, leaves the old status for the next notification to fetch", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    expect(await wallet.getBalance()).toBe(0n);
+    const balances: bigint[] = [];
+    await wallet.watchBalance((balance) => {
+      balances.push(balance);
+    });
+
+    refuse.fetch = true;
+    await fund(wallet.cashaddr, 5_000n);
+    await delay(100);
+    expect(await wallet.getBalance()).toBe(0n);
+    expect(balances).toEqual([]);
+
+    refuse.fetch = false;
+    await fund(wallet.cashaddr, 7_000n);
+    await delay(100);
+    expect(await wallet.getBalance()).toBe(12_000n);
+    expect(balances).toEqual([12_000n]);
     await wallet.stop();
   }, 5000);
 });

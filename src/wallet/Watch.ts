@@ -59,8 +59,13 @@ export class WatchWallet extends BaseWallet {
     (status: string | null, address: string) => void
   > = [];
   private baseCancelFn?: CancelFn;
+  /** Settles when the latest status watch is in place or has failed, and never rejects. */
   watchPromise?: Promise<void>;
   updatePromise?: Promise<void>;
+  // the latest status watch, which rejects if it failed; reads await it through watched()
+  private watch: Promise<void> = Promise.resolve();
+  private watchFailed = false;
+  private stopped = false;
 
   // Live state - updated by subscription notifications
   private status: string | null = null;
@@ -171,7 +176,7 @@ export class WatchWallet extends BaseWallet {
     this.lastConfirmedHeight = cached.lastConfirmedHeight;
 
     // Start subscription immediately (subscription-first approach)
-    this.watchPromise = this.makeWatchPromise().catch(() => {});
+    void this.startWatch();
 
     return this;
   }
@@ -199,35 +204,78 @@ export class WatchWallet extends BaseWallet {
     return this.walletCache.get(this.cashaddr)!;
   }
 
-  /// Subscribe to the single address for status change notifications
-  private async makeWatchPromise(): Promise<void> {
+  /// Make the status watch once the one in progress has ended. If it fails, the next read makes it
+  /// again
+  private startWatch(): Promise<void> {
+    this.watchFailed = false;
+    const run = this.watch.catch(() => {}).then(() => this.makeWatchPromise());
+    this.watch = run;
+    this.watchPromise = run.then(
+      () => {},
+      () => {
+        if (this.watch === run) this.watchFailed = true;
+      },
+    );
+    return run;
+  }
+
+  /// Wait for the status watch, making it again first if the last one failed; rejects with the
+  /// error of a watch that fails, rather than reading a cached or empty state
+  private watched(): Promise<void> {
+    if (this.watchFailed && !this.stopped) void this.startWatch();
+    return this.watch;
+  }
+
+  /// Subscribe to the single address for status change notifications. Settles once the first
+  /// status is handled; a subscription or first fetch that fails ends the subscription and rejects
+  private makeWatchPromise(): Promise<void> {
     const addr = this.cashaddr;
-    let resolved = false;
+    let watched = false;
+    let failed = false;
+    let cancel: CancelFn | undefined;
 
     return new Promise<void>((resolve, reject) => {
-      this.subscribe((provider) =>
-        provider.subscribeToAddress(
-          addr,
-          async (args: [address: string, status: string | null]) => {
-            const [address, status] = args;
-            if (address !== addr) return;
+      const fail = (error: unknown) => {
+        failed = true;
+        cancel?.().catch(() => {});
+        reject(error);
+      };
 
-            if (status !== null && status !== this.status) {
-              this.updatePromise = this.fetchData(status).catch(() => {});
-            }
-            this.status = status;
-            this.notifyWatchCallbacks(status, addr);
-
-            if (!resolved) {
-              resolved = true;
-              resolve();
-            }
+      const callback = ([address, status]: [string, string | null]) => {
+        if (address !== addr || failed) return;
+        this.update(status).then(
+          () => {
+            watched = true;
+            resolve();
           },
-        ),
-      ).then((cancel) => {
-        this.baseCancelFn = cancel;
-      }, reject);
+          (error: unknown) => {
+            // a later fetch that fails leaves the old status, so the next notification fetches again
+            if (!watched) fail(error);
+          },
+        );
+      };
+
+      this.subscribe((provider) =>
+        provider.subscribeToAddress(addr, callback),
+      ).then((made) => {
+        if (failed) {
+          made().catch(() => {});
+        } else {
+          cancel = made;
+          this.baseCancelFn = made;
+        }
+      }, fail);
     });
+  }
+
+  private async update(status: string | null): Promise<void> {
+    if (status !== null && status !== this.status) {
+      const update = this.fetchData(status);
+      this.updatePromise = update.catch(() => {});
+      await update;
+    }
+    this.status = status;
+    this.notifyWatchCallbacks(status, this.cashaddr);
   }
 
   private async fetchData(status: string | null): Promise<void> {
@@ -284,7 +332,7 @@ export class WatchWallet extends BaseWallet {
   public override async watchStatus(
     callback: (status: string | null, address: string) => void,
   ): Promise<CancelFn> {
-    await this.watchPromise;
+    await this.watched();
 
     this.watchCallbacks.push(callback);
 
@@ -314,6 +362,8 @@ export class WatchWallet extends BaseWallet {
   }
 
   public override async stop() {
+    // a stopped wallet's reads no longer make a failed status watch again
+    this.stopped = true;
     await super.stop();
     await this.baseCancelFn?.();
     this.baseCancelFn = undefined;
@@ -412,7 +462,7 @@ export class WatchWallet extends BaseWallet {
    *
    */
   public async getUtxos(): Promise<Utxo[]> {
-    await this.watchPromise;
+    await this.watched();
     await this.updatePromise;
 
     return this._slpSemiAware
@@ -423,7 +473,7 @@ export class WatchWallet extends BaseWallet {
   // Gets balance by summing value in all utxos in sats
   // Balance includes DUST utxos which could be slp tokens and also cashtokens with BCH amounts
   public async getBalance(): Promise<bigint> {
-    await this.watchPromise;
+    await this.watched();
     await this.updatePromise;
     return sumUtxoValue(this.utxos);
   }
@@ -433,7 +483,7 @@ export class WatchWallet extends BaseWallet {
     fromHeight: number = 0,
     toHeight: number = -1,
   ): Promise<TxI[]> {
-    await this.watchPromise;
+    await this.watched();
     await this.updatePromise;
 
     let history = this.rawHistory;
@@ -482,7 +532,7 @@ export class WatchWallet extends BaseWallet {
     count?: number;
     concurrency?: number;
   } = {}): Promise<TransactionHistoryItem[]> {
-    await this.watchPromise;
+    await this.watched();
     await this.updatePromise;
 
     return getHistory({

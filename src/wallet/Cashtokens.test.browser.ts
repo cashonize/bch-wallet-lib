@@ -558,7 +558,7 @@ describe(`Cashtokens should function in the browser`, () => {
 
       const decoded = libauth.decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(
@@ -608,7 +608,7 @@ describe(`Cashtokens should function in the browser`, () => {
 
       const decoded = libauth.decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(
@@ -669,7 +669,7 @@ describe(`Cashtokens should function in the browser`, () => {
 
       const decoded = libauth.decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(

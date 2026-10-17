@@ -1255,7 +1255,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
 
       const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(
@@ -1298,7 +1298,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
 
       const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(
@@ -1320,7 +1320,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
 
       const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(

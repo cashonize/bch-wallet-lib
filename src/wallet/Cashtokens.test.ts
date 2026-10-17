@@ -1322,7 +1322,7 @@ describe(`Test cashtokens`, () => {
 
       const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(
@@ -1374,7 +1374,7 @@ describe(`Test cashtokens`, () => {
 
       const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(
@@ -1437,7 +1437,7 @@ describe(`Test cashtokens`, () => {
 
       const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
 
       expect(

@@ -359,10 +359,17 @@ export class FakeTransport {
   }
 }
 
+/// The DOMException an IndexedDB request failed with, or an Error when it has none
+function toError(error, message) {
+  if (error instanceof Error) return error;
+  return new Error(message);
+}
+
 function request(req) {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () =>
+      reject(toError(req.error, "The IndexedDB request failed"));
   });
 }
 
@@ -416,7 +423,8 @@ export async function loadIndexedDB(dump) {
       }
       await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () =>
+          reject(toError(tx.error, "The IndexedDB transaction failed"));
       });
     }
     db.close();

@@ -30,6 +30,7 @@ import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
 import { CancelFn, WalletInfoI, WatchOptions } from "./interface.js";
 import { networkPrefixError } from "../util/networkPrefixError.js";
+import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 
 export interface WatchWalletOptions {
@@ -230,7 +231,7 @@ export class WatchWallet extends BaseWallet {
       const fail = (error: unknown) => {
         failed = true;
         cancel?.().catch(() => {});
-        reject(error);
+        reject(toError(error));
       };
 
       const callback = ([address, status]: [string, string | null]) => {

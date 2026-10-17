@@ -1,4 +1,5 @@
 import type { CancelFn } from "../wallet/interface.js";
+import { toError } from "./toError.js";
 
 /**
  * Run a watch callback, sync or async, and hand its throw or rejection to onError, or to
@@ -54,10 +55,10 @@ export function waitOnWatch<T>(
         settle();
         return;
       }
-      cancel().then(settle, reject);
+      cancel().then(settle, (error) => reject(toError(error)));
     };
     watch((value) => finish(() => resolve(value)), {
-      onError: (error) => finish(() => reject(error)),
+      onError: (error) => finish(() => reject(toError(error))),
     }).then(
       (made) => {
         if (settled) {
@@ -66,7 +67,7 @@ export function waitOnWatch<T>(
           cancel = made;
         }
       },
-      (error) => finish(() => reject(error)),
+      (error) => finish(() => reject(toError(error))),
     );
   });
 }

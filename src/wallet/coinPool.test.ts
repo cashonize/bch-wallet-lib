@@ -379,6 +379,63 @@ describe("the pool is a set", () => {
   });
 });
 
+describe("a txid in another case names the same coin", () => {
+  const upper = (utxo: Utxo) => ({ ...utxo, txid: utxo.txid.toUpperCase() });
+
+  test("in utxoIds, as an id or a coin", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n);
+    const coin = (await bob.getUtxos()).find(
+      (utxo) => utxo.satoshis === 10_000n,
+    )!;
+    const request = new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n });
+
+    for (const utxoIds of [[outpoint(upper(coin))], [upper(coin)]]) {
+      const response = await bob.send(request, { broadcast: false, utxoIds });
+      expect(inputOutpoints(response.transaction)).toEqual([outpoint(coin)]);
+    }
+  });
+
+  test("listed twice in utxoIds, in two cases, it counts once", async () => {
+    const bob = await fundedWallet(10_000n);
+    const [coin] = await bob.getUtxos();
+
+    const max = await bob.getMaxAmountToSend({
+      utxoIds: [coin, upper(coin)],
+    });
+    expect(max).toBe(await bob.getMaxAmountToSend({ utxoIds: [coin] }));
+  });
+
+  test("in ensureUtxos", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n);
+    const coin = (await bob.getUtxos()).find(
+      (utxo) => utxo.satoshis === 10_000n,
+    )!;
+    const request = new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n });
+
+    const response = await bob.send(request, {
+      broadcast: false,
+      ensureUtxos: [upper(coin)],
+    });
+    expect(inputOutpoints(response.transaction)).toEqual([outpoint(coin)]);
+
+    // and against utxoIds and excludeUtxoIds in the other case
+    const inUtxoIds = await bob.send(request, {
+      broadcast: false,
+      utxoIds: [coin],
+      ensureUtxos: [upper(coin)],
+    });
+    expect(inputOutpoints(inUtxoIds.transaction)).toEqual([outpoint(coin)]);
+    const error = await notAvailable(
+      bob.send(request, {
+        broadcast: false,
+        ensureUtxos: [upper(coin)],
+        excludeUtxoIds: [coin],
+      }),
+    );
+    expect(error.reason).toBe("excluded");
+  });
+});
+
 describe("utxoIds must be in the wallet", () => {
   test("a coin spent since it was read is refused, not dropped", async () => {
     const bob = await fundedWallet(10_000n, 20_000n);

@@ -29,7 +29,7 @@ import {
 } from "../transaction/Wif.js";
 import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import { asSendRequestObject } from "../util/asSendRequestObject.js";
-import { checkUtxos } from "../util/checkUtxos.js";
+import { checkUtxos, toOutpoint } from "../util/checkUtxos.js";
 import { deriveLockscript } from "../util/deriveLockscript.js";
 import {
   getRuntimePlatform,
@@ -626,9 +626,9 @@ export class BaseWallet {
   /**
    * The coins a spend may use: the wallet's current coins, narrowed to `utxoIds` when given (in
    * their order), minus `excludeUtxoIds`; and `ensureUtxos` resolved to coins of that pool.
-   * Coins are compared by outpoint, so a caller's copy of a coin stands for the wallet's. The
-   * token operations pick their inputs themselves and do not spend `ensureUtxos`, but a coin
-   * named there outside the pool is refused for them too.
+   * Coins are compared by outpoint, the txid in either case, so a caller's copy of a coin stands
+   * for the wallet's. The token operations pick their inputs themselves and do not spend
+   * `ensureUtxos`, but a coin named there outside the pool is refused for them too.
    */
   protected async getSpendPool(
     options?: SendRequestOptionsI,
@@ -655,7 +655,7 @@ export class BaseWallet {
           { field: "excludeUtxoIds", value: utxoId },
         );
       }
-      return `${txid.toLowerCase()}:${vout}`;
+      return toOutpoint({ txid, vout });
     };
     const excluded = new Set(
       (options?.excludeUtxoIds ?? []).map(toExcludedOutpoint),
@@ -674,16 +674,16 @@ export class BaseWallet {
     // a coin listed twice is one coin: the first listing keeps its place in the caller's order
     const seen = new Set<string>();
     pool = pool.filter((utxo) => {
-      const utxoId = toUtxoId(utxo);
+      const utxoId = toOutpoint(utxo);
       if (excluded.has(utxoId) || seen.has(utxoId)) return false;
       seen.add(utxoId);
       return true;
     });
 
-    const poolMap = new Map(pool.map((utxo) => [toUtxoId(utxo), utxo]));
-    const walletIds = new Set(walletUtxos.map(toUtxoId));
+    const poolMap = new Map(pool.map((utxo) => [toOutpoint(utxo), utxo]));
+    const walletIds = new Set(walletUtxos.map(toOutpoint));
     const ensureUtxos = (options?.ensureUtxos ?? []).map((utxo) => {
-      const utxoId = toUtxoId(utxo);
+      const utxoId = toOutpoint(utxo);
       const inPool = poolMap.get(utxoId);
       if (inPool) return inPool;
       if (excluded.has(utxoId)) {

@@ -1,10 +1,12 @@
 import {
-  assertSuccess,
   base64ToBin,
   bigIntToCompactUint,
+  binsAreEqual,
   binToBase64,
+  CashAddressType,
   decodeCashAddress,
-  encodeCashAddress,
+  decodeCashAddressFormatWithoutPrefix,
+  isBase64,
   RecoveryId,
   secp256k1,
   sha256,
@@ -49,6 +51,26 @@ function message_magic(str: string) {
 export function hash_message(str: string) {
   const h = sha256.hash;
   return h(h(message_magic(str)));
+}
+
+// The payload of a P2PKH cashaddr in either case, with or without its prefix (a given prefix is
+// checked by the checksum), or undefined for anything else
+function p2pkhPayload(cashaddr: string): Uint8Array | undefined {
+  let address = cashaddr;
+  if (!address.includes(":")) {
+    const format = decodeCashAddressFormatWithoutPrefix(address);
+    if (typeof format === "string") return undefined;
+    address = `${format.prefix}:${address}`;
+  }
+  const decoded = decodeCashAddress(address);
+  if (typeof decoded === "string") return undefined;
+  if (
+    decoded.type !== CashAddressType.p2pkh &&
+    decoded.type !== CashAddressType.p2pkhWithTokens
+  ) {
+    return undefined;
+  }
+  return decoded.payload;
 }
 
 export class SignedMessage implements SignedMessageI {
@@ -117,42 +139,35 @@ export class SignedMessage implements SignedMessageI {
   ): VerifyMessageResponseI {
     // Check that the signature is valid for the given message.
     const messageHash = hash_message(message);
-    const sig = base64ToBin(signature);
+    // base64ToBin decodes invalid input to garbage; read it as no signature
+    const sig = isBase64(signature) ? base64ToBin(signature) : new Uint8Array();
 
     let signatureValid = false;
     let keyMatch = false;
     let pkhMatch = false;
-    let pkh, signatureType;
+    let signatureType;
 
     if (sig.length === 65) {
-      const rawSig = sig.length === 65 ? sig.slice(1) : sig;
-      const recoveryId = sig.slice(0, 1)[0] - 31;
-      const recoveredPk = secp256k1.recoverPublicKeyCompressed(
-        rawSig,
-        recoveryId as RecoveryId,
-        messageHash,
-      );
-      if (typeof recoveredPk === "string") {
-        throw new Error(recoveredPk);
-      }
-
-      pkh = hash160(recoveredPk);
       signatureType = "recoverable";
-      signatureValid = secp256k1.verifySignatureCompact(
-        rawSig,
-        recoveredPk,
-        messageHash,
-      );
-      if (cashaddr) {
-        // Validate that the signature actually matches the provided cashaddr
-        const decoded = assertSuccess(decodeCashAddress(cashaddr));
-
-        const resultingCashaddr = encodeCashAddress({
-          prefix: decoded.prefix,
-          type: decoded.type,
-          payload: pkh,
-        }).address;
-        if (resultingCashaddr === cashaddr) {
+      const rawSig = sig.slice(1);
+      // 31..34: a compressed key's recovery id 0..3, as Electron Cash encodes it
+      const recoveryId = sig[0] - 31;
+      let recoveredPk: Uint8Array | string = "invalid recovery id";
+      if (recoveryId >= 0 && recoveryId <= 3) {
+        recoveredPk = secp256k1.recoverPublicKeyCompressed(
+          rawSig,
+          recoveryId as RecoveryId,
+          messageHash,
+        );
+      }
+      if (typeof recoveredPk !== "string") {
+        signatureValid = secp256k1.verifySignatureCompact(
+          rawSig,
+          recoveredPk,
+          messageHash,
+        );
+        const payload = cashaddr ? p2pkhPayload(cashaddr) : undefined;
+        if (payload && binsAreEqual(payload, hash160(recoveredPk))) {
           pkhMatch = true;
         }
       }

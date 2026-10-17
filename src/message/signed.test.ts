@@ -1,4 +1,9 @@
-import { binToHex } from "@bitauth/libauth";
+import {
+  binToBase64,
+  binToHex,
+  decodeCashAddress,
+  encodeCashAddress,
+} from "@bitauth/libauth";
 import fs from "fs";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { RegTestWallet, TestNetWallet, Wallet } from "../wallet/Wif.js";
@@ -313,5 +318,69 @@ describe("Test message Signing and Verification", () => {
     expect(result2.details!.publicKeyMatch).toBe(false);
     expect(result2.details!.signatureValid).toBe(true);
     expect(result2.details!.signatureType).toBe("recoverable");
+  });
+
+  describe("verify with an Electron Cash signature", () => {
+    const message = "Chancellor on brink of second bailout for banks";
+    const address = "bitcoincash:qqehccy89v7ftlfgr9v0zvhjzyy7eatdkqt05lt3nw";
+    const signature =
+      "H/9jMOnj4MFbH3d7t4yCQ9i7DgZU/VZ278w3+ySv2F4yIsdqjsc5ng3kmN8OZAThgyfCZOQxZCWza9V5XzlVY0Y=";
+    const withoutPrefix = address.slice("bitcoincash:".length);
+
+    test.each([
+      address.toUpperCase(),
+      withoutPrefix,
+      withoutPrefix.toUpperCase(),
+    ])("accepts %s", (cashaddr) => {
+      const result = SignedMessage.verify(message, signature, cashaddr);
+      expect(result.valid).toBe(true);
+      expect(result.details!.publicKeyHashMatch).toBe(true);
+    });
+
+    test("rejects the payload under another network prefix or address type", () => {
+      const { payload } = decodeCashAddress(address) as { payload: Uint8Array };
+      const otherNetwork = `bchtest:${withoutPrefix}`;
+      const p2sh = encodeCashAddress({
+        prefix: "bitcoincash",
+        type: "p2sh",
+        payload,
+      }).address;
+      for (const cashaddr of [otherNetwork, p2sh]) {
+        const result = SignedMessage.verify(message, signature, cashaddr);
+        expect(result.valid).toBe(false);
+        expect(result.details!.signatureValid).toBe(true);
+        expect(result.details!.publicKeyHashMatch).toBe(false);
+      }
+    });
+
+    test("returns valid: false for a malformed address", () => {
+      for (const cashaddr of [
+        "not an address",
+        "bitcoincash:",
+        address + "q",
+      ]) {
+        const result = SignedMessage.verify(message, signature, cashaddr);
+        expect(result.valid).toBe(false);
+        expect(result.details!.publicKeyHashMatch).toBe(false);
+      }
+    });
+
+    test("returns valid: false for a malformed or unrecoverable signature", () => {
+      const zeroSignature = (header: number) =>
+        binToBase64(Uint8Array.from([header, ...new Uint8Array(64)]));
+      for (const sig of [
+        "not base64!",
+        "",
+        zeroSignature(31),
+        // outside the 31..34 range of a compressed key's recovery id
+        zeroSignature(0),
+        zeroSignature(40),
+      ]) {
+        const result = SignedMessage.verify(message, sig, address);
+        expect(result.valid).toBe(false);
+        expect(result.details!.signatureValid).toBe(false);
+        expect(result.details!.publicKeyHashMatch).toBe(false);
+      }
+    });
   });
 });

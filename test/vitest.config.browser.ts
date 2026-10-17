@@ -14,14 +14,6 @@ try {
 export default defineConfig({
   resolve: {
     alias: {
-      "@rpckit/websocket/electrum-cash": path.resolve(
-        root,
-        "node_modules/@rpckit/websocket/dist/electrum-cash/index.js",
-      ),
-      "@rpckit/fallback/electrum-cash": path.resolve(
-        root,
-        "node_modules/@rpckit/fallback/dist/electrum-cash/index.js",
-      ),
       "#test": path.resolve(__dirname),
     },
   },

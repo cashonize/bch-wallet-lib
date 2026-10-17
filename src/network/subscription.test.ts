@@ -1,13 +1,12 @@
-import type { Transport, Unsubscribe } from "@rpckit/core";
-import type { ElectrumCashSchema } from "@rpckit/core/electrum-cash";
-import { webSocket } from "@rpckit/websocket/electrum-cash";
 import { Network } from "../interface.js";
 import { Wallet } from "../wallet/Wif.js";
+import { ElectrumTransport } from "./ElectrumTransport.js";
 import {
   createProvider,
   removeGlobalProvider,
   setGlobalProvider,
 } from "./index.js";
+import type { Unsubscribe } from "./Transport.js";
 
 describe("Provider subscription: blockchain.transaction.subscribe", () => {
   let provider: Awaited<ReturnType<typeof createProvider>>;
@@ -145,10 +144,10 @@ describe("Provider subscription: blockchain.headers.subscribe", () => {
 });
 
 describe("Raw transport subscription format", () => {
-  let transport: Transport<ElectrumCashSchema>;
+  let transport: ElectrumTransport;
 
   beforeAll(async () => {
-    transport = webSocket("wss://fulcrum.pat.mn:50004");
+    transport = new ElectrumTransport("wss://fulcrum.pat.mn:50004");
     await transport.connect();
   });
 
@@ -172,7 +171,7 @@ describe("Raw transport subscription format", () => {
     await new Promise((r) => setTimeout(r, 100));
 
     expect(received.length).toBeGreaterThanOrEqual(1);
-    // With transformInitialResult, format should be [txHash, confirmations]
+    // format should be [txHash, confirmations]
     const data = received[0] as [string, number | null];
     expect(Array.isArray(data)).toBe(true);
     expect(data[0]).toBe(txHash);
@@ -196,7 +195,7 @@ describe("Raw transport subscription format", () => {
     await new Promise((r) => setTimeout(r, 100));
 
     expect(received.length).toBeGreaterThanOrEqual(1);
-    // With transformInitialResult, format should be [address, status]
+    // format should be [address, status]
     const data = received[0] as [string, string | null];
     expect(Array.isArray(data)).toBe(true);
     expect(data[0]).toBe(address);
@@ -218,7 +217,7 @@ describe("Raw transport subscription format", () => {
     await new Promise((r) => setTimeout(r, 100));
 
     expect(received.length).toBeGreaterThanOrEqual(1);
-    // With transformInitialResult (no params), format should be [header]
+    // no params, so the format should be [header]
     const data = received[0] as [{ height: number; hex: string }];
     expect(Array.isArray(data)).toBe(true);
     expect(data[0].height).toBeGreaterThan(800000);

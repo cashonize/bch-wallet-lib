@@ -1,9 +1,9 @@
-import { webSocket } from "@rpckit/websocket/electrum-cash";
 import { Network } from "../interface.js";
+import { ElectrumTransport } from "./ElectrumTransport.js";
 import { createProvider, getNetworkProvider } from "./index.js";
 
-test("Should get a transaction with bare rpckit transport", async () => {
-  const transport = webSocket("wss://fulcrum.pat.mn:50004");
+test("Should get a transaction with a bare electrum transport", async () => {
+  const transport = new ElectrumTransport("wss://fulcrum.pat.mn:50004");
   await transport.connect();
   const transactionID =
     "4db095f34d632a4daf942142c291f1f2abb5ba2e1ccac919d85bdc2f671fb251";
@@ -20,7 +20,7 @@ test("Should get a transaction with provider", async () => {
   const transactionID =
     "4db095f34d632a4daf942142c291f1f2abb5ba2e1ccac919d85bdc2f671fb251";
   const transactionHex = await provider.getRawTransaction(transactionID);
-  //console.log(transactionHex);
+  expect(transactionHex.length).toBeGreaterThan(0);
   await provider.disconnect();
 });
 
@@ -28,13 +28,13 @@ test("Should propagate electrum error for non-existent transaction", async () =>
   const zeroTxId =
     "0000000000000000000000000000000000000000000000000000000000000000";
 
-  // rpckit rejects with a plain object { code, message }, not an Error instance
-  const transport = webSocket("wss://fulcrum.pat.mn:50004");
+  const transport = new ElectrumTransport("wss://fulcrum.pat.mn:50004");
   await transport.connect();
   try {
     await transport.request("blockchain.transaction.get", [zeroTxId]);
     throw new Error("Expected request to throw");
   } catch (error: any) {
+    expect(error).toBeInstanceOf(Error);
     expect(error.message).toContain(
       "No such mempool or blockchain transaction",
     );

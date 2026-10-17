@@ -38,12 +38,21 @@ export {
   setGlobalProvider,
 } from "./network/default.js";
 export { default as ElectrumNetworkProvider } from "./network/ElectrumNetworkProvider.js";
+export {
+  ElectrumTimeoutError,
+  ElectrumTransport,
+} from "./network/ElectrumTransport.js";
+export type {
+  ElectrumServer,
+  ElectrumTransportOptions,
+} from "./network/ElectrumTransport.js";
 export type {
   ElectrumRawTransaction,
   ElectrumRawTransactionVinWithValues,
   ElectrumRawTransactionWithInputValues,
 } from "./network/interface.js";
 export type { default as NetworkProvider } from "./network/NetworkProvider.js";
+export type { Transport, Unsubscribe } from "./network/Transport.js";
 // xpub utilities
 export {
   derivePublicNodeCashaddr,

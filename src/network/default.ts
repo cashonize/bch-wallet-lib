@@ -1,14 +1,12 @@
-import { createParseSync } from "@rpckit/core";
-import type { ElectrumCashSchema } from "@rpckit/core/electrum-cash";
-import { fallback } from "@rpckit/fallback/electrum-cash";
-import { webSocket } from "@rpckit/websocket/electrum-cash";
 import { Network } from "../interface.js";
-import { getDefaultServers } from "./configuration.js";
+import { getDefaultServers, parseServers } from "./configuration.js";
 import { networkTickerMap } from "./constant.js";
 import { default as ElectrumNetworkProvider } from "./ElectrumNetworkProvider.js";
+import {
+  ElectrumTransport,
+  type ElectrumTransportOptions,
+} from "./ElectrumTransport.js";
 import { default as NetworkProvider } from "./NetworkProvider.js";
-
-const parseSync = createParseSync({ webSocket, fallback });
 
 export function setGlobalProvider(
   network: Network,
@@ -33,12 +31,19 @@ export function removeGlobalProvider(network: Network): void {
   }
 }
 
+/**
+ * A provider for the given servers, or else the network's defaults (see DefaultProvider). Servers are
+ * a URL (`wss://host:port`), several separated by commas, or a list; a list is tried in order when
+ * connecting.
+ */
 export async function createProvider(
   network: Network = Network.MAINNET,
-  servers?: string,
+  servers?: string | string[],
+  options?: ElectrumTransportOptions,
 ): Promise<ElectrumNetworkProvider> {
-  const serverStr = servers ?? getDefaultServers(network);
-  const transport = parseSync<ElectrumCashSchema>(serverStr);
+  let urls = getDefaultServers(network);
+  if (servers !== undefined) urls = parseServers(servers);
+  const transport = new ElectrumTransport(urls, options);
   return new ElectrumNetworkProvider(transport, network);
 }
 
@@ -60,8 +65,7 @@ export function getNetworkProvider(
     return globalProvider;
   }
 
-  const serverStr = getDefaultServers(network);
-  const transport = parseSync<ElectrumCashSchema>(serverStr);
+  const transport = new ElectrumTransport(getDefaultServers(network));
   const provider = new ElectrumNetworkProvider(transport, network);
   setGlobalProvider(network, provider);
   return provider;

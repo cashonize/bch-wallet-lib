@@ -1,8 +1,4 @@
-import type {
-  ElectrumCashTestSchema,
-  Indexer,
-  IndexerConfig,
-} from "@paryonusd/mem-cash";
+import type { Indexer, IndexerConfig } from "@paryonusd/mem-cash";
 import { asTransport, createIndexer } from "@paryonusd/mem-cash";
 import { Network, Utxo } from "../interface.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
@@ -17,9 +13,9 @@ export interface MockNetworkProviderOptions {
  *
  * Inherits all Electrum protocol handling from ElectrumNetworkProvider.
  * Only adds test helpers (addUtxo, mine, setBlockHeight, reset) and
- * overrides mine() to use test.mine instead of daemon.passthrough.
+ * overrides mine() to use test.mine instead of the regtest node's RPC.
  */
-export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTestSchema> {
+export class MockNetworkProvider extends ElectrumNetworkProvider {
   /** The backing Indexer instance (extends Node). */
   public mc: Indexer;
   private connPromise?: Promise<void>;
@@ -28,9 +24,7 @@ export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTes
       addressPrefix: "bchreg",
       ...options?.indexerConfig,
     });
-    // IndexerTransport and rpckit Transport are structurally identical
-    // but TypeScript sees distinct ExtractParams types across packages.
-    super(asTransport(mc) as any, Network.REGTEST);
+    super(asTransport(mc), Network.REGTEST);
     this.mc = mc;
   }
 

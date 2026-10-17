@@ -2,24 +2,25 @@ import { Network } from "../interface.js";
 import { getRuntimePlatform } from "../util/index.js";
 import * as primary from "./constant.js";
 
+/**
+ * Servers that override the built-in ones per network: a URL (`wss://host:port`), several URLs
+ * separated by commas, or a list of URLs. A list is tried in order when connecting.
+ */
 export class DefaultProvider {
-  static servers: { [name: string]: string } = {
+  static servers: { [name: string]: string | string[] } = {
     mainnet: "",
     testnet: "",
     regtest: "",
   };
 }
 
-// Detect plain comma-separated URLs (not already in parse notation like "fallback(...)") and convert
-function normalizeServers(value: string): string {
-  if (!value) return value;
-  // Already parse notation (contains parens) or a single URL - pass through
-  if (value.includes("(") || !value.includes(",")) return value;
-  // Plain comma-separated URLs: convert to parse notation with fallback
-  return primary.toParseNotation(value.split(",").map((s) => s.trim()));
+/** Normalizes a server setting to a list of URLs; an empty setting gives an empty list. */
+export function parseServers(value: string | string[] | undefined): string[] {
+  const values = Array.isArray(value) ? value : (value ?? "").split(",");
+  return values.map((url) => url.trim()).filter((url) => url.length > 0);
 }
 
-export function getDefaultServers(network: Network): string {
+export function getDefaultServers(network: Network): string[] {
   let env: any;
   if (getRuntimePlatform() == "node") {
     env = process.env;
@@ -27,20 +28,15 @@ export function getDefaultServers(network: Network): string {
     env = {};
   }
 
-  const servers = {
-    mainnet:
-      DefaultProvider.servers.mainnet ||
-      normalizeServers(env.ELECTRUM) ||
-      primary.mainnetServers,
-    testnet:
-      DefaultProvider.servers.testnet ||
-      normalizeServers(env.ELECTRUM_TESTNET) ||
-      primary.testnetServers,
-    regtest:
-      DefaultProvider.servers.regtest ||
-      normalizeServers(env.ELECTRUM_REGTEST) ||
-      primary.regtestServers,
+  const envNames = {
+    mainnet: "ELECTRUM",
+    testnet: "ELECTRUM_TESTNET",
+    regtest: "ELECTRUM_REGTEST",
   };
 
-  return servers[network];
+  const configured = parseServers(DefaultProvider.servers[network]);
+  if (configured.length > 0) return configured;
+  const fromEnv = parseServers(env[envNames[network]]);
+  if (fromEnv.length > 0) return fromEnv;
+  return primary.defaultServers[network];
 }

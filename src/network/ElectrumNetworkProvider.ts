@@ -1,13 +1,4 @@
-import type {
-  ExtractParams,
-  ExtractRequestMethod,
-  ExtractReturn,
-  ExtractSubscriptionMethod,
-  Schema,
-  Transport,
-  Unsubscribe,
-} from "@rpckit/core";
-import type { ElectrumCashSchema } from "@rpckit/core/electrum-cash";
+import { binToBase64, utf8ToBin } from "@bitauth/libauth";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { CacheProvider } from "../cache/interface.js";
 import { MemoryCache } from "../cache/MemoryCache.js";
@@ -28,16 +19,16 @@ import {
   ElectrumRawTransaction,
   ElectrumRawTransactionVinWithValues,
   ElectrumRawTransactionWithInputValues,
+  ElectrumUtxo,
 } from "./interface.js";
 import { default as NetworkProvider } from "./NetworkProvider.js";
+import type { Transport } from "./Transport.js";
 
 /** Internal type for cached verbose transactions. fetchHeight is stripped before returning. */
 type CachedRawTransaction = ElectrumRawTransaction & { fetchHeight: number };
 
-export default class ElectrumNetworkProvider<
-  S extends Schema = ElectrumCashSchema,
-> implements NetworkProvider {
-  public transport: Transport<S>;
+export default class ElectrumNetworkProvider implements NetworkProvider {
+  public transport: Transport;
   public subscriptions: number = 0;
   private currentHeight: number = 0;
   private headerCancelFn?: CancelFn;
@@ -76,7 +67,7 @@ export default class ElectrumNetworkProvider<
   }
 
   constructor(
-    transport: Transport<S>,
+    transport: Transport,
     public network: Network = Network.MAINNET,
   ) {
     if (transport) {
@@ -87,10 +78,10 @@ export default class ElectrumNetworkProvider<
   }
 
   async getUtxos(cashaddr: string): Promise<Utxo[]> {
-    const result = await this.performRequest("blockchain.address.listunspent", [
-      cashaddr,
-      "include_tokens",
-    ]);
+    const result = await this.performRequest<ElectrumUtxo[]>(
+      "blockchain.address.listunspent",
+      [cashaddr, "include_tokens"],
+    );
     return result.map((utxo) => ({
       address: cashaddr,
       txid: utxo.tx_hash,
@@ -107,9 +98,10 @@ export default class ElectrumNetworkProvider<
   }
 
   async getBalance(cashaddr: string): Promise<bigint> {
-    const result = await this.performRequest("blockchain.address.get_balance", [
-      cashaddr,
-    ]);
+    const result = await this.performRequest<{
+      confirmed: number;
+      unconfirmed: number;
+    }>("blockchain.address.get_balance", [cashaddr]);
 
     return BigInt(result.confirmed) + BigInt(result.unconfirmed);
   }
@@ -127,7 +119,10 @@ export default class ElectrumNetworkProvider<
       }
     }
 
-    const result = await this.performRequest("blockchain.header.get", [height]);
+    const result = await this.performRequest<HexHeaderI>(
+      "blockchain.header.get",
+      [height],
+    );
     if (this.cache) {
       await this.cache.setItem(key, JSON.stringify(result));
     }
@@ -158,14 +153,13 @@ export default class ElectrumNetworkProvider<
     }
 
     if (misses.length > 0) {
-      // rpckit automatically batches concurrent requests via BatchScheduler
       const fetched = await Promise.all(
         misses.map(async (hash) => {
-          const tx = await this.performRequest("blockchain.transaction.get", [
-            hash,
-            false,
-          ]);
-          return [hash, tx as string] as [string, string];
+          const tx = await this.performRequest<string>(
+            "blockchain.transaction.get",
+            [hash, false],
+          );
+          return [hash, tx] as [string, string];
         }),
       );
 
@@ -211,12 +205,12 @@ export default class ElectrumNetworkProvider<
     }
 
     if (misses.length > 0) {
-      // rpckit automatically batches concurrent requests via BatchScheduler
       const fetched = await Promise.all(
         misses.map(async (height) => {
-          const result = await this.performRequest("blockchain.header.get", [
-            height,
-          ]);
+          const result = await this.performRequest<HexHeaderI>(
+            "blockchain.header.get",
+            [height],
+          );
           return [height, result] as [number, HexHeaderI];
         }),
       );
@@ -306,10 +300,10 @@ export default class ElectrumNetworkProvider<
     }
 
     try {
-      const result = await this.performRequest("blockchain.transaction.get", [
-        txHash,
-        verbose,
-      ]);
+      const result = await this.performRequest<string | ElectrumRawTransaction>(
+        "blockchain.transaction.get",
+        [txHash, verbose],
+      );
 
       if (!verbose) {
         const hex = result as string;
@@ -430,7 +424,7 @@ export default class ElectrumNetworkProvider<
     fromHeight: number = 0,
     toHeight: number = -1,
   ): Promise<TxI[]> {
-    return this.performRequest("blockchain.address.get_history", [
+    return this.performRequest<TxI[]>("blockchain.address.get_history", [
       cashaddr,
       fromHeight,
       toHeight,
@@ -439,7 +433,7 @@ export default class ElectrumNetworkProvider<
 
   // Get the minimum fee a low-priority transaction must pay in order to be accepted to the daemon's memory pool.
   async getRelayFee(): Promise<number> {
-    return this.performRequest("blockchain.relayfee");
+    return this.performRequest<number>("blockchain.relayfee");
   }
 
   public async watchAddressStatus(
@@ -545,79 +539,63 @@ export default class ElectrumNetworkProvider<
     );
   }
 
-  public async daemonPassthrough<T = unknown>(
-    method: string,
-    params: unknown[] | Record<string, unknown> = [],
-  ): Promise<T> {
-    await this.ready();
-    return this.transport.request("daemon.passthrough", {
-      method,
-      params,
-    }) as Promise<T>;
-  }
-
-  async mine(cashaddr: string, blocks: number): Promise<any> {
-    return this.daemonPassthrough("generatetoaddress", [blocks, cashaddr]);
-  }
-
-  public async performRequest<
-    M extends ExtractRequestMethod<ElectrumCashSchema>,
-  >(
-    method: M,
-    parameters?: ExtractParams<ElectrumCashSchema, M>,
-  ): Promise<ExtractReturn<ElectrumCashSchema, M>> {
-    await this.ready();
-
-    const TIMEOUT_MSG = "electrum-cash request timed out, retrying";
-
-    const makeTimeout = () =>
-      new Promise<never>(function (_resolve, reject) {
-        setTimeout(function () {
-          reject(TIMEOUT_MSG);
-        }, 30000);
-      });
-
-    const ensureError = (e: unknown): Error => {
-      if (e instanceof Error) return e;
-      if (typeof e === "object" && e !== null && "message" in e)
-        return Object.assign(new Error((e as any).message), e);
-      return new Error(typeof e === "string" ? e : String(e));
+  // Regtest only. Fulcrum's daemon.passthrough takes named params, which electrum-cash cannot send,
+  // so this calls generatetoaddress on the node's own RPC, with the RPC_* settings of the regtest
+  async mine(cashaddr: string, blocks: number): Promise<string[]> {
+    const env = typeof process === "undefined" ? {} : process.env;
+    const credentials = utf8ToBin(`${env.RPC_USER}:${env.RPC_PASS}`);
+    const init = {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${binToBase64(credentials)}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "1.0",
+        id: "mine",
+        method: "generatetoaddress",
+        params: [blocks, cashaddr],
+      }),
     };
 
-    const request = (
-      this.transport as unknown as Transport<ElectrumCashSchema>
-    ).request(method, parameters!);
-
-    try {
-      const value = await Promise.race([request, makeTimeout()]);
-      if (value instanceof Error) throw value;
-      return value;
-    } catch (e: unknown) {
-      const error = ensureError(e);
-      // Only retry on timeout, not on server errors
-      if (error.message !== TIMEOUT_MSG) throw error;
+    let unreachable: unknown;
+    for (const host of ["127.0.0.1", "host.docker.internal"]) {
+      let response: Response;
       try {
-        const value = await Promise.race([request, makeTimeout()]);
-        if (value instanceof Error) throw value;
-        return value;
-      } catch (e2: unknown) {
-        throw ensureError(e2);
+        response = await fetch(`http://${host}:${env.RPC_PORT}/`, init);
+      } catch (error) {
+        unreachable = error;
+        continue;
       }
+      const { result, error } = await response.json();
+      if (error) throw new Error(`generatetoaddress failed: ${error.message}`);
+      return result;
     }
+    throw new Error("The regtest node's RPC is not reachable.", {
+      cause: unreachable,
+    });
   }
 
-  public async subscribeRequest<
-    M extends ExtractSubscriptionMethod<ElectrumCashSchema>,
-  >(
-    method: M,
-    parameters: ExtractParams<ElectrumCashSchema, M>,
-    callback: (data: ExtractReturn<ElectrumCashSchema, M>) => void,
+  public async performRequest<T = unknown>(
+    method: string,
+    parameters: unknown[] = [],
+  ): Promise<T> {
+    await this.ready();
+    return this.transport.request(method, parameters) as Promise<T>;
+  }
+
+  public async subscribeRequest(
+    method: string,
+    parameters: unknown[],
+    callback: (data: any) => void,
   ): Promise<CancelFn> {
     await this.ready();
 
-    const unsubscribe: Unsubscribe = await (
-      this.transport as unknown as Transport<ElectrumCashSchema>
-    ).subscribe(method, parameters, callback);
+    const unsubscribe = await this.transport.subscribe(
+      method,
+      parameters,
+      callback,
+    );
     this.subscriptions++;
 
     return async () => {

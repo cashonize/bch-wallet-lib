@@ -1055,33 +1055,65 @@ export class BaseWallet implements WalletI {
       throw Error("Couldn't get spend amount when building transaction");
     }
 
+    // The fee is estimated from the coins the selection picks, not from every candidate: sizing
+    // the whole pool made token operations fund an input for each token coin of the wallet, and
+    // plain sends over-select (mainnet-js#253). Each round selects for the last round's estimate
+    // until the selected coins cover their own fee, the precise one included.
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
-    const feeEstimate = await getFeeAmountSimple({
-      utxos: utxos,
-      sendRequests: sendRequests,
-      sourceAddress: this.getDepositAddress(),
-      relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      feePaidBy: feePaidBy,
-    });
-
-    const selectedUtxos = await getSuitableUtxos(
-      utxos,
-      spendAmount + feeEstimate,
-      bestHeight,
-      feePaidBy,
-      selectionRequests,
-      options?.ensureUtxos || [],
-      options?.tokenOperation,
-      {
-        coinSelection: options?.coinSelection,
-        feePerByte: relayFeePerByteInSatoshi,
-      },
-    );
-    if (selectedUtxos.length === 0) {
-      throw new InsufficientFundsError(
-        "The available inputs couldn't satisfy the request with fees",
-        { asset: "bch" },
+    const estimateFee = (inputs: Utxo[]) =>
+      getFeeAmountSimple({
+        utxos: inputs,
+        sendRequests: sendRequests,
+        sourceAddress: this.getDepositAddress(),
+        relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
+        feePaidBy: feePaidBy,
+      });
+    let feeEstimate = await estimateFee(options?.ensureUtxos || []);
+    let selectedUtxos: Utxo[] = [];
+    let fundingUtxos: Utxo[] = [];
+    let fee = 0n;
+    for (let round = 0; ; round++) {
+      selectedUtxos = await getSuitableUtxos(
+        utxos,
+        spendAmount + feeEstimate,
+        bestHeight,
+        feePaidBy,
+        selectionRequests,
+        options?.ensureUtxos || [],
+        options?.tokenOperation,
+        {
+          coinSelection: options?.coinSelection,
+          feePerByte: relayFeePerByteInSatoshi,
+        },
       );
+      if (selectedUtxos.length === 0) {
+        throw new InsufficientFundsError(
+          "The available inputs couldn't satisfy the request with fees",
+          { asset: "bch" },
+        );
+      }
+      let feeNeeded = await estimateFee(selectedUtxos);
+      if (feeNeeded <= feeEstimate) {
+        fundingUtxos = options?.inputOrdering
+          ? options.inputOrdering({ inputs: selectedUtxos })
+          : selectedUtxos;
+        fee = await getFeeAmount({
+          utxos: fundingUtxos,
+          sendRequests: sendRequests,
+          sourceAddress: this.getDepositAddress(),
+          relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
+          feePaidBy: feePaidBy,
+          walletCache: this.walletCache,
+          fee: options?.fee,
+        });
+        if (fee <= feeEstimate) break;
+        feeNeeded = fee;
+      }
+      // the estimate grows every round; this cuts off a coinSelection that never settles
+      if (round > utxos.length) {
+        throw new Error("The fee estimate did not settle on a set of inputs");
+      }
+      feeEstimate = feeNeeded;
     }
     // a token coin the change was not computed from would be burned
     const tokenInputIds = new Set(tokenInputs.map(toUtxoId));
@@ -1095,18 +1127,6 @@ export class BaseWallet implements WalletI {
         "Token selection picked a coin the change does not cover",
       );
     }
-    const fundingUtxos = options?.inputOrdering
-      ? options.inputOrdering({ inputs: selectedUtxos })
-      : selectedUtxos;
-    const fee = await getFeeAmount({
-      utxos: fundingUtxos,
-      sendRequests: sendRequests,
-      sourceAddress: this.getDepositAddress(),
-      relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      feePaidBy: feePaidBy,
-      walletCache: this.walletCache,
-      fee: options?.fee,
-    });
     const { encodedTransaction, sourceOutputs } = await buildEncodedTransaction(
       {
         inputs: fundingUtxos,

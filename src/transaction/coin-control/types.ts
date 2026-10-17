@@ -26,7 +26,9 @@ export interface CoinSelectionContext {
   /**
    * Total satoshis the transaction still needs to be funded with from
    * `available`. Accounts for outputs + estimated fee minus value already
-   * contributed by `pinned` and any token UTXOs.
+   * contributed by `pinned` and any token UTXOs. The fee is estimated from
+   * the inputs picked in the previous call, so a send calls the selection
+   * again with a larger amount until its pick covers its own fee.
    */
   amountRequired: bigint;
   /** Network relay fee in sats/byte at the current best height. */

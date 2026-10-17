@@ -98,7 +98,7 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     const reserved = coins.find((utxo) => utxo.satoshis === 20_000n)!;
     const options = { excludeUtxoIds: [outpoint(reserved)] };
 
-    const max = await bob.getMaxAmountToSend({ options });
+    const max = await bob.getMaxAmountToSend(options);
     expect(max).toBeLessThan(40_000n);
     expect(max).toBeGreaterThan(39_000n);
 
@@ -180,7 +180,8 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     expect(inputOutpoints(response.transaction!)).toEqual([outpoint(first)]);
     expect(
       await bob.getMaxAmountToSend({
-        options: { utxoIds: [first, second], excludeUtxoIds: [second] },
+        utxoIds: [first, second],
+        excludeUtxoIds: [second],
       }),
     ).toBe(decoded(response.transaction!).outputs[0].valueSatoshis);
   });
@@ -463,7 +464,7 @@ describe("ensureUtxos must be in the pool", () => {
           "",
           options,
         ),
-      () => bob.getMaxAmountToSend({ options }),
+      () => bob.getMaxAmountToSend(options),
     ]) {
       expect((await notAvailable(spend())).reason).toBe("excluded");
     }
@@ -518,7 +519,7 @@ describe("sendMax spends only what it counts", () => {
           broadcast: false,
           ensureUtxos: [tokenCoin],
         }),
-      () => bob.getMaxAmountToSend({ options: { ensureUtxos: [tokenCoin] } }),
+      () => bob.getMaxAmountToSend({ ensureUtxos: [tokenCoin] }),
     ]) {
       const error = await spend().catch((e: unknown) => e);
       expect(error).toBeInstanceOf(InvalidRequestError);
@@ -535,7 +536,8 @@ describe("sendMax spends only what it counts", () => {
     const utxoIds = coins.filter((utxo) => utxo.satoshis !== 10_000n);
 
     const max = await bob.getMaxAmountToSend({
-      options: { utxoIds, ensureUtxos: [pinned] },
+      utxoIds,
+      ensureUtxos: [pinned],
     });
     const response = await bob.sendMax(carol.cashaddr!, {
       broadcast: false,

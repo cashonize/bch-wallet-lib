@@ -140,3 +140,4 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 ### Changed
 
 - `tokenMint(requests, options)`: the `deductTokenAmount` parameter is gone, and with it the burn of one fungible token per mint off the minting NFT; the minting NFT always comes back with all its fungible tokens. Drop the second argument: `tokenMint(requests, false, options)` becomes `tokenMint(requests, options)`. A caller that wants fungible tokens burned burns them with `tokenBurn`.
+- `getMaxAmountToSend(options)`: the options are the argument itself, no longer wrapped in `{ options }`, and the `outputCount` parameter is gone; the max is always that of a `sendMax`, to one output. `getMaxAmountToSend({ options: spendConfig() })` becomes `getMaxAmountToSend(spendConfig())`. A caller that split the max over several outputs subtracts the size of the extra outputs itself.

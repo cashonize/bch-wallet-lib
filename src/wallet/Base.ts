@@ -820,17 +820,10 @@ export class BaseWallet implements WalletI {
   }
 
   protected async _getMaxAmountToSend(
-    params: {
-      outputCount?: number;
-      options?: SendRequestOptionsI;
-      privateKey?: Uint8Array;
-    } = {
-      outputCount: 1,
-      options: {},
-    },
+    options?: SendRequestOptionsI,
   ): Promise<{ value: bigint; utxos: Utxo[]; ensureUtxos: Utxo[] }> {
     // get inputs
-    const { pool, ensureUtxos } = await this.getSpendPool(params.options);
+    const { pool, ensureUtxos } = await this.getSpendPool(options);
     // a BCH sweep has no token change to price, so a token coin's satoshis would go to the miners
     const tokenCoin = ensureUtxos.find((utxo) => utxo.token);
     if (tokenCoin) {
@@ -840,18 +833,14 @@ export class BaseWallet implements WalletI {
       );
     }
     let utxos = pool;
-    if (!params.options?.utxoIds) {
+    if (!options?.utxoIds) {
       utxos = pool.filter((utxo) => !utxo.token);
     }
 
-    // simulate outputs using the sender's address
-    const sendRequest = new SendRequest({
-      cashaddr: placeholderCashAddr,
-      value: 100n,
-    });
-    const sendRequests = Array(params.outputCount)
-      .fill(0)
-      .map(() => sendRequest);
+    // the one output of a sendMax, sized as a P2PKH output
+    const sendRequests = [
+      new SendRequest({ cashaddr: placeholderCashAddr, value: 100n }),
+    ];
 
     const fundingUtxos = await getSuitableUtxos(utxos, undefined, sendRequests);
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
@@ -871,13 +860,14 @@ export class BaseWallet implements WalletI {
     return { value: result, utxos: fundingUtxos, ensureUtxos };
   }
 
+  /**
+   * The amount a `sendMax` with these options sends: the BCH coins of the pool minus the fee of
+   * spending them all to one output.
+   */
   public async getMaxAmountToSend(
-    params: { outputCount?: number; options?: SendRequestOptionsI } = {
-      outputCount: 1,
-      options: {},
-    },
+    options?: SendRequestOptionsI,
   ): Promise<bigint> {
-    const { value: result } = await this._getMaxAmountToSend(params);
+    const { value: result } = await this._getMaxAmountToSend(options);
 
     return result;
   }
@@ -939,11 +929,7 @@ export class BaseWallet implements WalletI {
       value: maxSpendableAmount,
       utxos,
       ensureUtxos,
-    } = await this._getMaxAmountToSend({
-      outputCount: 1,
-      options: options,
-      privateKey: privateKey,
-    });
+    } = await this._getMaxAmountToSend(options);
 
     // pinned as well: the selection would stop at the coins that cover the amount, leaving the
     // ones worth less than their own input fee unspent and their share of the fee to the miners.

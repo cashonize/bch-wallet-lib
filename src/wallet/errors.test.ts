@@ -1,5 +1,11 @@
+import {
+  decodeTransaction,
+  encodeTransaction,
+  hexToBin,
+} from "@bitauth/libauth";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { NFTCapability } from "../interface.js";
+import { BroadcastRejectedError } from "../network/errors.js";
 import { allocateFee } from "../transaction/allocateFee.js";
 import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { FeePaidByEnum } from "./enum.js";
@@ -118,5 +124,54 @@ describe("insufficient funds are an InsufficientFundsError", () => {
     expect(() => allocateFee(requests, 7000n, FeePaidByEnum.any, 0n)).toThrow(
       InsufficientFundsError,
     );
+  });
+});
+
+describe("a refused broadcast is a BroadcastRejectedError", () => {
+  test("a double spend", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send([[bob.cashaddr, 10_000n]]);
+
+    // two spends of bob's one coin, built before either is broadcast
+    const first = await bob.send([[alice.cashaddr, 5_000n]], {
+      broadcast: false,
+    });
+    const second = await bob.send([[alice.cashaddr, 6_000n]], {
+      broadcast: false,
+    });
+    await bob.submitTransaction(hexToBin(first.transaction));
+
+    const error = await bob
+      .submitTransaction(hexToBin(second.transaction))
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BroadcastRejectedError);
+    const rejected = error as BroadcastRejectedError;
+    expect(rejected.reason).toBe("txn-mempool-conflict");
+    expect(rejected.code).toBe(18);
+    expect(rejected.txid).toBe(second.txId);
+    expect(rejected.message).toBe(
+      "the transaction was rejected by network rules.\n\ntxn-mempool-conflict (code 18)\n",
+    );
+  });
+
+  test("a spend of a coin the node does not have", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send([[bob.cashaddr, 10_000n]]);
+    const spend = await bob.send([[alice.cashaddr, 5_000n]], {
+      broadcast: false,
+    });
+    // the same spend from a coin that never existed
+    const transaction = decodeTransaction(hexToBin(spend.transaction));
+    if (typeof transaction === "string") throw new Error(transaction);
+    transaction.inputs[0].outpointTransactionHash = hexToBin("55".repeat(32));
+
+    const error = await bob
+      .submitTransaction(encodeTransaction(transaction))
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BroadcastRejectedError);
+    expect((error as BroadcastRejectedError).reason).toBe("Missing inputs");
+    expect((error as BroadcastRejectedError).code).toBeUndefined();
   });
 });

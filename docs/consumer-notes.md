@@ -82,8 +82,6 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
    - Add a stale-on-error fallback, e.g. `get(symbol, {staleOnError: true})`. A dApp sign dialog needs a fiat value or must refuse.
    - Key the cache by rate source, or clear it when `GetExchangeRateFn` changes. Otherwise the old provider's rate is served for up to 250 s.
 8. **Errors.**
-   - Throw `Error`, never strings. This still happens in `getHistory`, `signUnsignedTransaction` and `prepareInputs`.
-   - Add a typed `BroadcastRejectedError` with the parsed reason and code.
    - Give WIF errors a type or a code, and export `decodeWif` or `wifNetwork`. The sweep QR filter currently guesses the network from the first character.
 9. **Request validation.** Reject non-hex or odd-length commitments and categories; libauth reads `abc` as `ab0c`. Optionally check amount ≤ 2^63−1 and the 100 kB standard size before signing.
 10. **Smaller additions.**
@@ -106,6 +104,7 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
 | `opReturnChunks`; parsing the `OP_RETURN:`/`SCRIPT:` placeholder; the 220-byte budget                               | `parseBinary` rewrite, `lockingBytecode` on history, `MAX_OP_RETURN_BYTES` (mainnet-js#260, #248). `parseBinary` now throws on malformed scripts, so wrap it when reading on-chain data |
 | `shortfallMessages`; the 550-sat pre-checks                                                                         | `InsufficientFundsError`                                                                                                                                                                |
 | `electrumTimeoutMessage` string compare                                                                             | `ElectrumTimeoutError`                                                                                                                                                                  |
+| `classifyBroadcastError` message matching; `typeof error === 'string'` branches                                     | `BroadcastRejectedError` with `reason` and `code`; only `Error`s are thrown                                                                                                             |
 | `BCH_RELAY_FEE` globals                                                                                             | `Config.RelayFeePerByte` and the checked server fee (mainnet-js#254)                                                                                                                    |
 | `getNamedWalletIdFromDb`, `deleteWalletFromDb`, `pruneHdWalletKeyCache`                                             | `getNamedWalletId` returns `undefined`; `deleteNamedWallet`, `pruneWalletCaches` (mainnet-js#261, #249)                                                                                 |
 | `cashconnectStore.waitForBlockchainConnection`; `connectElectrum` windows                                           | Each request connects; silent sockets are replaced; set `connectTimeout: 15000`                                                                                                         |

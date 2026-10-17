@@ -29,6 +29,7 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm check:dist-imports
+      - run: pnpm check:dist-errors
 
   browser:
     runs-on: ubuntu-latest

@@ -124,7 +124,7 @@ export default interface NetworkProvider {
    * Broadcast a raw hex transaction to the Bitcoin Cash network.
    * @param txHex The raw transaction hex to be broadcast.
    * @param awaitPropagation Wait for transaction to be registered in the bitcoind or indexer. If set to false, function returns computed transaction hash immediately.
-   * @throws {Error} If the transaction was not accepted by the network.
+   * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
    * @returns The transaction ID (hash) corresponding to the broadcast transaction.
    */
   sendRawTransaction(

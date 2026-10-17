@@ -25,6 +25,11 @@ import {
   ElectrumUtxo,
 } from "./interface.js";
 import {
+  BroadcastRejectedError,
+  parseRejection,
+  serverErrorCode,
+} from "./errors.js";
+import {
   ConcurrencyOptions,
   default as NetworkProvider,
 } from "./NetworkProvider.js";
@@ -416,7 +421,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
       });
       // broadcast once subscribed, so that the transaction's first status is not missed
       this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-        (error) => onError(toError(error)),
+        (error) => onError(broadcastError(error, txHash)),
       );
       return cancel;
     });
@@ -616,4 +621,18 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     await this.transport.close();
     return true;
   }
+}
+
+// A server's error response to a broadcast is a refusal; a timeout or a lost connection is not, as
+// the transaction may still have reached the node
+function broadcastError(error: unknown, txid: string): Error {
+  if (serverErrorCode(error) === undefined) return toError(error);
+  const { message } = error as Error;
+  const { reason, code } = parseRejection(message);
+  return new BroadcastRejectedError(message, {
+    reason,
+    code,
+    txid,
+    cause: error,
+  });
 }

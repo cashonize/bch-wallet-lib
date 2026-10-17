@@ -39,6 +39,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check:dist-imports": "node scripts/check-dist-imports.mjs",
+    "check:dist-errors": "node scripts/check-dist-errors.mjs",
     "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",

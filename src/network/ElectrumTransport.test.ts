@@ -1,10 +1,13 @@
 import { EventEmitter } from "node:events";
 import { delay } from "../util/delay.js";
+import { getTransactionHash } from "../util/transaction.js";
+import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 import {
   ElectrumTimeoutError,
   ElectrumTransport,
   type ElectrumServer,
 } from "./ElectrumTransport.js";
+import { BroadcastRejectedError } from "./errors.js";
 
 type Reply = { result: unknown } | { error: { code: number; message: string } };
 type Handler = (params: unknown[], call: number) => Reply | undefined;
@@ -504,5 +507,64 @@ describe("ElectrumTransport connecting", () => {
     expect(() => new ElectrumTransport([])).toThrow(
       "At least one electrum server",
     );
+  });
+});
+
+describe("a broadcast through the provider", () => {
+  const txHex = "0200";
+
+  function provider(fake: FakeServer, options = {}) {
+    transport = new ElectrumTransport(asServer(fake), options);
+    fake.handlers.set("blockchain.transaction.subscribe", () => ({
+      result: null,
+    }));
+    return new ElectrumNetworkProvider(transport);
+  }
+
+  test("a refusal is a BroadcastRejectedError with the node's reason", async () => {
+    const fake = new FakeServer();
+    const message =
+      "the transaction was rejected by network rules.\n\ntxn-mempool-conflict (code 18)\n";
+    fake.handlers.set("blockchain.transaction.broadcast", () => ({
+      error: { code: 1, message },
+    }));
+
+    const error = await provider(fake)
+      .sendRawTransaction(txHex)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BroadcastRejectedError);
+    const rejected = error as BroadcastRejectedError;
+    expect(rejected.name).toBe("BroadcastRejectedError");
+    expect(rejected.message).toBe(message);
+    expect(rejected.reason).toBe("txn-mempool-conflict");
+    expect(rejected.code).toBe(18);
+    expect(rejected.txid).toBe(await getTransactionHash(txHex));
+    expect(rejected.cause).toBeInstanceOf(Error);
+    expect((rejected.cause as Error).cause).toEqual({ code: 1, message });
+  });
+
+  test("a timed out broadcast stays an ElectrumTimeoutError", async () => {
+    const fake = new FakeServer();
+    const error = await provider(fake, { requestTimeout: 50 })
+      .sendRawTransaction(txHex)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ElectrumTimeoutError);
+    expect(error).not.toBeInstanceOf(BroadcastRejectedError);
+  });
+
+  test("a broadcast that loses its connection is not a refusal", async () => {
+    const fake = new FakeServer();
+    fake.handlers.set("blockchain.transaction.broadcast", () => {
+      setTimeout(() => fake.drop(), 0);
+      return undefined;
+    });
+    const error = await provider(fake)
+      .sendRawTransaction(txHex)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(BroadcastRejectedError);
   });
 });

@@ -88,6 +88,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `WalletCacheI`'s `init`, `flush`, `getByPath` and `setStatusAndUtxos` are marked `@internal`: the wallets call them, and a caller who does can break the wallet's own state. `get`, `getByIndex` and `persist` stay.
 - `SignedMessage.sign(message, privateKey)` returns `{ signature }` only and no longer computes a DER or Schnorr signature; `SignedMessage.verify(message, signature, address)` takes the address as a required argument and returns `{ valid }` only. Only the static methods remain; `new SignedMessage()` has no methods.
 - `getNetworkProvider` and `setGlobalProvider` take and return `ElectrumNetworkProvider` instead of the removed interface; nothing changes for a caller that passed one.
+- `ElectrumNetworkProvider.getRawTransaction(hash)` takes only the hash and returns the hex. The `verbose` and `loadInputValues` overloads are gone: `getRawTransaction(hash, true)` becomes `getRawTransactionObject(hash)`, and `getRawTransaction(hash, true, true)` becomes `getRawTransactionObject(hash, true)`. Both read and write the same `txraw-` and `tx-` cache entries as before.
 
 ### Removed
 

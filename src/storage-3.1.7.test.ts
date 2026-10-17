@@ -364,9 +364,8 @@ describe("data written by mainnet-js 3.1.7", () => {
         expect(raw.get(txid)).toBe(transactions[txid]);
         expect(await provider.getRawTransaction(txid)).toBe(transactions[txid]);
       }
-      const verbose = await provider.getRawTransaction(
+      const verbose = await provider.getRawTransactionObject(
         cached.verboseTransaction,
-        true,
       );
       expect(verbose.hex).toBe(transactions[cached.verboseTransaction]);
       expect(verbose).not.toHaveProperty("fetchHeight");

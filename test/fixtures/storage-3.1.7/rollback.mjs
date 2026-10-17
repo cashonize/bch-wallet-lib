@@ -183,7 +183,7 @@ for (const { network } of NETWORKS) {
   const txids = Object.keys(chains[network].transactions).sort();
   await provider.connect();
   await provider.getRawTransactions(txids.slice(0, 2));
-  await provider.getRawTransaction(txids[3], true);
+  await provider.getRawTransactionObject(txids[3]);
   await provider.getHeaders([chains[network].height - 3]);
 }
 lib.Config.GetExchangeRateFn = async () => 400.25;

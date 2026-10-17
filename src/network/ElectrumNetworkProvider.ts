@@ -244,83 +244,30 @@ export default class ElectrumNetworkProvider {
     return this.currentHeight;
   }
 
-  async getRawTransaction(
-    txHash: string,
-    verbose: true,
-    loadInputValues: true,
-  ): Promise<ElectrumRawTransactionWithInputValues>;
-  async getRawTransaction(
-    txHash: string,
-    verbose: true,
-    loadInputValues?: false,
-  ): Promise<ElectrumRawTransaction>;
-  async getRawTransaction(
-    txHash: string,
-    verbose?: false,
-    loadInputValues?: false,
-  ): Promise<string>;
-  async getRawTransaction(
-    txHash: string,
-    verbose: boolean = false,
-    loadInputValues: boolean = false,
-  ): Promise<
-    string | ElectrumRawTransaction | ElectrumRawTransactionWithInputValues
-  > {
-    const nonVerboseKey = `txraw-${this.network}-${txHash}`;
-    const verboseKey = `tx-${this.network}-${txHash}`;
-    const key = verbose ? verboseKey : nonVerboseKey;
-
+  /**
+   * The raw transaction hex of a transaction ID.
+   * @throws {Error} If the transaction does not exist
+   */
+  async getRawTransaction(txHash: string): Promise<string> {
+    const key = `txraw-${this.network}-${txHash}`;
     if (this.cache) {
       const cached = await this.cache.getItem(key);
-      if (cached) {
-        if (!verbose) {
-          return cached;
-        }
-
-        const cachedTx = JSON.parse(cached) as CachedRawTransaction;
-        if (cachedTx.confirmations > 0) {
-          const currentHeight = await this.getBlockHeight();
-          cachedTx.confirmations += currentHeight - cachedTx.fetchHeight;
-        }
-        const { fetchHeight: _, ...transaction } = cachedTx;
-
-        if (loadInputValues) {
-          return this.enrichWithInputValues(transaction);
-        }
-
-        return transaction;
-      }
+      if (cached) return cached;
     }
 
+    const hex = await this.fetchTransaction<string>(txHash, false);
+    if (this.cache) {
+      await this.cache.setItem(key, hex);
+    }
+    return hex;
+  }
+
+  private async fetchTransaction<T>(txHash: string, verbose: boolean) {
     try {
-      const result = await this.performRequest<string | ElectrumRawTransaction>(
-        "blockchain.transaction.get",
-        [txHash, verbose],
-      );
-
-      if (!verbose) {
-        const hex = result as string;
-        if (this.cache) {
-          await this.cache.setItem(key, hex);
-        }
-        return hex;
-      }
-
-      const cachedTx = result as CachedRawTransaction;
-      cachedTx.confirmations ??= 0;
-      cachedTx.fetchHeight = await this.getBlockHeight();
-
-      if (this.cache) {
-        await this.cache.setItem(key, JSON.stringify(cachedTx));
-      }
-
-      const { fetchHeight: _, ...transaction } = cachedTx;
-
-      if (loadInputValues) {
-        return this.enrichWithInputValues(transaction);
-      }
-
-      return transaction;
+      return await this.performRequest<T>("blockchain.transaction.get", [
+        txHash,
+        verbose,
+      ]);
     } catch (error: any) {
       if (
         (error.message as string).indexOf(
@@ -374,10 +321,36 @@ export default class ElectrumNetworkProvider {
     txHash: string,
     loadInputValues: boolean = false,
   ): Promise<ElectrumRawTransaction | ElectrumRawTransactionWithInputValues> {
-    if (loadInputValues) {
-      return this.getRawTransaction(txHash, true, true);
+    const key = `tx-${this.network}-${txHash}`;
+    let cachedTx: CachedRawTransaction | undefined;
+    if (this.cache) {
+      const cached = await this.cache.getItem(key);
+      if (cached) {
+        cachedTx = JSON.parse(cached) as CachedRawTransaction;
+        if (cachedTx.confirmations > 0) {
+          const currentHeight = await this.getBlockHeight();
+          cachedTx.confirmations += currentHeight - cachedTx.fetchHeight;
+        }
+      }
     }
-    return this.getRawTransaction(txHash, true);
+
+    if (!cachedTx) {
+      cachedTx = await this.fetchTransaction<CachedRawTransaction>(
+        txHash,
+        true,
+      );
+      cachedTx.confirmations ??= 0;
+      cachedTx.fetchHeight = await this.getBlockHeight();
+      if (this.cache) {
+        await this.cache.setItem(key, JSON.stringify(cachedTx));
+      }
+    }
+
+    const { fetchHeight: _, ...transaction } = cachedTx;
+    if (loadInputValues) {
+      return this.enrichWithInputValues(transaction);
+    }
+    return transaction;
   }
 
   /**

@@ -13,6 +13,8 @@ export class Config {
   static UseMemoryCache = false;
   // fee rate for every send in satoshis per byte; when unset the server's blockchain.relayfee is used
   static RelayFeePerByte: number | undefined = undefined;
+  // the highest fee rate in satoshis per byte a server's blockchain.relayfee can set
+  static MaxRelayFeePerByte = 10;
 
   public static setIpfsGateway(ipfsGateway: string) {
     this.DefaultIpfsGateway = ipfsGateway;

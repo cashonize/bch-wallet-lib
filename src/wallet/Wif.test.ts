@@ -652,7 +652,7 @@ describe(`Wallet subscriptions`, () => {
 
     let aliceWatchResult = false;
     let aliceWatchCancel: CancelFn;
-    aliceWatchCancel = await alice.watchStatus(async (_status) => {
+    aliceWatchCancel = await alice["watchStatus"](async (_status) => {
       await aliceWatchCancel?.();
       aliceWatchResult = true;
     });
@@ -660,7 +660,7 @@ describe(`Wallet subscriptions`, () => {
     let bobWatchResult = false;
     let bobTransactionId = "";
     let bobWatchCancel: CancelFn;
-    bobWatchCancel = await bob.watchTransactionHashes(async (txHash) => {
+    bobWatchCancel = await bob["watchTransactionHashes"](async (txHash) => {
       await bobWatchCancel?.();
       bobWatchResult = true;
       bobTransactionId = txHash;
@@ -721,8 +721,8 @@ describe(`Wallet subscriptions`, () => {
     const transactions: string[] = [];
     const tokenTransactions: string[] = [];
     const cancels = [
-      await bob.watchTransactionHashes((txHash) => hashes.push(txHash)),
-      await bob.watchTransactions((tx) => transactions.push(tx.txid)),
+      await bob["watchTransactionHashes"]((txHash) => hashes.push(txHash)),
+      await bob["watchTransactions"]((tx) => transactions.push(tx.txid)),
       await bob.watchTokenTransactions((tx) => tokenTransactions.push(tx.txid)),
     ];
     await delay(1000);
@@ -767,7 +767,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
       cashaddr: charlieWallet.cashaddr!,
       value: DUST,
     });
-    await charlieWallet.waitForUpdate();
+    await charlieWallet["waitForUpdate"]();
     expect(await charlieWallet.getBalance()).toBe(DUST);
   });
 
@@ -788,7 +788,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
       cashaddr: charlieWallet.cashaddr!,
       value: DUST,
     });
-    await charlieWallet.waitForUpdate();
+    await charlieWallet["waitForUpdate"]();
     expect(await charlieWallet.getBalance()).toBe(DUST);
   });
 
@@ -806,7 +806,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
     ]);
 
     await bobWallet.send([{ cashaddr: charlieWallet.cashaddr!, value: DUST }]);
-    await charlieWallet.waitForUpdate();
+    await charlieWallet["waitForUpdate"]();
     expect(await charlieWallet.getBalance()).toBe(DUST);
   });
 
@@ -824,7 +824,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
     ]);
 
     await bobWallet.send([{ cashaddr: charlieWallet.cashaddr!, value: DUST }]);
-    await charlieWallet.waitForUpdate();
+    await charlieWallet["waitForUpdate"]();
     expect(await charlieWallet.getBalance()).toBe(DUST);
   });
 
@@ -840,7 +840,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
     ]);
 
     await bobWallet.send([{ cashaddr: charlieWallet.cashaddr!, value: DUST }]);
-    await charlieWallet.waitForUpdate();
+    await charlieWallet["waitForUpdate"]();
     expect(await charlieWallet.getBalance()).toBe(DUST);
   });
   test(`Should throw error with dust amounts (${

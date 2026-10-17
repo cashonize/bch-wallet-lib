@@ -1031,7 +1031,7 @@ describe(`Test cashtokens`, () => {
 
     // prepare inputs for two token geneses
     await alice.send({ cashaddr: bob.cashaddr!, value: 10000n });
-    await bob.waitForUpdate();
+    await bob["waitForUpdate"]();
 
     const genesisResponse = await bob.tokenGenesis({
       nft: {

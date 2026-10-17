@@ -3,12 +3,12 @@ import {
   BaseWallet,
   convert,
   namedWalletExists,
-  RegTestWallet,
   SignedMessage,
   TestNetWallet,
   Wallet,
 } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
+import { RegTestWallet } from "../wallet/Wif.js";
 
 beforeAll(async () => {
   await initProviders();

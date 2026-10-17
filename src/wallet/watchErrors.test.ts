@@ -71,7 +71,7 @@ describe("a watch callback that fails", () => {
     await wallet.watchBalance(() => {
       throw boom;
     });
-    await wallet.watchStatus(async () => {
+    await wallet["watchStatus"](async () => {
       throw boom;
     });
 
@@ -83,11 +83,11 @@ describe("a watch callback that fails", () => {
 
   test("does not keep a single-address wallet's other watchers from being called", async () => {
     const wallet = await RegTestWallet.newRandom();
-    await wallet.watchStatus(async () => {
+    await wallet["watchStatus"](async () => {
       throw boom;
     });
     const statuses: (string | null)[] = [];
-    await wallet.watchStatus((status) => {
+    await wallet["watchStatus"]((status) => {
       statuses.push(status);
     });
 
@@ -101,7 +101,7 @@ describe("a watch callback that fails", () => {
   test("goes to console.error from the base status watch", async () => {
     const wallet = await RegTestWallet.newRandom();
     // the provider-backed watch that the wallet classes override
-    await BaseWallet.prototype.watchStatus.call(wallet, async () => {
+    await BaseWallet.prototype["watchStatus"].call(wallet, async () => {
       throw boom;
     });
     // it fires on subscribing
@@ -126,10 +126,10 @@ describe("a watch callback that fails", () => {
     await provider.seedAlice();
     const wallet = await RegTestWallet.newRandom();
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    await wallet.watchTransactionHashes(() => {
+    await wallet["watchTransactionHashes"](() => {
       throw boom;
     });
-    await wallet.watchTransactions(async () => {
+    await wallet["watchTransactions"](async () => {
       throw boom;
     });
 

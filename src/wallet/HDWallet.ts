@@ -67,18 +67,19 @@ export const DEPOSIT_BRANCH = 0;
 export const CHANGE_BRANCH = 1;
 
 export class HDWallet extends BaseWallet {
-  static networkPrefix = CashAddressNetworkPrefix.mainnet;
+  protected static networkPrefix = CashAddressNetworkPrefix.mainnet;
 
   readonly mnemonic!: string;
   readonly derivation: string = Config.DefaultParentDerivationPath;
-  readonly walletId!: string;
+  // the id of the wallet's cache record
+  private readonly walletId!: string;
   declare readonly walletCache: WalletCacheI;
 
-  readonly xPriv!: string;
+  private readonly xPriv!: string;
   readonly xPub!: string;
 
-  readonly xPrivNode!: HdPrivateNodeValid;
-  readonly xPubNode!: HdPublicNodeValid;
+  private readonly xPrivNode!: HdPrivateNodeValid;
+  private readonly xPubNode!: HdPublicNodeValid;
 
   // Callback type for wallet activity watching
   private walletWatchCallbacks: Array<
@@ -90,28 +91,28 @@ export class HDWallet extends BaseWallet {
    * `[0, 1]` (deposit, change). Wallets rooted at a depth-4 node have a
    * single chain and use `[0]`.
    */
-  branches!: ReadonlyArray<number>;
+  private branches!: ReadonlyArray<number>;
 
   /**
    * True when the wallet is rooted at a depth-4 (change-level) XPub/XPriv.
    * Only one address chain is reachable; the cache is queried with the bare
    * address index instead of `${branch}/${index}`.
    */
-  public singleBranch: boolean = false;
+  private singleBranch: boolean = false;
 
   /** Per-branch: max index used for address derivation. */
   indices: Map<number, number> = new Map();
   /** Per-branch: address status array (length = watched window). */
-  statuses: Map<number, Array<string | null>> = new Map();
+  private statuses: Map<number, Array<string | null>> = new Map();
   /** Per-branch: cached UTXOs per address index. */
-  utxos: Map<number, Array<Utxo[]>> = new Map();
+  private utxos: Map<number, Array<Utxo[]>> = new Map();
   /** Per-branch: cached raw history per address index. */
   rawHistory: Map<number, Array<TxI[]>> = new Map();
   /** Per-branch: subscription cancel functions per address index. */
-  watchCancels: Map<number, Array<CancelFn>> = new Map();
+  private watchCancels: Map<number, Array<CancelFn>> = new Map();
 
   /** Settles when the latest address discovery ends, and never rejects. */
-  watchPromise?: Promise<any> = undefined;
+  protected watchPromise?: Promise<any> = undefined;
   // the latest discovery, which rejects if it failed; reads await it through discovered()
   private discovery: Promise<void> = Promise.resolve();
   private discoveryFailed = false;
@@ -557,19 +558,14 @@ export class HDWallet extends BaseWallet {
    * This is the foundation for watchWalletBalance and watchWalletTransactions
    * @param callback - Called when any address in the wallet has a status change; its errors go to
    * console.error
-   * @param options - `debounce` (ms, default 100), or the debounce alone as a number
+   * @param options - `debounce` (ms, default 100)
    * @returns Cancel function to stop watching
    */
-  public override async watchStatus(
+  protected override async watchStatus(
     callback: (status: string | null, address: string) => unknown,
-    options: { debounce?: number } | number = {},
+    options: { debounce?: number } = {},
   ): Promise<CancelFn> {
-    let debounce = 100;
-    if (typeof options === "number") {
-      debounce = options;
-    } else {
-      debounce = options.debounce ?? debounce;
-    }
+    const debounce = options.debounce ?? 100;
     await this.discovered();
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -601,17 +597,9 @@ export class HDWallet extends BaseWallet {
   /**
    * Wait until the wallet's per-branch indices reach the specified targets,
    * or until an idle-timeout window passes with no further status changes.
-   *
-   * Targets may be supplied either via the back-compat `depositIndex` /
-   * `changeIndex` (branches 0 and 1) or via the generalised `indices` map
-   * keyed by branch number. All forms are merged before checking.
    */
-  public async waitForUpdate(
+  protected override async waitForUpdate(
     options: {
-      /** Target index for branch 0 (deposit). Convenience alias for `indices: { 0: depositIndex }`. */
-      depositIndex?: number;
-      /** Target index for branch 1 (change). Convenience alias for `indices: { 1: changeIndex }`. */
-      changeIndex?: number;
       /** Target indices keyed by branch number. Wait until each tracked branch
        *  has reached at least the specified index. */
       indices?: Record<number, number>;
@@ -621,12 +609,6 @@ export class HDWallet extends BaseWallet {
     const timeout = options.timeout ?? 100;
 
     const targets: Record<number, number> = { ...options.indices };
-    if (options.depositIndex !== undefined) {
-      targets[DEPOSIT_BRANCH] = options.depositIndex;
-    }
-    if (options.changeIndex !== undefined) {
-      targets[CHANGE_BRANCH] = options.changeIndex;
-    }
 
     const isSatisfied = () => {
       for (const [branch, target] of Object.entries(targets)) {
@@ -666,7 +648,7 @@ export class HDWallet extends BaseWallet {
    * transactions, including those from newly discovered addresses when any
    * tracked branch's index advances and widens getRawHistory's scope.
    */
-  public override async watchTransactionHashes(
+  protected override async watchTransactionHashes(
     callback: (txHash: string) => unknown,
   ): Promise<CancelFn> {
     // Seeded before subscribing so the history at setup is not reported as new
@@ -788,7 +770,7 @@ export class HDWallet extends BaseWallet {
   /// Get next unused token change address (branch 1), or the token address at
   /// the specified index. For depth-4 (single-branch) wallets branch 1 is not
   /// tracked; the deposit branch is used instead.
-  public getTokenChangeAddress(index: number = -1): string {
+  protected getTokenChangeAddress(index: number = -1): string {
     if (this.singleBranch || !this.branches.includes(CHANGE_BRANCH)) {
       return this.getTokenDepositAddress(index);
     }
@@ -1042,7 +1024,7 @@ export class HDWallet extends BaseWallet {
  * Class to manage a testnet wallet.
  */
 export class TestNetHDWallet extends HDWallet {
-  static networkPrefix = CashAddressNetworkPrefix.testnet;
+  protected static networkPrefix = CashAddressNetworkPrefix.testnet;
   constructor() {
     super(NetworkType.Testnet);
   }
@@ -1052,7 +1034,7 @@ export class TestNetHDWallet extends HDWallet {
  * Class to manage a regtest wallet.
  */
 export class RegTestHDWallet extends HDWallet {
-  static networkPrefix = CashAddressNetworkPrefix.regtest;
+  protected static networkPrefix = CashAddressNetworkPrefix.regtest;
   constructor() {
     super(NetworkType.Regtest);
   }

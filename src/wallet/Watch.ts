@@ -45,8 +45,8 @@ export class WatchWallet extends BaseWallet {
   readonly cashaddr!: string;
   readonly tokenaddr!: string;
 
-  static networkPrefix = CashAddressNetworkPrefix.mainnet;
-  static walletType = WalletTypeEnum.Watch;
+  protected static networkPrefix = CashAddressNetworkPrefix.mainnet;
+  protected static walletType = WalletTypeEnum.Watch;
 
   // Subscription-first infrastructure: single subscription shared by all watchers
   private watchCallbacks: Array<
@@ -54,8 +54,8 @@ export class WatchWallet extends BaseWallet {
   > = [];
   private baseCancelFn?: CancelFn;
   /** Settles when the latest status watch is in place or has failed, and never rejects. */
-  watchPromise?: Promise<void>;
-  updatePromise?: Promise<void>;
+  protected watchPromise?: Promise<void>;
+  private updatePromise?: Promise<void>;
   // the latest status watch, which rejects if it failed; reads await it through watched()
   private watch: Promise<void> = Promise.resolve();
   private watchFailed = false;
@@ -289,7 +289,7 @@ export class WatchWallet extends BaseWallet {
     }
   }
 
-  public override async watchStatus(
+  protected override async watchStatus(
     callback: (status: string | null, address: string) => unknown,
   ): Promise<CancelFn> {
     await this.watched();
@@ -304,7 +304,7 @@ export class WatchWallet extends BaseWallet {
     };
   }
 
-  public override async waitForUpdate(
+  protected override async waitForUpdate(
     options: { timeout?: number } = {},
   ): Promise<void> {
     const timeout = options.timeout ?? 100;
@@ -370,7 +370,7 @@ export class WatchWallet extends BaseWallet {
    *
    * @returns The cashtoken aware change address as a string
    */
-  public getTokenChangeAddress(): string {
+  protected getTokenChangeAddress(): string {
     return this.tokenaddr;
   }
 
@@ -476,8 +476,8 @@ export class WatchWallet extends BaseWallet {
  * Class to manage a testnet watch wallet.
  */
 export class TestNetWatchWallet extends WatchWallet {
-  static networkPrefix = CashAddressNetworkPrefix.testnet;
-  static walletType = WalletTypeEnum.Watch;
+  protected static networkPrefix = CashAddressNetworkPrefix.testnet;
+  protected static walletType = WalletTypeEnum.Watch;
   constructor(name = "", network = NetworkType.Testnet) {
     super(name, network);
   }
@@ -487,8 +487,8 @@ export class TestNetWatchWallet extends WatchWallet {
  * Class to manage a regtest watch wallet.
  */
 export class RegTestWatchWallet extends WatchWallet {
-  static networkPrefix = CashAddressNetworkPrefix.regtest;
-  static walletType = WalletTypeEnum.Watch;
+  protected static networkPrefix = CashAddressNetworkPrefix.regtest;
+  protected static walletType = WalletTypeEnum.Watch;
   constructor(name = "", network = NetworkType.Regtest) {
     super(name, network);
   }

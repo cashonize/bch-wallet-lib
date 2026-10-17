@@ -88,7 +88,7 @@ describe("walletCacheIdFromWalletId", () => {
     const wallets: BaseWallet[] = [
       hd,
       await RegTestHDWallet.fromId(`hd:regtest:${MNEMONIC}:m/44'/145'/1'`),
-      await RegTestHDWallet.fromId(`hd:regtest:${hd.xPriv}`),
+      await RegTestHDWallet.fromId(`hd:regtest:${hd["xPriv"]}`),
       await RegTestHDWallet.fromId(`hd:regtest:${hd.xPub}`),
     ];
     try {

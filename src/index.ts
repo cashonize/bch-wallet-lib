@@ -63,15 +63,12 @@ export {
 } from "./wallet/errors.js";
 export {
   CHANGE_BRANCH,
-  DEFAULT_BRANCHES,
   DEPOSIT_BRANCH,
   GAP_SIZE,
   HDWallet,
-  RegTestHDWallet,
   TestNetHDWallet,
 } from "./wallet/HDWallet.js";
-export type { HDWalletOptions } from "./wallet/HDWallet.js";
-export * from "./wallet/interface.js";
+export type { CancelFn, SendRequestOptionsI } from "./wallet/interface.js";
 export {
   OpReturnData,
   TokenBurnRequest,
@@ -86,9 +83,4 @@ export type {
 } from "./wallet/model.js";
 // transaction utilities
 export { getTransactionHash } from "./util/transaction.js";
-export {
-  RegTestWatchWallet,
-  TestNetWatchWallet,
-  WatchWallet,
-} from "./wallet/Watch.js";
-export { RegTestWallet, TestNetWallet, Wallet } from "./wallet/Wif.js";
+export { TestNetWallet, Wallet } from "./wallet/Wif.js";

@@ -1,13 +1,30 @@
 import * as entry from "./index.js";
-import type { HDWalletOptions } from "./index.js";
 
 test("the entry exports the HD wallet's gap limit and branch constants", () => {
   expect(entry.GAP_SIZE).toBe(20);
-  expect(entry.DEFAULT_BRANCHES).toEqual([0, 1]);
   expect(entry.DEPOSIT_BRANCH).toBe(0);
   expect(entry.CHANGE_BRANCH).toBe(1);
-  const options: HDWalletOptions = { branches: [...entry.DEFAULT_BRANCHES] };
-  expect(options.branches).toEqual([0, 1]);
+});
+
+test("the entry leaves out the wallet classes and helpers that are internal or removed", () => {
+  for (const name of [
+    "RegTestWallet",
+    "RegTestHDWallet",
+    "WatchWallet",
+    "TestNetWatchWallet",
+    "RegTestWatchWallet",
+    "WifWallet",
+    "TestNetWifWallet",
+    "RegTestWifWallet",
+    "DEFAULT_BRANCHES",
+    "WalletTypeEnum",
+    "createWallet",
+    "walletFromId",
+    "decodeTransaction",
+  ]) {
+    expect(entry).not.toHaveProperty(name);
+  }
+  expect(typeof entry.namedWalletExists).toBe("function");
 });
 
 test("the entry keeps the storage and cache internals out", () => {

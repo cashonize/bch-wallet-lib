@@ -4,11 +4,11 @@ import {
   getNamedWalletId,
   namedWalletExists,
   HDWallet,
-  RegTestWallet,
   TestNetWallet,
   Wallet,
 } from "../index.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
+import { RegTestWallet } from "../wallet/Wif.js";
 import { default as IndexedDBProvider } from "./IndexedDBProvider.js";
 
 beforeAll(async () => {

@@ -419,16 +419,16 @@ describe("history load", () => {
       });
       if (i % 2) await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
     }
-    await hd.waitForUpdate({ depositIndex: 12 });
+    await hd["waitForUpdate"]({ indices: { 0: 12 } });
     const genesis = await hd.tokenGenesis({
       cashaddr: hd.getTokenDepositAddress(12),
       amount: 500n,
       nft: { capability: "minting", commitment: "ab" },
     });
-    await hd.waitForUpdate({ depositIndex: 13 });
+    await hd["waitForUpdate"]({ indices: { 0: 13 } });
     // left in the mempool, spending coins of several addresses
     await hd.send({ cashaddr: miner.getDepositAddress(), value: 25000n });
-    await hd.waitForUpdate({ changeIndex: 2 });
+    await hd["waitForUpdate"]({ indices: { 1: 2 } });
 
     const provider = hd.provider as ElectrumNetworkProvider;
     const { counts, restore } = countRequests(provider);
@@ -477,7 +477,7 @@ describe("history load", () => {
       await miner.send({ cashaddr: hd.getDepositAddress(i), value: 10000n });
     }
     await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
-    await hd.waitForUpdate({ depositIndex: 12 });
+    await hd["waitForUpdate"]({ indices: { 0: 12 } });
 
     const { counts, restore } = countRequests(
       hd.provider as ElectrumNetworkProvider,

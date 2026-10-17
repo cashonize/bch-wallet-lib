@@ -193,7 +193,7 @@ describe("data written by mainnet-js 3.1.7", () => {
     for (const { dbName, name, expected } of walletRows) {
       const WalletClass = classes[dbName][expected.kind];
       const wallet = await WalletClass.named(name);
-      await wallet.watchPromise;
+      await wallet["watchPromise"];
       wallets.set(`${dbName}/${name}`, wallet);
     }
   });
@@ -240,7 +240,7 @@ describe("data written by mainnet-js 3.1.7", () => {
     // the only new records are those of the xpub wallets, which 3.1.7 could not write (its
     // write throws on the missing private keys), in its form and without private keys
     const xpubCacheIds = walletRows
-      .filter((row) => row.expected.kind === "hd" && !row.expected.xPriv)
+      .filter((row) => row.expected.kind === "hd" && !row.expected["xPriv"])
       .map((row) => `walletCache-${row.expected.cacheId}`);
     const added = [...after.keys()].filter((key) => !before.has(key));
     expect(new Set(added)).toEqual(new Set(xpubCacheIds));
@@ -260,7 +260,7 @@ describe("data written by mainnet-js 3.1.7", () => {
     "$dbName/$name loads with the type, addresses and keys 3.1.7 derived",
     async ({ dbName, name, expected }) => {
       const wallet = wallets.get(`${dbName}/${name}`)! as any;
-      expect(wallet.walletType).toBe(expected.walletType);
+      expect(wallet["walletType"]).toBe(expected["walletType"]);
       expect(wallet.network).toBe(expected.network);
       expect(wallet.name).toBe(expected.name);
       expect(wallet.toDbString()).toBe(expected.toDbString);
@@ -289,7 +289,7 @@ describe("data written by mainnet-js 3.1.7", () => {
       if (expected.mnemonic)
         expect(wallet.derivation).toBe(expected.derivation);
       expect(wallet.xPub).toBe(expected.xPub);
-      expect(wallet.xPriv ?? null).toBe(expected.xPriv);
+      expect(wallet["xPriv"] ?? null).toBe(expected["xPriv"]);
       expect(wallet.walletId).toBe(expected.cacheId);
       expect(wallet.indices.get(0)).toBe(expected.depositIndex);
       expect(wallet.indices.get(1)).toBe(expected.changeIndex);

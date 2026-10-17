@@ -85,7 +85,7 @@ export class BaseWallet {
   readonly walletCache: WalletCache;
   private _provider: ElectrumNetworkProvider;
   readonly network: NetworkType;
-  readonly walletType: WalletTypeEnum;
+  protected readonly walletType: WalletTypeEnum;
   name: string = "";
   private subscriptions = new Set<WalletSubscription>();
   // Bumped by stop(), so that a subscription still being made when it ran is ended, not kept
@@ -151,7 +151,7 @@ export class BaseWallet {
    *
    * @returns The cashtoken aware change address as a string
    */
-  public getTokenChangeAddress(): string {
+  protected getTokenChangeAddress(): string {
     throw Error("getTokenChangeAddress not implemented in BaseWallet");
   }
 
@@ -382,7 +382,8 @@ export class BaseWallet {
    * Switch the wallet to another electrum provider of the same network: its subscriptions (an
    * HD wallet's address discovery included) are made again on the new provider and ended on
    * the old one, and deliver the new server's current state as they start. The old provider is
-   * left connected, as other wallets may still use it. Each moved status watch fires again, so a
+   * left connected, as other wallets may still use it: once this resolves, the caller disconnects
+   * it (`provider.disconnect()`) if nothing else uses it. Each moved status watch fires again, so a
    * balance callback may get an unchanged value. If the new provider cannot connect or a
    * subscription cannot be made there, the wallet stays on the old provider and this rejects; if
    * the old provider fails as well while moving them back, some subscriptions stay on the new one
@@ -455,7 +456,7 @@ export class BaseWallet {
    * @param callback - Called when  the wallet has a status change; its errors go to console.error
    * @returns Cancel function to stop watching
    */
-  public async watchStatus(
+  protected async watchStatus(
     callback: (status: string | null, address: string) => unknown,
   ): Promise<CancelFn> {
     return this.subscribe((provider) =>
@@ -466,13 +467,12 @@ export class BaseWallet {
   }
 
   /**
-   * No-op for single-address wallets. HDWallet overrides this to wait for
-   * depositIndex/changeIndex advancement.
+   * No-op for single-address wallets. HDWallet overrides this to wait for its per-branch
+   * `indices` to advance.
    */
-  public async waitForUpdate(
+  protected async waitForUpdate(
     _options: {
-      depositIndex?: number;
-      changeIndex?: number;
+      indices?: Record<number, number>;
       timeout?: number;
     } = {},
   ): Promise<void> {}
@@ -496,7 +496,7 @@ export class BaseWallet {
    * failed history read, go to console.error
    * @returns Cancel function to stop watching
    */
-  public async watchTransactionHashes(
+  protected async watchTransactionHashes(
     callback: (txHash: string) => unknown,
   ): Promise<CancelFn> {
     // Seeded before subscribing so the history at setup is not reported as new
@@ -541,7 +541,7 @@ export class BaseWallet {
    * transaction or the history, go to console.error
    * @returns Cancel function to stop watching
    */
-  public async watchTransactions(
+  protected async watchTransactions(
     callback: (transaction: ElectrumRawTransaction) => unknown,
   ): Promise<CancelFn> {
     return this.watchTransactionHashes(async (txHash: string) => {

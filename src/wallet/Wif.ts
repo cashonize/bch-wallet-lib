@@ -372,7 +372,7 @@ export class Wallet extends WatchWallet {
  * Class to manage a testnet wallet.
  */
 export class TestNetWallet extends Wallet {
-  static networkPrefix = CashAddressNetworkPrefix.testnet;
+  protected static networkPrefix = CashAddressNetworkPrefix.testnet;
   constructor(name = "") {
     super(name, NetworkType.Testnet);
   }
@@ -382,7 +382,7 @@ export class TestNetWallet extends Wallet {
  * Class to manage a regtest wallet.
  */
 export class RegTestWallet extends Wallet {
-  static networkPrefix = CashAddressNetworkPrefix.regtest;
+  protected static networkPrefix = CashAddressNetworkPrefix.regtest;
   constructor(name = "") {
     super(name, NetworkType.Regtest);
   }

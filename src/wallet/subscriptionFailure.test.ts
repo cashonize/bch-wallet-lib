@@ -108,7 +108,7 @@ describe("a subscription that cannot be made", () => {
       "subscription refused",
     );
     await expect(wallet.getHistory()).rejects.toThrow("subscription refused");
-    await expect(wallet.watchStatus(() => {})).rejects.toThrow(
+    await expect(wallet["watchStatus"](() => {})).rejects.toThrow(
       "subscription refused",
     );
     expect(provider.subscriptions).toBe(0);
@@ -159,7 +159,7 @@ describe("a subscription that cannot be made", () => {
     expect(provider.subscriptions).toBe(40);
     // the addresses are watched again
     await fund(wallet.getDepositAddress(0), 5_000n);
-    await wallet.waitForUpdate({ depositIndex: 1 });
+    await wallet["waitForUpdate"]({ indices: { 0: 1 } });
     expect(await wallet.getBalance()).toBe(5_000n);
     await wallet.stop();
   }, 5000);
@@ -178,7 +178,7 @@ describe("a subscription that cannot be made", () => {
   test("subscribes again an HD address that failed between watched ones", async () => {
     const seedWallet = await RegTestHDWallet.newRandom();
     const address = seedWallet.getDepositAddress(5);
-    await seedWallet.watchPromise;
+    await seedWallet["watchPromise"];
     await seedWallet.stop();
     await fund(address, 5_000n);
 
@@ -199,7 +199,7 @@ describe("a subscription that cannot be made", () => {
 
   test("counts the gap only up to an address a failed scan left unwatched", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
+    await wallet["watchPromise"];
     refuse.address = true;
     // a discovery with a wider gap than the wallet's, as a used address far out would start
     await expect(wallet["startDiscovery"](40)).rejects.toThrow(
@@ -210,18 +210,18 @@ describe("a subscription that cannot be made", () => {
 
     // the used address leaves the scan's unwatched addresses inside the gap
     await fund(wallet.getDepositAddress(19), 1_000n);
-    await wallet.waitForUpdate({ depositIndex: 20 });
+    await wallet["waitForUpdate"]({ indices: { 0: 20 } });
     // waits for the gap extension
     expect(await wallet.getBalance()).toBe(1_000n);
     await fund(wallet.getDepositAddress(20), 2_000n);
-    await wallet.waitForUpdate({ depositIndex: 21 });
+    await wallet["waitForUpdate"]({ indices: { 0: 21 } });
     expect(await wallet.getBalance()).toBe(3_000n);
     await wallet.stop();
   }, 5000);
 
   test("settles a watcher's read while a gap extension has failed", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
+    await wallet["watchPromise"];
     const balances: bigint[] = [];
     await wallet.watchBalance((balance) => balances.push(balance));
 
@@ -281,7 +281,7 @@ describe("a single-address wallet's fetch that fails", () => {
 describe("a fetch that fails during HD address discovery", () => {
   test("rejects the reads, and the next read fetches again", async () => {
     const seedWallet = await RegTestHDWallet.newRandom();
-    await seedWallet.watchPromise;
+    await seedWallet["watchPromise"];
     await seedWallet.stop();
     await fund(seedWallet.getDepositAddress(0), 5_000n);
 
@@ -300,7 +300,7 @@ describe("a fetch that fails during HD address discovery", () => {
 
   test("after discovery, leaves the address for its next notification to fetch", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
+    await wallet["watchPromise"];
     const address = wallet.getDepositAddress(0);
 
     refuse.fetch = true;
@@ -310,14 +310,14 @@ describe("a fetch that fails during HD address discovery", () => {
 
     refuse.fetch = false;
     await fund(address, 7_000n);
-    await wallet.waitForUpdate({ depositIndex: 1 });
+    await wallet["waitForUpdate"]({ indices: { 0: 1 } });
     expect(await wallet.getBalance()).toBe(12_000n);
     await wallet.stop();
   }, 5000);
 
   test("leaves an address unwatched when it fails while its first fetch is in flight", async () => {
     const seedWallet = await RegTestHDWallet.newRandom();
-    await seedWallet.watchPromise;
+    await seedWallet["watchPromise"];
     await seedWallet.stop();
     await fund(seedWallet.getDepositAddress(0), 5_000n);
 
@@ -366,7 +366,7 @@ describe("a fetch that fails during HD address discovery", () => {
       ...randomUtxo({ vout: 0, satoshis: 3_000n }),
       height: 100,
     });
-    await wallet.waitForUpdate({ depositIndex: 1, timeout: 1000 });
+    await wallet["waitForUpdate"]({ indices: { 0: 1 }, timeout: 1000 });
     expect(await wallet.getBalance()).toBe(3_000n);
     await wallet.stop();
   }, 5000);

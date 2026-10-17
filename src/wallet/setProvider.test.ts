@@ -67,7 +67,7 @@ describe("setProvider", () => {
 
   test("moves an HD wallet's address discovery to the new provider", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
+    await wallet["watchPromise"];
     const subscribed = oldProvider.subscriptions;
     expect(subscribed).toBeGreaterThanOrEqual(40);
 
@@ -78,7 +78,7 @@ describe("setProvider", () => {
     const first = wallet.getDepositAddress();
     await fund(oldProvider, wallet.getDepositAddress(), 5_000n);
     await fund(newProvider, first, 10_000n);
-    await wallet.waitForUpdate({ depositIndex: 1, timeout: 1000 });
+    await wallet["waitForUpdate"]({ indices: { 0: 1 }, timeout: 1000 });
 
     // discovery ran on the new chain: index 0 counts as used, and the gap is watched there
     expect(wallet.getDepositAddress()).not.toBe(first);
@@ -133,7 +133,7 @@ describe("setProvider", () => {
 
   test("moves an HD wallet back when a subscription fails on the new provider", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
+    await wallet["watchPromise"];
     const subscribed = oldProvider.subscriptions;
 
     let calls = 0;

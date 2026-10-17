@@ -4,7 +4,11 @@ import {
   getDustThreshold,
   sha256,
 } from "@bitauth/libauth";
-import { purgeWalletCache, WalletCache } from "../cache/walletCache.js";
+import {
+  purgeWalletCache,
+  WalletCache,
+  walletCacheIdFromWalletId,
+} from "../cache/walletCache.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
@@ -33,6 +37,7 @@ import {
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
+import { walletIdKind } from "../util/walletIdError.js";
 import { runCallback } from "../util/watch.js";
 import { WalletTypeEnum } from "./enum.js";
 import {
@@ -240,7 +245,7 @@ export class BaseWallet {
     if (!name?.length) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this);
+    _checkContextSafety(this.network);
     this.name = name;
     const db = getStorageProvider(prefixFromNetworkMap[this.network]);
 
@@ -282,7 +287,7 @@ export class BaseWallet {
     if (name.length === 0) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this);
+    _checkContextSafety(this.network);
     this.name = name;
     let db = getStorageProvider(prefixFromNetworkMap[this.network]);
 
@@ -1456,12 +1461,12 @@ export class BaseWallet {
 /**
  * _checkContextSafety (internal) if running in nodejs, will disable saving
  * mainnet wallets on public servers if ALLOW_MAINNET_USER_WALLETS is set to false
- * @param {BaseWallet} wallet        a wallet
+ * @param network        the network of the wallet to save
  */
-export const _checkContextSafety = function (wallet: BaseWallet) {
+export const _checkContextSafety = function (network: NetworkType) {
   if (getRuntimePlatform() === "node") {
     if (process.env.ALLOW_MAINNET_USER_WALLETS === `false`) {
-      if (wallet.network === NetworkType.Mainnet) {
+      if (network === NetworkType.Mainnet) {
         throw Error(
           `Refusing to save wallet in an open public database, remove ALLOW_MAINNET_USER_WALLETS="false", if this service is secure and private`,
         );
@@ -1531,6 +1536,63 @@ export async function namedWalletExists(
   await db.init();
   try {
     return await db.walletExists(name);
+  } finally {
+    await db.close();
+  }
+}
+
+/**
+ * saveNamedWallet - store a wallet id under a name, replacing the id stored under that name if
+ * there is one: the row `replaceNamed` writes, without constructing the wallet, so no provider
+ * is created and no subscription opened
+ *
+ * The id is checked for its form (a type a wallet class loads, a known network, a value), not
+ * for its key: store ids that `toDbString()` returned, or that a wallet class loaded.
+ *
+ * @param name   user friendly wallet alias
+ * @param walletId the wallet's id, as `toDbString()` returns it
+ * @param dbName database to store it in, the one of the id's network ("bitcoincash", "bchtest"
+ * or "bchreg") by default; another network's database is refused
+ *
+ * @throws {InvalidWalletIdError} if the id cannot be read, or if `dbName` is another network's
+ * database
+ * @throws {Error} if no StorageProvider is configured
+ */
+export async function saveNamedWallet(
+  name: string,
+  walletId: string,
+  dbName?: string,
+): Promise<void> {
+  if (name.length === 0) {
+    throw Error("Named wallets must have a non-empty name");
+  }
+  // the check deleteNamedWallet makes: a row it cannot read is one it cannot delete
+  walletCacheIdFromWalletId(walletId);
+  const network = walletId.split(":")[1] as NetworkType;
+  const networkDbName: string = prefixFromNetworkMap[network];
+  const networkDbNames: string[] = Object.values(prefixFromNetworkMap);
+  if (dbName && dbName !== networkDbName && networkDbNames.includes(dbName)) {
+    throw new InvalidWalletIdError(
+      `a ${network} walletId cannot be stored in the database ${dbName}`,
+      { kind: walletIdKind(walletId.split(":")[0]), reason: "network" },
+    );
+  }
+  _checkContextSafety(network);
+
+  const db = getStorageProvider(dbName || networkDbName);
+  if (!db) {
+    throw Error(
+      "No database was available or configured to store the named wallet.",
+    );
+  }
+
+  await db.init();
+  try {
+    if (await db.getWallet(name)) {
+      await db.updateWallet(name, walletId);
+    } else {
+      await db.addWallet(name, walletId);
+    }
   } finally {
     await db.close();
   }

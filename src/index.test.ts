@@ -30,6 +30,7 @@ test("the entry leaves out the wallet classes and helpers that are internal or r
 test("the entry keeps the storage and cache internals out", () => {
   expect(typeof entry.pruneWalletCaches).toBe("function");
   expect(typeof entry.deleteNamedWallet).toBe("function");
+  expect(typeof entry.saveNamedWallet).toBe("function");
   for (const name of [
     "StorageProvider",
     "purgeWalletCache",

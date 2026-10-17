@@ -4,6 +4,8 @@ import {
   getNamedWalletId,
   namedWalletExists,
   HDWallet,
+  InvalidWalletIdError,
+  saveNamedWallet,
   TestNetWallet,
   Wallet,
 } from "../index.js";
@@ -208,6 +210,99 @@ describe("namedWalletExists", () => {
     BaseWallet.StorageProvider = undefined;
     try {
       await expect(namedWalletExists("alice")).rejects.toThrow(
+        "No database was available or configured to store the named wallet.",
+      );
+    } finally {
+      BaseWallet.StorageProvider = IndexedDBProvider;
+    }
+  });
+});
+
+describe("saveNamedWallet", () => {
+  test("stores the row replaceNamed writes, replacing an existing one, and constructs no wallet", async () => {
+    BaseWallet.StorageProvider = IndexedDBProvider;
+    const name = `save-${Math.random()}`;
+    const first = await RegTestHDWallet.newRandom();
+    const second = await RegTestWallet.newRandom();
+    const replaced = await RegTestHDWallet.replaceNamed(
+      `${name}-replaced`,
+      first.toDbString(),
+    );
+    await Promise.all([first.stop(), second.stop(), replaced.stop()]);
+    // every wallet takes its provider as it is constructed
+    const construct = vi.spyOn(
+      BaseWallet.prototype as unknown as { getNetworkProvider: () => unknown },
+      "getNetworkProvider",
+    );
+    try {
+      await saveNamedWallet(name, first.toDbString());
+      expect(await getNamedWalletId(name, "bchreg")).toBe(first.toDbString());
+      await saveNamedWallet(name, second.toDbString(), "bchreg");
+      expect(construct).not.toHaveBeenCalled();
+    } finally {
+      construct.mockRestore();
+    }
+
+    const db = new IndexedDBProvider("bchreg");
+    await db.init();
+    try {
+      expect(await db.getWallet(name)).toEqual({
+        name,
+        wallet: second.toDbString(),
+      });
+      // the same row as replaceNamed's, but for the name
+      await saveNamedWallet(name, first.toDbString());
+      expect(await db.getWallet(name)).toEqual({
+        ...(await db.getWallet(`${name}-replaced`)),
+        name,
+      });
+      expect(
+        (await db.getWallets()).filter((row) => row.name === name),
+      ).toHaveLength(1);
+    } finally {
+      await db.close();
+    }
+
+    const loaded = await RegTestHDWallet.named(name);
+    expect(loaded.mnemonic).toBe(first.mnemonic);
+    await loaded.stop();
+  });
+
+  test("refuses an id it cannot read and another network's database", async () => {
+    BaseWallet.StorageProvider = IndexedDBProvider;
+    const name = `save-refused-${Math.random()}`;
+    const mainnetId = `wif:mainnet:${"x".repeat(10)}`;
+    for (const [walletId, dbName] of [
+      ["named:regtest:other", undefined],
+      ["hd:regtest", undefined],
+      ["wif:nonet:abc", undefined],
+      [mainnetId, "bchtest"],
+      [mainnetId.replace("mainnet", "testnet"), "bchreg"],
+    ] as const) {
+      await expect(
+        saveNamedWallet(name, walletId, dbName),
+        walletId,
+      ).rejects.toBeInstanceOf(InvalidWalletIdError);
+    }
+    for (const dbName of ["bitcoincash", "bchtest", "bchreg"]) {
+      expect(await namedWalletExists(name, dbName)).toBe(false);
+    }
+    await expect(saveNamedWallet("", mainnetId)).rejects.toThrow(
+      "Named wallets must have a non-empty name",
+    );
+
+    // a database of another name takes any network's id
+    const dbName = `save-custom-${Math.random()}`;
+    await saveNamedWallet(name, mainnetId, dbName);
+    expect(await getNamedWalletId(name, dbName)).toBe(mainnetId);
+  });
+
+  test("throws without a StorageProvider", async () => {
+    BaseWallet.StorageProvider = undefined;
+    try {
+      await expect(
+        saveNamedWallet("alice", "wif:regtest:stored-id"),
+      ).rejects.toThrow(
         "No database was available or configured to store the named wallet.",
       );
     } finally {

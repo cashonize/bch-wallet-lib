@@ -647,40 +647,6 @@ describe("HDWallet", () => {
     expect(await hdWallet.getBalance()).toBe(0n);
   });
 
-  it("Should build unsigned transactions from an HDWallet", async () => {
-    const fundingWallet = await RegTestWallet.fromId(
-      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
-    );
-
-    const hdWallet = await RegTestHDWallet.newRandom();
-    expect(await hdWallet.getBalance()).toBe(0n);
-
-    const depositAddress = hdWallet.getDepositAddress();
-    await fundingWallet.send({
-      cashaddr: depositAddress,
-      value: 100000n,
-    });
-    await hdWallet.waitForUpdate({ depositIndex: 1 });
-
-    expect(await hdWallet.getBalance()).toBe(100000n);
-
-    const unsignedTx = await hdWallet.send(
-      {
-        cashaddr: (await RegTestWallet.newRandom()).getDepositAddress(),
-        value: 50000n,
-      },
-      {
-        buildUnsigned: true,
-      },
-    );
-
-    const tx = assertSuccess(
-      decodeTransaction(hexToBin(unsignedTx.unsignedTransaction!)),
-    );
-    expect(tx.inputs.length).toBe(1);
-    expect(tx.inputs[0].unlockingBytecode.length).toBe(0); // should be empty
-  });
-
   it("WalletCache persistence, addresses", async () => {
     const indexedDbCacheValue = Config.UseIndexedDBCache;
     Config.UseIndexedDBCache = true;

@@ -62,7 +62,6 @@ export interface SendRequestOptionsI {
   tokenOperation?: "send" | "genesis" | "mint" | "burn"; // undefined. internal use only
   tokenBurns?: TokenBurnAllowance; // undefined. internal use only: what a token operation may burn
   ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction; they must be in the spend's pool
-  buildUnsigned?: boolean; // false
   broadcast?: boolean; // true
 
   // ----- Coin control hooks ---------------------------------------------

@@ -1055,7 +1055,7 @@ export class HDWallet extends BaseWallet {
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
   ) {
-    if (!this.xPriv && !privateKey && options?.buildUnsigned !== true) {
+    if (!this.xPriv && !privateKey) {
       throw new Error(`Missing private key`);
     }
 

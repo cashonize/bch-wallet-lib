@@ -3,8 +3,6 @@ import {
   binToUtf8,
   decodeAuthenticationInstructions,
   hexToBin,
-  Input,
-  Output,
   utf8ToBin,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
@@ -410,57 +408,16 @@ export class OpReturnData {
 
 export type SendRequestArray = Array<string | bigint | Uint8Array>;
 
-export type SourceOutput = Input & Output;
-
-export class SendResponse {
-  txId?: string;
+/** What a send returns: the signed transaction, broadcast unless `broadcast: false` was given. */
+export interface SendResponse {
+  txId: string;
+  /** the transaction hex */
+  transaction: string;
+  /** the token categories among the inputs and the requested outputs */
+  categories: string[];
   balance?: bigint;
   explorerUrl?: string;
-  categories?: string[];
-  transaction?: string; // transaction hex
-  unsignedTransaction?: string; // unsigned transaction hex
-  sourceOutputs?: SourceOutput[]; // source outputs for signing unsigned transactions
-
-  constructor({
-    txId,
-    balance,
-    explorerUrl,
-  }: {
-    txId?: string;
-    balance?: any;
-    explorerUrl?: string;
-  }) {
-    this.txId = txId;
-    this.balance = balance;
-    this.explorerUrl = explorerUrl;
-  }
 }
-
-/** A send that signed its transaction: broadcast it, or built it with `broadcast: false`. */
-export type SignedSendResponse = SendResponse & {
-  txId: string;
-  transaction: string;
-  categories: string[];
-  unsignedTransaction?: undefined;
-  sourceOutputs?: undefined;
-};
-
-/** A send with `buildUnsigned: true`: nothing was signed or broadcast. */
-export type UnsignedSendResponse = SendResponse & {
-  txId?: undefined;
-  transaction?: undefined;
-  categories: string[];
-  unsignedTransaction: string;
-  sourceOutputs: SourceOutput[];
-};
-
-/**
- * What a send returns for its `buildUnsigned` option: both, told apart by `txId`, when the
- * option's value isn't known to the compiler.
- */
-export type SendResponseFor<B extends boolean | undefined> = B extends true
-  ? UnsignedSendResponse
-  : SignedSendResponse;
 
 export const fromUtxoId = (utxoId: string): UtxoId => {
   const [txid, vout, satoshis] = utxoId.split(DELIMITER);

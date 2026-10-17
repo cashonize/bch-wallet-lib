@@ -1,11 +1,8 @@
 import {
-  binsAreEqual,
   binToHex,
-  decodeTransaction,
   encodeBase58AddressFormat,
   encodePrivateKeyWif,
   hexToBin,
-  lockingBytecodeToCashAddress,
   utf8ToBin,
 } from "@bitauth/libauth";
 import { bchParam } from "../chain.js";
@@ -14,7 +11,6 @@ import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { BroadcastRejectedError } from "../network/errors.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
-import json from "../test/json.test.js";
 import { delay } from "../util/delay.js";
 import { convert, sumUtxoValue } from "../util/index.js";
 import { CancelFn } from "./interface.js";
@@ -1158,110 +1154,6 @@ describe(`Wallet extrema behavior regression testing`, () => {
     expect(
       await bob.getMaxAmountToSend({ options: { slpSemiAware: false } }),
     ).toBeLessThanOrEqual(546n);
-  });
-
-  test("Should encode unsigned transactions", async () => {
-    const aliceWif = `wif:regtest:${process.env.PRIVATE_WIF!}`;
-    const aliceWallet = await RegTestWallet.fromId(aliceWif);
-    const bobWallet = await RegTestWallet.newRandom();
-    delete (aliceWallet as any).privateKey;
-
-    const aliceUtxos = await aliceWallet.getUtxos();
-
-    {
-      const { encodedTransaction, sourceOutputs } =
-        await aliceWallet.encodeTransaction(
-          [
-            {
-              cashaddr: bobWallet.cashaddr!,
-              value: 2000n,
-            },
-          ],
-          false,
-          { buildUnsigned: true },
-        );
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      // BigInts can't be serialized as strings
-      //
-      expect(json(aliceUtxos)).toBe(json(await aliceWallet.getUtxos()));
-
-      const decoded = decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw new Error(decoded);
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      const toCashAddress = (bytecode) => {
-        const cashaddr = lockingBytecodeToCashAddress({
-          bytecode: bytecode,
-          prefix: "bchreg",
-        });
-        if (typeof cashaddr === "string") {
-          throw Error(cashaddr);
-        }
-        return cashaddr.address;
-      };
-      expect(toCashAddress(decoded.outputs[0].lockingBytecode)).toBe(
-        bobWallet.cashaddr,
-      );
-      expect(toCashAddress(decoded.outputs[1].lockingBytecode)).toBe(
-        aliceWallet.cashaddr,
-      );
-      expect(sourceOutputs.length).toBe(decoded.inputs.length);
-    }
-
-    {
-      const { unsignedTransaction, sourceOutputs } = await aliceWallet.send(
-        [
-          {
-            cashaddr: bobWallet.cashaddr!,
-            value: 2000n,
-          },
-        ],
-        { buildUnsigned: true },
-      );
-      const encodedTransaction = hexToBin(unsignedTransaction!);
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      expect(json(aliceUtxos)).toBe(json(await aliceWallet.getUtxos()));
-
-      const decoded = decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw new Error(decoded);
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-    }
-
-    {
-      const { unsignedTransaction, sourceOutputs } = await aliceWallet.sendMax(
-        bobWallet.cashaddr!,
-        { buildUnsigned: true },
-      );
-      const encodedTransaction = hexToBin(unsignedTransaction!);
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      expect(json(aliceUtxos)).toBe(json(await aliceWallet.getUtxos()));
-
-      const decoded = decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw new Error(decoded);
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-    }
   });
 
   test("Should send with utxoIds", async () => {

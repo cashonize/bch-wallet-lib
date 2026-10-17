@@ -15,6 +15,7 @@ import { delay } from "../util/delay.js";
 import { decodeTransaction, getTransactionHash } from "./Util.js";
 import { RegTestWallet } from "./Wif.js";
 import { liveTests } from "#test/live.js";
+import { signP2pkhInputs } from "#test/sign.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -103,7 +104,7 @@ describe("decodeTransaction outputs", () => {
     // P2S, anyone can spend with an empty unlocking bytecode
     const p2s = Uint8Array.from([Opcodes.OP_1]);
     const opReturn = Uint8Array.from([Opcodes.OP_RETURN, 2, 0xab, 0xcd]);
-    const signed = await bob.signUnsignedTransaction(
+    const signed = signP2pkhInputs(
       encodeTransaction({
         version: 2,
         locktime: 0,
@@ -131,6 +132,7 @@ describe("decodeTransaction outputs", () => {
           valueSatoshis: funding.satoshis,
         },
       ],
+      bob.privateKey,
     );
     const scriptsTxId = await bob.submitTransaction(signed);
     const spendTxId = await bob.submitTransaction(

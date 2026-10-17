@@ -17,7 +17,6 @@ import {
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
-import { signUnsignedTransaction } from "../transaction/Wif.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
 import { decodeWif } from "../util/decodeWif.js";
 import { WalletTypeEnum } from "./enum.js";
@@ -26,8 +25,7 @@ import {
   OpReturnData,
   SendRequest,
   SendRequestArray,
-  SendResponseFor,
-  SourceOutput,
+  SendResponse,
   TokenSendRequest,
 } from "./model.js";
 import { WatchWallet } from "./Watch.js";
@@ -492,10 +490,10 @@ export class Wallet extends WatchWallet {
    *
    * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
    */
-  public async sendMax<B extends boolean | undefined = undefined>(
+  public async sendMax(
     cashaddr: string,
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
-  ): Promise<SendResponseFor<B>> {
+    options?: SendRequestOptionsI,
+  ): Promise<SendResponse> {
     return this.sendMaxRaw(cashaddr, options, this.privateKey);
   }
 
@@ -518,7 +516,7 @@ export class Wallet extends WatchWallet {
   ) {
     privateKey = privateKey ?? this.privateKey;
 
-    if (!privateKey && options?.buildUnsigned !== true) {
+    if (!privateKey) {
       throw new Error(`Missing private key`);
     }
 
@@ -530,16 +528,6 @@ export class Wallet extends WatchWallet {
     );
   }
 
-  public async signUnsignedTransaction(
-    transaction: Uint8Array | string,
-    sourceOutputs: SourceOutput[],
-  ): Promise<Uint8Array> {
-    if (!this.privateKey) {
-      throw Error("Can not sign a transaction with watch-only wallet.");
-    }
-
-    return signUnsignedTransaction(transaction, sourceOutputs, this.privateKey);
-  }
   //#endregion Funds
 }
 

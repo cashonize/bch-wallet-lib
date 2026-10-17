@@ -61,8 +61,6 @@ import {
   SendRequestArray,
   SendRequestType,
   SendResponse,
-  SendResponseFor,
-  SourceOutput,
   checkBurnRequest,
   checkGenesisRequest,
   checkMintRequest,
@@ -958,18 +956,21 @@ export class BaseWallet implements WalletI {
    * This is a first class function with REST analog, maintainers should strive to keep backward-compatibility
    *
    */
-  public async send<B extends boolean | undefined = undefined>(
+  public async send(
     requests:
       | SendRequest
       | TokenSendRequest
       | OpReturnData
       | Array<SendRequest | TokenSendRequest | OpReturnData>
       | SendRequestArray[],
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
-  ): Promise<SendResponseFor<B>> {
-    const { encodedTransaction, categories, sourceOutputs } =
-      await this.encodeTransaction(requests, undefined, options);
-    return this._send(encodedTransaction, categories, sourceOutputs, options);
+    options?: SendRequestOptionsI,
+  ): Promise<SendResponse> {
+    const { encodedTransaction, categories } = await this.encodeTransaction(
+      requests,
+      undefined,
+      options,
+    );
+    return this._send(encodedTransaction, categories, options);
   }
 
   /**
@@ -980,10 +981,10 @@ export class BaseWallet implements WalletI {
    *
    * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
    */
-  public async sendMax<B extends boolean | undefined = undefined>(
+  public async sendMax(
     cashaddr: string,
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
-  ): Promise<SendResponseFor<B>> {
+    options?: SendRequestOptionsI,
+  ): Promise<SendResponse> {
     return await this.sendMaxRaw(cashaddr, options);
   }
 
@@ -995,11 +996,11 @@ export class BaseWallet implements WalletI {
    *
    * @returns the transaction id sent to the network
    */
-  protected async sendMaxRaw<B extends boolean | undefined = undefined>(
+  protected async sendMaxRaw(
     cashaddr: string,
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
+    options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
-  ): Promise<SendResponseFor<B>> {
+  ): Promise<SendResponse> {
     const {
       value: maxSpendableAmount,
       utxos,
@@ -1031,56 +1032,50 @@ export class BaseWallet implements WalletI {
       value: maxSpendableAmount,
     });
 
-    const { encodedTransaction, categories, sourceOutputs } =
-      await this.encodeTransaction([sendRequest], true, options, privateKey);
-    return this._send(encodedTransaction, categories, sourceOutputs, options);
+    const { encodedTransaction, categories } = await this.encodeTransaction(
+      [sendRequest],
+      true,
+      options,
+      privateKey,
+    );
+    return this._send(encodedTransaction, categories, options);
   }
 
-  protected async _send<B extends boolean | undefined = undefined>(
+  protected async _send(
     encodedTransaction: Uint8Array,
     categories: string[],
-    sourceOutputs: SourceOutput[] | undefined,
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
-  ): Promise<SendResponseFor<B>> {
-    const resp = new SendResponse({});
-    resp.categories = categories;
-
-    if (options?.buildUnsigned === true) {
-      resp.unsignedTransaction = binToHex(encodedTransaction);
-      resp.sourceOutputs = sourceOutputs;
-    } else if (options?.broadcast === false) {
-      resp.transaction = binToHex(encodedTransaction);
-      resp.txId = binToHex(
+    options?: SendRequestOptionsI,
+  ): Promise<SendResponse> {
+    const transaction = binToHex(encodedTransaction);
+    if (options?.broadcast === false) {
+      const txId = binToHex(
         sha256.hash(sha256.hash(encodedTransaction)).reverse(),
       );
-    } else {
-      resp.transaction = binToHex(encodedTransaction);
-      const awaitPropagation =
-        options?.awaitTransactionPropagation === undefined ||
-        options?.awaitTransactionPropagation === true;
-
-      let updatePromise: Promise<void>;
-      if (awaitPropagation) {
-        updatePromise = this.waitForUpdate({ timeout: 2500 });
-      }
-
-      const [_, txId] = await Promise.all([
-        updatePromise!,
-        this.submitTransaction(encodedTransaction, awaitPropagation),
-      ]);
-
-      resp.txId = txId;
-      resp.explorerUrl = this.explorerUrl(resp.txId);
-
-      if (
-        options?.queryBalance === undefined ||
-        options?.queryBalance === true
-      ) {
-        resp.balance = await this.getBalance();
-      }
+      return { txId, transaction, categories };
     }
 
-    return resp as SendResponseFor<B>;
+    const awaitPropagation =
+      options?.awaitTransactionPropagation === undefined ||
+      options?.awaitTransactionPropagation === true;
+
+    let updatePromise: Promise<void>;
+    if (awaitPropagation) {
+      updatePromise = this.waitForUpdate({ timeout: 2500 });
+    }
+
+    const [_, txId] = await Promise.all([
+      updatePromise!,
+      this.submitTransaction(encodedTransaction, awaitPropagation),
+    ]);
+
+    const resp: SendResponse = { txId, transaction, categories };
+    resp.explorerUrl = this.explorerUrl(txId);
+
+    if (options?.queryBalance === undefined || options?.queryBalance === true) {
+      resp.balance = await this.getBalance();
+    }
+
+    return resp;
   }
 
   /**
@@ -1320,22 +1315,19 @@ export class BaseWallet implements WalletI {
         "Token selection picked a coin the change does not cover",
       );
     }
-    const { encodedTransaction, sourceOutputs } = await buildEncodedTransaction(
-      {
-        inputs: fundingUtxos,
-        outputs: sendRequests,
-        signingKey: privateKey ?? placeholderPrivateKeyBin,
-        fee,
-        discardChange,
-        feePaidBy,
-        changeAddress,
-        buildUnsigned: options?.buildUnsigned === true,
-        walletCache: this.walletCache,
-        outputOrdering: options?.outputOrdering,
-        tokenBurns,
-        tokenChange,
-      },
-    );
+    const encodedTransaction = await buildEncodedTransaction({
+      inputs: fundingUtxos,
+      outputs: sendRequests,
+      signingKey: privateKey ?? placeholderPrivateKeyBin,
+      fee,
+      discardChange,
+      feePaidBy,
+      changeAddress,
+      walletCache: this.walletCache,
+      outputOrdering: options?.outputOrdering,
+      tokenBurns,
+      tokenChange,
+    });
 
     const categories = [
       ...fundingUtxos
@@ -1346,7 +1338,7 @@ export class BaseWallet implements WalletI {
         .map((val) => (val as TokenSendRequest).category),
     ].filter((value, index, array) => array.indexOf(value) === index);
 
-    return { encodedTransaction, categories, sourceOutputs };
+    return { encodedTransaction, categories };
   }
 
   /** decodeTransaction on this wallet's provider and network */
@@ -1516,11 +1508,11 @@ export class BaseWallet implements WalletI {
    * @param  {SendRequestType | SendRequestType[]} sendRequests single or an array of extra send requests (OP_RETURN, value transfer, etc.) to include in genesis transaction
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async tokenGenesis<B extends boolean | undefined = undefined>(
+  public async tokenGenesis(
     genesisRequests: TokenGenesisRequest | TokenGenesisRequest[],
     sendRequests: SendRequestType | SendRequestType[] = [],
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
-  ): Promise<SendResponseFor<B>> {
+    options?: SendRequestOptionsI,
+  ): Promise<SendResponse> {
     if (!Array.isArray(genesisRequests)) {
       genesisRequests = [genesisRequests];
     }
@@ -1583,11 +1575,11 @@ export class BaseWallet implements WalletI {
    * @param  {boolean?} deductTokenAmount if a minting NFT contains a fungible amount, deduct from it by the number of mints in that category
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async tokenMint<B extends boolean | undefined = undefined>(
+  public async tokenMint(
     mintRequests: TokenMintRequest | Array<TokenMintRequest>,
     deductTokenAmount: boolean = false,
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
-  ): Promise<SendResponseFor<B>> {
+    options?: SendRequestOptionsI,
+  ): Promise<SendResponse> {
     if (!Array.isArray(mintRequests)) {
       mintRequests = [mintRequests];
     }
@@ -1688,11 +1680,11 @@ export class BaseWallet implements WalletI {
    * @param  {string?} message optional message to include in OP_RETURN
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async tokenBurn<B extends boolean | undefined = undefined>(
+  public async tokenBurn(
     burnRequests: TokenBurnRequest | TokenBurnRequest[],
     message?: string,
-    options?: SendRequestOptionsI & { buildUnsigned?: B },
-  ): Promise<SendResponseFor<B>> {
+    options?: SendRequestOptionsI,
+  ): Promise<SendResponse> {
     if (!Array.isArray(burnRequests)) {
       burnRequests = [burnRequests];
     }

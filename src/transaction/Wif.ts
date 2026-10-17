@@ -4,13 +4,11 @@ import {
   CompilationContextBch,
   Compiler,
   cashAddressToLockingBytecode,
-  decodeTransaction,
   encodeTransaction,
   generateTransaction,
   hexToBin,
   importWalletTemplate,
   Output,
-  TransactionTemplateFixed,
   verifyTransactionTokens,
   walletTemplateP2pkhNonHd,
   walletTemplateToCompilerBch,
@@ -29,7 +27,6 @@ import {
   OpReturnData,
   SendRequest,
   SendRequestType,
-  SourceOutput,
   TokenSendRequest,
 } from "../wallet/model.js";
 import { allocateFee } from "./allocateFee.js";
@@ -892,18 +889,17 @@ export async function getFeeAmount({
   // build transaction
   if (utxos) {
     // Build the transaction to get the approximate size
-    const { encodedTransaction: draftTransaction } =
-      await buildEncodedTransaction({
-        inputs: utxos,
-        outputs: sendRequests,
-        signingKey: placeholderPrivateKeyBin,
-        fee: 0n, //DUST_UTXO_THRESHOLD
-        discardChange: discardChange ?? false,
-        feePaidBy,
-        changeAddress: "",
-        walletCache,
-        tokenChange,
-      });
+    const draftTransaction = await buildEncodedTransaction({
+      inputs: utxos,
+      outputs: sendRequests,
+      signingKey: placeholderPrivateKeyBin,
+      fee: 0n, //DUST_UTXO_THRESHOLD
+      discardChange: discardChange ?? false,
+      feePaidBy,
+      changeAddress: "",
+      walletCache,
+      tokenChange,
+    });
 
     if (feeStrategy) {
       return feeStrategy({
@@ -931,7 +927,6 @@ export async function buildEncodedTransaction({
   discardChange = false,
   feePaidBy = FeePaidByEnum.change,
   changeAddress = "",
-  buildUnsigned = false,
   walletCache,
   outputOrdering,
   tokenBurns,
@@ -944,13 +939,12 @@ export async function buildEncodedTransaction({
   discardChange?: boolean;
   feePaidBy?: FeePaidByEnum;
   changeAddress?: string;
-  buildUnsigned?: boolean;
   walletCache: WalletCache;
   outputOrdering?: OutputOrderingFn;
   tokenBurns?: TokenBurnAllowance;
   tokenChange?: TokenSendRequest[];
 }) {
-  const { transaction, sourceOutputs } = await buildP2pkhNonHdTransaction({
+  const { transaction } = await buildP2pkhNonHdTransaction({
     inputs,
     outputs,
     signingKey,
@@ -964,63 +958,5 @@ export async function buildEncodedTransaction({
     tokenChange,
   });
 
-  if (buildUnsigned === true) {
-    transaction.inputs.forEach(
-      (input) => (input.unlockingBytecode = Uint8Array.from([])),
-    );
-  }
-
-  return { encodedTransaction: encodeTransaction(transaction), sourceOutputs };
-}
-
-export async function signUnsignedTransaction(
-  transaction: Uint8Array | string,
-  sourceOutputs: SourceOutput[],
-  signingKey: Uint8Array,
-): Promise<Uint8Array> {
-  if (typeof transaction === "string") {
-    transaction = hexToBin(transaction);
-  }
-
-  const decoded = decodeTransaction(transaction);
-  if (typeof decoded === "string") {
-    throw new Error(decoded);
-  }
-
-  const template = importWalletTemplate(walletTemplateP2pkhNonHd);
-  if (typeof template === "string") {
-    throw new Error("Transaction template error");
-  }
-
-  const compiler = walletTemplateToCompilerBch(template);
-  const transactionTemplate: Readonly<
-    TransactionTemplateFixed<typeof compiler>
-  > = { ...decoded };
-  for (const [index, input] of decoded.inputs.entries()) {
-    const sourceOutput = sourceOutputs[index];
-    transactionTemplate.inputs[index] = {
-      ...input,
-      unlockingBytecode: {
-        compiler,
-        data: {
-          keys: { privateKeys: { key: signingKey } },
-        },
-        valueSatoshis: sourceOutput.valueSatoshis,
-        script: "unlock",
-        token: sourceOutput.token,
-      },
-    };
-  }
-
-  const result = generateTransaction(transactionTemplate);
-  if (!result.success) {
-    const details = result.errors
-      .flatMap(({ errors }) => errors.map(({ error }) => error))
-      .join("; ");
-    throw new Error(`Could not sign the transaction: ${details}`, {
-      cause: result.errors,
-    });
-  }
-
-  return encodeTransaction(result.transaction);
+  return encodeTransaction(transaction);
 }

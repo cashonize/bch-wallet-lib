@@ -9,6 +9,7 @@ import {
 } from "@bitauth/libauth";
 import { countRequests } from "#test/countRequests.js";
 import { mine } from "#test/mine.js";
+import { signP2pkhInputs } from "#test/sign.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { Utxo } from "../interface.js";
@@ -349,16 +350,20 @@ test("Should report outpoints and locking bytecode, and give scripts without an 
       { lockingBytecode: bobLockingBytecode, valueSatoshis: 3000n },
     ],
   });
-  const signed = await bob.signUnsignedTransaction(unsigned, [
-    {
-      outpointTransactionHash: hexToBin(funding.txid),
-      outpointIndex: funding.vout,
-      sequenceNumber: 0xffffffff,
-      unlockingBytecode: Uint8Array.from([]),
-      lockingBytecode: bobLockingBytecode,
-      valueSatoshis: funding.satoshis,
-    },
-  ]);
+  const signed = signP2pkhInputs(
+    unsigned,
+    [
+      {
+        outpointTransactionHash: hexToBin(funding.txid),
+        outpointIndex: funding.vout,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: Uint8Array.from([]),
+        lockingBytecode: bobLockingBytecode,
+        valueSatoshis: funding.satoshis,
+      },
+    ],
+    bob.privateKey,
+  );
   const scriptsTxId = await bob.submitTransaction(signed);
 
   // spend the P2S output back to bob, so a history input has no address either

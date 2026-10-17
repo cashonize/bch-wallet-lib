@@ -1,9 +1,8 @@
-import { decodeTransaction, hashTransaction, hexToBin } from "@bitauth/libauth";
+import { hashTransaction, hexToBin } from "@bitauth/libauth";
 import { expectTypeOf } from "vitest";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { NFTCapability } from "../interface.js";
-import { SendRequestOptionsI } from "./interface.js";
-import { SignedSendResponse, UnsignedSendResponse } from "./model.js";
+import { SendResponse } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
 
 beforeAll(async () => {
@@ -16,7 +15,7 @@ afterAll(async () => {
 // The returned hex is the transaction with the returned txId, and the one the server got
 const expectBroadcast = async (
   wallet: RegTestWallet,
-  response: SignedSendResponse,
+  response: SendResponse,
 ) => {
   expect(hashTransaction(hexToBin(response.transaction))).toBe(response.txId);
   expect(await wallet.provider.getRawTransaction(response.txId)).toBe(
@@ -78,35 +77,4 @@ test("broadcast: false returns the signed transaction it did not broadcast", asy
   await expect(
     alice.provider.getRawTransaction(response.txId),
   ).rejects.toThrow();
-});
-
-test("buildUnsigned wins over broadcast: false", async () => {
-  const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-  const bob = await RegTestWallet.newRandom();
-
-  const response = await alice.send([[bob.cashaddr, 10_000n]], {
-    buildUnsigned: true,
-    broadcast: false,
-  });
-  expectTypeOf(response).toEqualTypeOf<UnsignedSendResponse>();
-  expect(response.txId).toBeUndefined();
-  expect(response.transaction).toBeUndefined();
-  const decoded = decodeTransaction(hexToBin(response.unsignedTransaction));
-  if (typeof decoded === "string") throw new Error(decoded);
-  expect(decoded.inputs[0].unlockingBytecode.length).toBe(0);
-  expect(response.sourceOutputs.length).toBe(decoded.inputs.length);
-});
-
-test("options whose buildUnsigned is not known return either, told apart by txId", async () => {
-  const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-  const bob = await RegTestWallet.newRandom();
-
-  const options: SendRequestOptionsI = { broadcast: false };
-  const response = await alice.send([[bob.cashaddr, 10_000n]], options);
-  expectTypeOf(response).toEqualTypeOf<
-    SignedSendResponse | UnsignedSendResponse
-  >();
-  if (response.txId === undefined) throw new Error("expected a signed send");
-  expectTypeOf(response.transaction).toEqualTypeOf<string>();
-  expect(hashTransaction(hexToBin(response.transaction))).toBe(response.txId);
 });

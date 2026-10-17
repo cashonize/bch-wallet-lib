@@ -55,21 +55,19 @@ describe("a built transaction that burns tokens is refused", () => {
       .categories![0];
     const utxosBefore = await wallet.getUtxos();
 
-    const send = (options: { buildUnsigned?: boolean }) =>
+    const error = await burnError(
       wallet.send(
         new TokenSendRequest({
           cashaddr: bob.tokenaddr,
           category,
           amount: 10n,
         }),
-        { outputOrdering: dropTokenChange(wallet), ...options },
-      );
-    const error = await burnError(send({}));
+        { outputOrdering: dropTokenChange(wallet) },
+      ),
+    );
     expect(error.category).toBe(category);
     expect(error.amount).toBe(90n);
     expect(error.nft).toBeUndefined();
-    // nothing is built either
-    await burnError(send({ buildUnsigned: true }));
 
     expect(await wallet.getUtxos()).toEqual(utxosBefore);
     expect(await bob.getTokenBalance(category)).toBe(0n);
@@ -124,7 +122,7 @@ describe("a built transaction that burns tokens is refused", () => {
     const burn = (options: { checkTokenQuantities?: boolean }) =>
       wallet.tokenBurn(new TokenBurnRequest({ category, amount: 10n }), "", {
         outputOrdering: dropTokenChange(wallet),
-        buildUnsigned: true,
+        broadcast: false,
         ...options,
       });
     const error = await burnError(burn({}));

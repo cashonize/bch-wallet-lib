@@ -1,9 +1,4 @@
-import {
-  encodeCashAddress,
-  encodeTransaction,
-  encodeTransactionOutput,
-  hexToBin,
-} from "@bitauth/libauth";
+import { encodeCashAddress, encodeTransactionOutput } from "@bitauth/libauth";
 import type { WalletCache } from "../cache/walletCache.js";
 import type { Utxo } from "../interface.js";
 import { TokenSendRequest } from "../wallet/model.js";
@@ -12,7 +7,6 @@ import {
   placeholderPrivateKeyBin,
   prepareInputs,
   prepareTokenOutputs,
-  signUnsignedTransaction,
 } from "./Wif.js";
 
 const category = "11".repeat(32);
@@ -33,54 +27,6 @@ describe("prepareTokenOutputs", () => {
 });
 
 describe("errors are Error objects", () => {
-  const tx = encodeTransaction({
-    version: 2,
-    locktime: 0,
-    inputs: [
-      {
-        outpointTransactionHash: hexToBin("22".repeat(32)),
-        outpointIndex: 0,
-        sequenceNumber: 0,
-        unlockingBytecode: Uint8Array.of(),
-      },
-    ],
-    outputs: [{ lockingBytecode: Uint8Array.of(0x51), valueSatoshis: 1000n }],
-  });
-  const sourceOutputs = [
-    {
-      outpointTransactionHash: hexToBin("22".repeat(32)),
-      outpointIndex: 0,
-      sequenceNumber: 0,
-      unlockingBytecode: Uint8Array.of(),
-      lockingBytecode: Uint8Array.of(0x51),
-      valueSatoshis: 2000n,
-    },
-  ];
-
-  test("signUnsignedTransaction of a malformed transaction", async () => {
-    const error = await signUnsignedTransaction(
-      "00",
-      sourceOutputs,
-      placeholderPrivateKeyBin,
-    ).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toMatch(/^Error reading transaction/);
-  });
-
-  test("signUnsignedTransaction with a key that cannot sign", async () => {
-    const error = await signUnsignedTransaction(
-      tx,
-      sourceOutputs,
-      new Uint8Array(32),
-    ).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toMatch(
-      /^Could not sign the transaction: .*not a valid Secp256k1 private key/,
-    );
-    // libauth's generation errors, per input
-    expect((error as Error).cause).toMatchObject([{ index: 0 }]);
-  });
-
   const walletCache = { get: () => undefined } as unknown as WalletCache;
   const p2pkh = encodeCashAddress({
     prefix: "bchreg",

@@ -71,10 +71,15 @@ export { BaseWallet } from "./wallet/Base.js";
 export * from "./wallet/createWallet.js";
 export { FeePaidByEnum, WalletTypeEnum } from "./wallet/enum.js";
 export {
+  CHANGE_BRANCH,
+  DEFAULT_BRANCHES,
+  DEPOSIT_BRANCH,
+  GAP_SIZE,
   HDWallet,
   RegTestHDWallet,
   TestNetHDWallet,
 } from "./wallet/HDWallet.js";
+export type { HDWalletOptions } from "./wallet/HDWallet.js";
 export * from "./wallet/interface.js";
 export * from "./wallet/model.js";
 // transaction utilities

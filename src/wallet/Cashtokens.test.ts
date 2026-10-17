@@ -712,22 +712,19 @@ describe(`Test cashtokens`, () => {
     });
 
     let seenBalance = 0n;
-    let sendResponse: SendResponse = {};
-    setTimeout(
-      async () =>
-        (sendResponse = await alice.send([
-          new TokenSendRequest({
-            cashaddr: bob.cashaddr!,
-            amount: 100n,
-            category: category,
-            value: 1500n,
-            nft: {
-              capability: NFTCapability.minting,
-              commitment: "74657374",
-            },
-          }),
-        ])),
-      0,
+    const sending: Promise<SendResponse> = delay(0).then(() =>
+      alice.send([
+        new TokenSendRequest({
+          cashaddr: bob.cashaddr!,
+          amount: 100n,
+          category: category,
+          value: 1500n,
+          nft: {
+            capability: NFTCapability.minting,
+            commitment: "74657374",
+          },
+        }),
+      ]),
     );
 
     const cancel = await bob.watchTokenBalance(category, (balance) => {
@@ -735,6 +732,7 @@ describe(`Test cashtokens`, () => {
     });
 
     const balance = await bob.waitForTokenBalance(category, 100n);
+    const sendResponse = await sending;
     await delay(2000);
     expect(balance).toBe(100n);
     expect(seenBalance).toBe(100n);

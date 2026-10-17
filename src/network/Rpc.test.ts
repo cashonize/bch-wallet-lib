@@ -1,5 +1,6 @@
 import { Network } from "../interface.js";
 import { mine } from "../mine/index.js";
+import { delay } from "../util/delay.js";
 import { getNetworkProvider } from "../network/default.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
@@ -110,20 +111,20 @@ describe("Rpc tests", () => {
 
     const height = await provider.getBlockHeight();
 
-    setTimeout(
-      async () => await mine({ cashaddr: minerWallet.cashaddr!, blocks: 1 }),
-      2000,
+    let mined = delay(2000).then(() =>
+      mine({ cashaddr: minerWallet.cashaddr!, blocks: 1 }),
     );
 
     let header = await provider.waitForBlock();
     expect(header.height).toBe(height + 1);
+    await mined;
 
-    setTimeout(
-      async () => await mine({ cashaddr: minerWallet.cashaddr!, blocks: 1 }),
-      2000,
+    mined = delay(2000).then(() =>
+      mine({ cashaddr: minerWallet.cashaddr!, blocks: 1 }),
     );
 
     header = await provider.waitForBlock(height + 2);
     expect(header.height).toBe(height + 2);
+    await mined;
   }, 20000);
 });

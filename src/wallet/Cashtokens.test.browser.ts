@@ -479,21 +479,19 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(tokenUtxos[0].satoshis).toBe(5000n);
 
     let seenBalance = 0n;
-    setTimeout(
-      () =>
-        alice.send([
-          new TokenSendRequest({
-            cashaddr: bob.cashaddr!,
-            amount: 100n,
-            category: category,
-            value: 1500n,
-            nft: {
-              capability: NFTCapability.minting,
-              commitment: "74657374",
-            },
-          }),
-        ]),
-      0,
+    const sending = delay(0).then(() =>
+      alice.send([
+        new TokenSendRequest({
+          cashaddr: bob.cashaddr!,
+          amount: 100n,
+          category: category,
+          value: 1500n,
+          nft: {
+            capability: NFTCapability.minting,
+            commitment: "74657374",
+          },
+        }),
+      ]),
     );
 
     const cancel = await bob.watchTokenBalance(category, (balance) => {
@@ -503,6 +501,7 @@ describe(`Cashtokens should function in the browser`, () => {
     const [balance, _] = await Promise.all([
       bob.waitForTokenBalance(category, 100n),
       delay(1000),
+      sending,
     ]);
 
     expect(balance).toBe(100n);

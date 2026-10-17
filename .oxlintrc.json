@@ -29,6 +29,7 @@
     "unicorn/no-unnecessary-await": "warn",
     "unicorn/no-empty-file": "warn",
     "unicorn/prefer-set-size": "warn",
-    "unicorn/prefer-string-starts-ends-with": "warn"
+    "unicorn/prefer-string-starts-ends-with": "warn",
+    "typescript/no-misused-promises": "error"
   }
 }

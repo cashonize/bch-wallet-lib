@@ -694,21 +694,20 @@ describe(`Wallet subscriptions`, () => {
     const aliceWallet = await RegTestWallet.fromId(aliceWif);
     const bobWallet = await RegTestWallet.newRandom();
 
-    setTimeout(
-      () =>
+    const [, response] = await Promise.all([
+      delay(0).then(() =>
         aliceWallet.send([
           {
             cashaddr: bobWallet.cashaddr!,
             value: 1000n,
           },
         ]),
-      0,
-    );
-
-    const response = await bobWallet.waitForTransaction({
-      getTransactionInfo: true,
-      getBalance: true,
-    });
+      ),
+      bobWallet.waitForTransaction({
+        getTransactionInfo: true,
+        getBalance: true,
+      }),
+    ]);
     expect(response.balance).toBeGreaterThan(0);
     expect(response.transactionInfo!.hash).not.toBe("");
 
@@ -800,80 +799,77 @@ describe(`Wallet subscriptions`, () => {
     const charlie = await RegTestWallet.newRandom();
     const dave = await RegTestWallet.newRandom();
 
-    setTimeout(
-      () =>
+    const [, bobBalance] = await Promise.all([
+      delay(600).then(() =>
         alice.send([
           {
             cashaddr: bob.cashaddr!,
             value: 1000n,
           },
         ]),
-      600,
-    );
-
-    let bobBalance = await bob.waitForBalance(1000n).catch((e) => {
-      throw e;
-    });
-    setTimeout(
-      () =>
+      ),
+      bob.waitForBalance(1000n),
+    ]);
+    const [, charlieBalance] = await Promise.all([
+      delay(600).then(() =>
         alice.send([
           {
             cashaddr: charlie.cashaddr!,
             value: 1000n,
           },
         ]),
-      600,
-    );
-    let charlieBalance = await charlie.waitForBalance(1000n);
-    setTimeout(
-      () =>
+      ),
+      charlie.waitForBalance(1000n),
+    ]);
+    const [, daveBalance] = await Promise.all([
+      delay(600).then(() =>
         alice.send([
           {
             cashaddr: dave.cashaddr!,
             value: 1000n,
           },
         ]),
-      600,
-    );
-    let daveBalance = await dave.waitForBalance(1000n);
+      ),
+      dave.waitForBalance(1000n),
+    ]);
     expect(bobBalance).toBe(1000n);
     expect(charlieBalance).toBe(1000n);
     expect(daveBalance).toBe(1000n);
-    setTimeout(
-      () =>
+    let [, bobResponse] = await Promise.all([
+      delay(600).then(() =>
         alice.send([
           {
             cashaddr: bob.cashaddr!,
             value: 1000n,
           },
         ]),
-      600,
-    );
-    let bobResponse = await bob.waitForTransaction();
+      ),
+      bob.waitForTransaction(),
+    ]);
     expect(bobResponse.transactionInfo!.version).toBe(2);
-    setTimeout(
-      () =>
+    [, bobResponse] = await Promise.all([
+      delay(600).then(() =>
         alice.send([
           {
             cashaddr: bob.cashaddr!,
             value: 1000n,
           },
         ]),
-      600,
-    );
-    bobResponse = await bob.waitForTransaction();
+      ),
+      bob.waitForTransaction(),
+    ]);
     expect(bobResponse.transactionInfo!.version).toBe(2);
-    setTimeout(
-      () =>
+    [, bobResponse] = await Promise.all([
+      delay(600).then(() =>
         alice.send([
           {
             cashaddr: bob.cashaddr!,
             value: 1000n,
           },
         ]),
-      600,
-    );
-    bobResponse = await bob.waitForTransaction();
+      ),
+      bob.waitForTransaction(),
+    ]);
     expect(bobResponse.transactionInfo!.version).toBe(2);
     expect(await bob.getBalance()).toBe(4000n);
   });
@@ -884,7 +880,7 @@ describe(`Wallet subscriptions`, () => {
     const bob = await RegTestWallet.newRandom();
 
     let waitTxResult = false;
-    setTimeout(async () => {
+    const waitTx = delay(0).then(async () => {
       const result = await alice.waitForTransaction({
         getBalance: true,
         getTransactionInfo: true,
@@ -892,14 +888,14 @@ describe(`Wallet subscriptions`, () => {
       expect(result.balance!).toBeGreaterThan(0);
       expect(result.transactionInfo!.hash.length).toBe(64);
       waitTxResult = true;
-    }, 0);
+    });
 
     let waitBalanceResult = false;
-    setTimeout(async () => {
+    const waitBalance = delay(0).then(async () => {
       const result = await alice.waitForBalance(toSat(0.001));
       expect(result).toBeGreaterThan(0n);
       waitBalanceResult = true;
-    }, 0);
+    });
 
     let aliceWatchResult = false;
     let aliceWatchCancel: CancelFn;
@@ -941,18 +937,18 @@ describe(`Wallet subscriptions`, () => {
     const blockNumber = await alice.provider!.getBlockHeight();
 
     let blockWaitResult = false;
-    setTimeout(async () => {
+    const blockWait = delay(0).then(async () => {
       const result = await alice.waitForBlock(blockNumber + 1);
       expect(result.height).toBe(blockNumber + 1);
       blockWaitResult = true;
-    }, 0);
+    });
 
     let blockNumberWaitResult = false;
-    setTimeout(async () => {
+    const blockNumberWait = delay(0).then(async () => {
       const result = await alice.waitForBlock(blockNumber + 2);
       expect(result.height).toBe(blockNumber + 2);
       blockNumberWaitResult = true;
-    }, 0);
+    });
 
     const sendResponse = await alice.send({
       cashaddr: bob.getDepositAddress(),
@@ -964,6 +960,7 @@ describe(`Wallet subscriptions`, () => {
     await mine({ cashaddr: alice.cashaddr!, blocks: 1 });
 
     await delay(5000);
+    await Promise.all([waitTx, waitBalance, blockWait, blockNumberWait]);
     expect(waitTxResult).toBe(true);
     expect(waitBalanceResult).toBe(true);
     expect(aliceWatchResult).toBe(true);

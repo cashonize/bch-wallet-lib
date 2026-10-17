@@ -1246,8 +1246,20 @@ export class BaseWallet implements WalletI {
     callback: (header: HexHeaderI) => void,
     skipCurrentHeight: boolean = true,
   ): Promise<CancelFn> {
+    // the skip is done here rather than by the provider, so a move to another provider can tell
+    // its current tip, delivered on subscribing, from the header already seen
+    let skip = skipCurrentHeight;
+    let last: HexHeaderI | undefined;
     return this.subscribe((provider) =>
-      provider.watchBlocks(callback, skipCurrentHeight),
+      provider.watchBlocks((header) => {
+        const seen = last?.height === header.height && last.hex === header.hex;
+        last = header;
+        if (skip) {
+          skip = false;
+          return;
+        }
+        if (!seen) callback(header);
+      }, false),
     );
   }
 

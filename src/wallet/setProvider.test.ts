@@ -90,6 +90,22 @@ describe("setProvider", () => {
     expect(newProvider.subscriptions).toBe(0);
   });
 
+  test("does not deliver the same tip again after a move", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    const heights: number[] = [];
+    await wallet.watchBlocks((header) => heights.push(header.height), false);
+    expect(heights).toEqual([200]);
+
+    await wallet.setProvider(newProvider);
+    await delay(100);
+    expect(heights).toEqual([200]);
+
+    await newProvider.mine(miner, 1);
+    await delay(100);
+    expect(heights).toEqual([200, 201]);
+    await wallet.stop();
+  });
+
   test("stays on the old provider when the new one cannot connect", async () => {
     const wallet = await RegTestWallet.newRandom();
     const balances: bigint[] = [];

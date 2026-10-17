@@ -46,8 +46,9 @@ module.exports = async function (cwd) {
   });
 
   if (output.status != 0) {
-    console.error("Docker is not running in your system. Aborting.");
-    process.exit(0);
+    throw new Error(
+      "Docker is not running; pnpm test:regtest:local runs on local binaries",
+    );
   }
 
   if (global.fulcrumRegtest === undefined) {

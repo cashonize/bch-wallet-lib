@@ -1,17 +1,34 @@
 // Fails when an error the built package throws is not `instanceof` the class its main entry
-// exports, as callers tell errors apart that way. The wallet runs on the mock chain from the
-// ./mock entry, as an app's tests would. Run after `pnpm build`.
+// exports, as callers tell errors apart that way. The wallet runs on a mem-cash chain behind the
+// entry's ElectrumNetworkProvider, as an app's tests would. Run after `pnpm build`.
+import { asTransport, createIndexer } from "@paryonusd/mem-cash";
+import { createTxVerifier } from "@paryonusd/mem-cash/validation";
 import { fileURLToPath } from "node:url";
 import {
   BroadcastRejectedError,
+  ElectrumNetworkProvider,
   InsufficientFundsError,
+  NetworkType,
   RegTestWallet,
+  setGlobalProvider,
 } from "bch-wallet-lib";
-import { initMockProvider } from "bch-wallet-lib/mock";
 
 // the funded test wallet
 process.loadEnvFile(fileURLToPath(new URL("../.env.regtest", import.meta.url)));
-const provider = await initMockProvider();
+const chain = createIndexer({
+  addressPrefix: "bchreg",
+  verifier: createTxVerifier({ vmVersion: "BCH_2026_05" }),
+});
+await chain.request("test.set_chain_tip", [200, 1700000200]);
+await chain.request("test.add_utxo", [
+  process.env.ADDRESS,
+  { vout: 0, satoshis: 5_000_000_000, height: 1 },
+]);
+const provider = new ElectrumNetworkProvider(
+  asTransport(chain),
+  NetworkType.Regtest,
+);
+setGlobalProvider(NetworkType.Regtest, provider);
 const alice = await RegTestWallet.fromId(process.env.ALICE_ID);
 const wallet = await RegTestWallet.newRandom();
 await alice.send([[wallet.cashaddr, 10_000n]]);

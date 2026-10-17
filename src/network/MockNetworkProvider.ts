@@ -9,7 +9,7 @@ export interface MockNetworkProviderOptions {
   indexerConfig?: Partial<IndexerConfig>;
 }
 
-// The `bch-wallet-lib/mock` entry: kept out of the main entry so that app bundles never reach
+// Test infrastructure, left out of the build (tsconfig.build.json) so that no entry reaches
 // @paryonusd/mem-cash, a dev dependency
 
 /**

@@ -1,4 +1,5 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { liveTests } from "#test/live.js";
 import {
   BaseWallet,
   convert,
@@ -56,11 +57,15 @@ describe("Wallet should function in the browser", () => {
     expect(result.slice(0, 13)).toBe("bitcoincash:q");
   });
 
-  test("Should get an empty balance from a mainnet wallet", async () => {
-    const w = await Wallet.newRandom();
-    const result = await w.getBalance();
-    expect(result).toBe(0n);
-  });
+  // reads the balance from the mainnet servers
+  test.skipIf(!liveTests)(
+    "Should get an empty balance from a mainnet wallet",
+    async () => {
+      const w = await Wallet.newRandom();
+      const result = await w.getBalance();
+      expect(result).toBe(0n);
+    },
+  );
 
   test("Should return deposit address from testnet wallet", async () => {
     const alice = await TestNetWallet.fromWIF(process.env.PRIVATE_WIF!);

@@ -53,6 +53,7 @@ export {
   BaseWallet,
   deleteNamedWallet,
   getNamedWalletId,
+  namedWalletExists,
 } from "./wallet/Base.js";
 export {
   InsufficientFundsError,

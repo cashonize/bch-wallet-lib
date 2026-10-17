@@ -2,11 +2,13 @@ import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   BaseWallet,
   getNamedWalletId,
+  namedWalletExists,
   HDWallet,
   RegTestWallet,
   TestNetWallet,
   Wallet,
 } from "../index.js";
+import { RegTestHDWallet } from "../wallet/HDWallet.js";
 import { default as IndexedDBProvider } from "./IndexedDBProvider.js";
 
 beforeAll(async () => {
@@ -128,4 +130,88 @@ test("getNamedWalletId reads the mainnet database by default and returns undefin
   );
   await expect(getNamedWalletId(name, "bchtest")).resolves.toBeUndefined();
   await expect(getNamedWalletId(`${name}-missing`)).resolves.toBeUndefined();
+});
+
+test("a named walletId may name only the database of its network", async () => {
+  BaseWallet.StorageProvider = IndexedDBProvider;
+  const name = `named-db-${Math.random()}`;
+  const wallet = await RegTestWallet.named(name);
+  const fromId = await RegTestWallet.fromId(`named:regtest:${name}:bchreg`);
+  expect(fromId.cashaddr).toBe(wallet.cashaddr);
+  await expect(
+    RegTestWallet.fromId(`named:regtest:${name}:other-db`),
+  ).rejects.toThrow("can only name the database bchreg");
+  await expect(
+    RegTestHDWallet.fromId(`named:regtest:${name}:other-db`),
+  ).rejects.toThrow("can only name the database bchreg");
+  await wallet.stop();
+  await fromId.stop();
+});
+
+describe("namedWalletExists", () => {
+  test("tells a stored name from a missing one, in the mainnet database by default", async () => {
+    BaseWallet.StorageProvider = IndexedDBProvider;
+    const name = `exists-${Math.random()}`;
+    const testnetDb = new IndexedDBProvider("bchtest");
+    await testnetDb.init();
+    await testnetDb.addWallet(name, "wif:testnet:stored-id");
+    await testnetDb.close();
+
+    expect(await namedWalletExists(name, "bchtest")).toBe(true);
+    expect(await namedWalletExists(name)).toBe(false);
+    expect(await namedWalletExists(`${name}-missing`, "bchtest")).toBe(false);
+    await expect(namedWalletExists("")).rejects.toThrow(
+      "Named wallets must have a non-empty name",
+    );
+  });
+
+  test("constructs no wallet", async () => {
+    BaseWallet.StorageProvider = IndexedDBProvider;
+    const name = `exists-${Math.random()}`;
+    await Wallet.named(name);
+    // every wallet takes its provider as it is constructed
+    const construct = vi.spyOn(
+      BaseWallet.prototype as unknown as { getNetworkProvider: () => unknown },
+      "getNetworkProvider",
+    );
+    try {
+      expect(await namedWalletExists(name)).toBe(true);
+      expect(await namedWalletExists(`${name}-missing`)).toBe(false);
+      expect(construct).not.toHaveBeenCalled();
+    } finally {
+      construct.mockRestore();
+    }
+  });
+
+  test("closes the database when the check throws", async () => {
+    const failure = new Error("store unreadable");
+    const close = vi.fn();
+    class FailingProvider extends IndexedDBProvider {
+      async walletExists(): Promise<boolean> {
+        throw failure;
+      }
+      async close() {
+        close();
+        return super.close();
+      }
+    }
+    BaseWallet.StorageProvider = FailingProvider;
+    try {
+      await expect(namedWalletExists("alice")).rejects.toBe(failure);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      BaseWallet.StorageProvider = IndexedDBProvider;
+    }
+  });
+
+  test("throws without a StorageProvider", async () => {
+    BaseWallet.StorageProvider = undefined;
+    try {
+      await expect(namedWalletExists("alice")).rejects.toThrow(
+        "No database was available or configured to store the named wallet.",
+      );
+    } finally {
+      BaseWallet.StorageProvider = IndexedDBProvider;
+    }
+  });
 });

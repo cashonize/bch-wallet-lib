@@ -853,21 +853,18 @@ export class HDWallet extends BaseWallet {
   /**
    * newRandom - create a random wallet
    *
-   * if `name` parameter is specified, the wallet will also be persisted to DB
+   * if `name` parameter is specified, the wallet is got or created as with `named(name)`
    *
    * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
    *
    * @returns instantiated wallet
    */
   public static async newRandom<T extends typeof HDWallet>(
     this: T,
     name: string = "",
-    dbName?: string,
   ): Promise<InstanceType<T>> {
-    dbName = dbName ? dbName : this.networkPrefix;
     if (name.length > 0) {
-      return this.named(name, dbName);
+      return this.named(name);
     }
 
     return new this().initialize() as Promise<InstanceType<T>>;
@@ -935,13 +932,8 @@ export class HDWallet extends BaseWallet {
     }
 
     if (walletType === WalletTypeEnum.Named) {
-      if (arg2) {
-        // named:testnet:wallet_1:my_database
-        return this.named(arg1, arg2);
-      } else {
-        // named:testnet:wallet_1
-        return this.named(arg1);
-      }
+      // named:testnet:wallet_1, or named:testnet:wallet_1:bchtest
+      return this.fromNamedId(arg1, arg2);
     }
 
     if (walletType !== WalletTypeEnum.Hd) {

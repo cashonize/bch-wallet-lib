@@ -2,6 +2,7 @@ import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   BaseWallet,
   convert,
+  namedWalletExists,
   RegTestWallet,
   SignedMessage,
   TestNetWallet,
@@ -135,9 +136,9 @@ describe("Wallet should function in the browser", () => {
   test("Store and replace a Regtest wallet", async () => {
     const name = `storereplace ${Math.random()}`;
 
-    const check1 = await RegTestWallet.namedExists(name);
+    const check1 = await namedWalletExists(name, "bchreg");
     const w1 = await RegTestWallet.named(name);
-    const check2 = await RegTestWallet.namedExists(name);
+    const check2 = await namedWalletExists(name, "bchreg");
 
     const seedId = (
       await RegTestWallet.fromSeed(

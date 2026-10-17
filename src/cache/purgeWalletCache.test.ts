@@ -1,7 +1,11 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { Config } from "../config.js";
 import IndexedDBProvider from "../indexeddb/IndexedDBProvider.js";
-import { BaseWallet, deleteNamedWallet } from "../wallet/Base.js";
+import {
+  BaseWallet,
+  deleteNamedWallet,
+  getStorageProvider,
+} from "../wallet/Base.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
 import { RegTestWatchWallet } from "../wallet/Watch.js";
 import { RegTestWallet, RegTestWifWallet } from "../wallet/Wif.js";
@@ -38,6 +42,23 @@ async function quickWritingWallet(walletId?: string): Promise<RegTestHDWallet> {
   }
   await wallet.getBalance();
   (wallet.walletCache as unknown as HDWalletCache).writeTimeout = 20;
+  return wallet;
+}
+
+// a new random wallet stored under `name` in a database of its own, the row named() would write
+async function storedIn<W extends BaseWallet>(
+  walletClass: { newRandom(): Promise<W> },
+  name: string,
+  dbName: string,
+): Promise<W> {
+  const wallet = await walletClass.newRandom();
+  const db = getStorageProvider(dbName)!;
+  await db.init();
+  try {
+    await db.addWallet(name, wallet.toDbString());
+  } finally {
+    await db.close();
+  }
   return wallet;
 }
 
@@ -117,9 +138,9 @@ describe("wallet cache records in indexeddb", () => {
       BaseWallet.StorageProvider = IndexedDBProvider;
       const dbName = `delete-named-${Math.random()}`;
       try {
-        const hd = await RegTestHDWallet.named("hd", dbName);
-        const single = await RegTestWallet.named("single", dbName);
-        const kept = await RegTestHDWallet.named("kept", dbName);
+        const hd = await storedIn(RegTestHDWallet, "hd", dbName);
+        const single = await storedIn(RegTestWallet, "single", dbName);
+        const kept = await storedIn(RegTestHDWallet, "kept", dbName);
         for (const wallet of [hd, single, kept]) {
           await wallet.walletCache.persist(true);
           await wallet.stop();
@@ -176,7 +197,7 @@ describe("wallet cache records in indexeddb", () => {
         .spyOn(IndexedDbCache.prototype, "removeItem")
         .mockRejectedValue(new Error("storage unavailable"));
       try {
-        const wallet = await RegTestHDWallet.named("hd", dbName);
+        const wallet = await storedIn(RegTestHDWallet, "hd", dbName);
         await wallet.stop();
 
         await expect(deleteNamedWallet("hd", dbName)).rejects.toThrow(
@@ -256,7 +277,7 @@ describe("wallet cache records in indexeddb", () => {
       const prevProvider = BaseWallet.StorageProvider;
       BaseWallet.StorageProvider = IndexedDBProvider;
       const dbName = `delete-running-${Math.random()}`;
-      const running = await RegTestHDWallet.named("hd", dbName);
+      const running = await storedIn(RegTestHDWallet, "hd", dbName);
       const walletId = running.toDbString();
       const key = `walletCache-${cacheIdOf(running)}`;
       let reopened: RegTestHDWallet | undefined;

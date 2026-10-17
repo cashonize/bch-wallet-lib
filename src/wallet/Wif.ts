@@ -268,19 +268,17 @@ export class Wallet extends WatchWallet {
   /**
    * newRandom - create a random wallet
    *
-   * if `name` parameter is specified, the wallet will also be persisted to DB
+   * if `name` parameter is specified, the wallet is got or created as with `named(name)`
    *
    * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
    *
    * @returns instantiated wallet
    */
   public static async newRandom<T extends typeof Wallet>(
     this: T,
     name: string = "",
-    dbName?: string,
   ): Promise<InstanceType<T>> {
-    return new this().newRandom(name, dbName) as InstanceType<T>;
+    return new this().newRandom(name) as InstanceType<T>;
   }
   //#endregion Constructors
 
@@ -310,13 +308,8 @@ export class Wallet extends WatchWallet {
         return this.watchOnly(`${arg1}`);
 
       case WalletTypeEnum.Named:
-        if (arg2) {
-          // named:testnet:wallet_1:my_database
-          return this.named(arg1, arg2);
-        } else {
-          // named:testnet:wallet_1
-          return this.named(arg1);
-        }
+        // named:testnet:wallet_1, or named:testnet:wallet_1:bchtest
+        return this.fromNamedId(arg1, arg2);
 
       case WalletTypeEnum.Seed:
         if (arg2) {
@@ -386,12 +379,10 @@ export class Wallet extends WatchWallet {
    * newRandom (internal) if the wallet is named, get or create it; otherwise create a random
    * unnamed wallet
    * @param {string} name              name of the wallet
-   * @param {string} dbName            database name the wallet is stored in
    */
-  protected async newRandom(name: string, dbName?: string): Promise<this> {
-    dbName = dbName ? dbName : this.networkPrefix;
+  protected async newRandom(name: string): Promise<this> {
     if (name.length > 0) {
-      return this.named(name, dbName);
+      return this.named(name);
     } else {
       return this.initialize();
     }

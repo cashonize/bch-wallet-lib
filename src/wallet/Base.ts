@@ -188,28 +188,20 @@ export class BaseWallet {
   //#endregion Constructors
 
   /**
-   * named (internal) get a named wallet from the database or create a new one.
-   * Note: this function should behave identically if
+   * named (internal) get a named wallet from the database of the wallet's network, or create a
+   * new one there.
    *
    * @param {string} name              name of the wallet
-   * @param {string} dbName            database name the wallet is stored in
-   * @param {boolean} forceNew         attempt to overwrite an existing wallet
    *
-   * @throws {Error} if forceNew is true and the wallet already exists
    * @returns a promise to a named wallet
    */
-  protected async named(
-    name: string,
-    dbName?: string,
-    forceNew: boolean = false,
-  ): Promise<this> {
+  protected async named(name: string): Promise<this> {
     if (!name?.length) {
       throw Error("Named wallets must have a non-empty name");
     }
     _checkContextSafety(this);
     this.name = name;
-    dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
-    const db = getStorageProvider(dbName);
+    const db = getStorageProvider(prefixFromNetworkMap[this.network]);
 
     // If there is a database, force saving or error
     if (db) {
@@ -217,11 +209,6 @@ export class BaseWallet {
       const savedWalletRecord = await db.getWallet(name);
       if (savedWalletRecord) {
         await db.close();
-        if (forceNew) {
-          throw Error(
-            `A wallet with the name ${name} already exists in ${dbName}`,
-          );
-        }
         const recoveredWallet = await this.fromId(savedWalletRecord.wallet);
         recoveredWallet.name = savedWalletRecord.name;
         return recoveredWallet;
@@ -247,22 +234,16 @@ export class BaseWallet {
    *
    * @param name   user friendly wallet alias
    * @param walletId walletId options to steer the creation process
-   * @param dbName name under which the wallet will be stored in the database
    *
    * @returns instantiated wallet
    */
-  protected async replaceNamed(
-    name: string,
-    walletId: string,
-    dbName?: string,
-  ): Promise<this> {
+  protected async replaceNamed(name: string, walletId: string): Promise<this> {
     if (name.length === 0) {
       throw Error("Named wallets must have a non-empty name");
     }
     _checkContextSafety(this);
     this.name = name;
-    dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
-    let db = getStorageProvider(dbName);
+    let db = getStorageProvider(prefixFromNetworkMap[this.network]);
 
     if (db) {
       await db.init();
@@ -284,31 +265,16 @@ export class BaseWallet {
   }
 
   /**
-   * namedExists - check if a named wallet already exists
-   *
-   * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
-   *
-   * @returns boolean
+   * The wallet a `named:<network>:<name>[:<database>]` walletId stands for. The database part is
+   * accepted only when it is the one of the wallet's network, the only one named() reads.
    */
-  protected async namedExists(name: string, dbName?: string): Promise<boolean> {
-    if (name.length === 0) {
-      throw Error("Named wallets must have a non-empty name");
-    }
-    _checkContextSafety(this);
-    dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
-    let db = getStorageProvider(dbName);
-
-    if (db) {
-      await db.init();
-      let savedWalletRecord = await db.getWallet(name);
-      await db.close();
-      return savedWalletRecord !== undefined;
-    } else {
+  protected fromNamedId(name: string, dbName?: string): Promise<this> {
+    if (dbName && dbName !== prefixFromNetworkMap[this.network]) {
       throw Error(
-        "No database was available or configured to store the named wallet.",
+        `a named walletId of a ${this.network} wallet can only name the database ${prefixFromNetworkMap[this.network]}`,
       );
     }
+    return this.named(name);
   }
 
   protected async initialize(): Promise<this> {
@@ -327,21 +293,18 @@ export class BaseWallet {
   //#endregion Serialization
 
   /**
-   * named - create a named wallet
+   * named - get a named wallet from the database of the class's network, or create and store a
+   * new random one under that name
    *
    * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
-   * @param force  force recreate wallet in the database if a record already exist
    *
    * @returns instantiated wallet
    */
   public static async named<T extends typeof BaseWallet>(
     this: T,
     name: string,
-    dbName?: string,
-    force?: boolean,
   ): Promise<InstanceType<T>> {
-    return new this().named(name, dbName, force) as InstanceType<T>;
+    return new this().named(name) as InstanceType<T>;
   }
 
   /**
@@ -352,32 +315,15 @@ export class BaseWallet {
    *
    * @param name   user friendly wallet alias
    * @param walletId walletId options to steer the creation process
-   * @param dbName name under which the wallet will be stored in the database
    *
-   * @returns instantiated wallet
+   * @returns instantiated wallet, stored in the database of the class's network
    */
   public static async replaceNamed<T extends typeof BaseWallet>(
     this: T,
     name: string,
     walletId: string,
-    dbName?: string,
   ): Promise<InstanceType<T>> {
-    return new this().replaceNamed(name, walletId, dbName) as InstanceType<T>;
-  }
-
-  /**
-   * namedExists - check if a named wallet already exists
-   *
-   * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
-   *
-   * @returns boolean
-   */
-  public static async namedExists(
-    name: string,
-    dbName?: string,
-  ): Promise<boolean> {
-    return new this().namedExists(name, dbName);
+    return new this().replaceNamed(name, walletId) as InstanceType<T>;
   }
 
   protected fromId(_walletId: string): Promise<this> {
@@ -1478,6 +1424,40 @@ export async function getNamedWalletId(
     throw Error(
       "No database was available or configured to store the named wallet.",
     );
+  }
+}
+
+/**
+ * namedWalletExists - check whether a named wallet is stored in the database; constructs no
+ * wallet and opens no subscription
+ *
+ * @param name   user friendly wallet alias
+ * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
+ *
+ * @throws {Error} if no StorageProvider is configured
+ * @returns whether a wallet of that name is stored
+ */
+export async function namedWalletExists(
+  name: string,
+  dbName?: string,
+): Promise<boolean> {
+  if (name.length === 0) {
+    throw Error("Named wallets must have a non-empty name");
+  }
+
+  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
+  const db = getStorageProvider(dbName);
+  if (!db) {
+    throw Error(
+      "No database was available or configured to store the named wallet.",
+    );
+  }
+
+  await db.init();
+  try {
+    return await db.walletExists(name);
+  } finally {
+    await db.close();
   }
 }
 

@@ -24,7 +24,11 @@ import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
 import { TxI, Utxo } from "../interface.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
-import { arrayRange, getNextUnusedIndex } from "../util/hd.js";
+import {
+  arrayRange,
+  getNextUnusedIndex,
+  getNextUnusedIndices,
+} from "../util/hd.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
@@ -740,6 +744,14 @@ export class HDWallet extends BaseWallet {
   /// at the specified index.
   public getTokenDepositAddress(index: number = -1): string {
     return this.getTokenAddressByBranch(DEPOSIT_BRANCH, index);
+  }
+
+  protected override getTokenDepositAddresses(count: number): string[] {
+    this.requireBranch(DEPOSIT_BRANCH);
+    const statuses = this.statuses.get(DEPOSIT_BRANCH)!;
+    return getNextUnusedIndices(count, statuses).map((index) =>
+      this.getTokenDepositAddress(index),
+    );
   }
 
   /// Get next unused change address (branch 1), or the address at the

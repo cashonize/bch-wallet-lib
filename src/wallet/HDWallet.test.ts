@@ -11,7 +11,7 @@ import { mine } from "../mine/index.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";
 import { toTokenaddr } from "../util/deriveCashaddr.js";
-import { getNextUnusedIndex } from "../util/hd.js";
+import { getNextUnusedIndex, getNextUnusedIndices } from "../util/hd.js";
 import { GAP_SIZE, HDWallet, RegTestHDWallet } from "./HDWallet.js";
 import { CancelFn } from "./interface.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
@@ -317,6 +317,13 @@ describe("HDWallet", () => {
     expect(() => uninitializedWallet.toDbString()).toThrowError(
       "HDWallet has no mnemonic, xPriv or xPub to serialize",
     );
+  });
+
+  it("Get next unused indices", () => {
+    expect(getNextUnusedIndices(3, [])).toEqual([0, 1, 2]);
+    expect(getNextUnusedIndices(3, ["", null, "", null])).toEqual([1, 3, 4]);
+    expect(getNextUnusedIndices(2, ["", ""])).toEqual([2, 3]);
+    expect(getNextUnusedIndices(0, [null])).toEqual([]);
   });
 
   it("Get next index", () => {
@@ -1101,6 +1108,70 @@ describe("HDWallet", () => {
     expect(batonOutputs.length).toBe(1);
     expect(batonOutputs[0].address).not.toBe(toTokenaddr(baton.address));
     expect(batonOutputs[0].address).toBe(alice.getTokenChangeAddress(1));
+  });
+
+  it("tokenMint and tokenGenesis give each output defaulting to the wallet its own address", async () => {
+    const fundingWallet = await RegTestWallet.fromId(
+      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
+    );
+    const alice = await RegTestHDWallet.newRandom();
+    await fundingWallet.send({
+      cashaddr: alice.getDepositAddress(),
+      value: 100000n,
+    });
+    await alice.waitForUpdate({ depositIndex: 1 });
+
+    const genesisResponse = await alice.tokenGenesis({
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    const category = genesisResponse.categories![0];
+    await alice.waitForUpdate({ depositIndex: 2, changeIndex: 1 });
+
+    const bob = await RegTestWallet.newRandom();
+    const mintResponse = await alice.tokenMint(
+      [
+        { category, nft: { capability: NFTCapability.none, commitment: "01" } },
+        {
+          category,
+          cashaddr: bob.tokenaddr!,
+          nft: { capability: NFTCapability.none, commitment: "02" },
+        },
+        { category, nft: { capability: NFTCapability.none, commitment: "03" } },
+        { category, nft: { capability: NFTCapability.none, commitment: "04" } },
+      ],
+      false,
+      { broadcast: false },
+    );
+    const minted = outputAddresses(alice, mintResponse.transaction!).filter(
+      (output) => output.token?.nft?.capability === "none",
+    );
+    expect(minted.map((output) => output.address)).toEqual([
+      alice.getTokenDepositAddress(2),
+      bob.tokenaddr,
+      alice.getTokenDepositAddress(3),
+      alice.getTokenDepositAddress(4),
+    ]);
+
+    // each genesis spends a vout=0 input of its own
+    for (const index of [2, 3]) {
+      await fundingWallet.send({
+        cashaddr: alice.getDepositAddress(index),
+        value: 100000n,
+      });
+      await alice.waitForUpdate({ depositIndex: index + 1 });
+    }
+    const multiGenesis = await alice.tokenGenesis(
+      [{ amount: 10n }, { amount: 20n }],
+      [],
+      { broadcast: false },
+    );
+    const created = outputAddresses(alice, multiGenesis.transaction!).filter(
+      (output) => output.token,
+    );
+    expect(created.map((output) => output.address)).toEqual([
+      alice.getTokenDepositAddress(4),
+      alice.getTokenDepositAddress(5),
+    ]);
   });
 
   test("Test enforcing token addresses", async () => {

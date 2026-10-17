@@ -166,6 +166,14 @@ export class BaseWallet implements WalletI {
     throw Error("getTokenChangeAddress not implemented in BaseWallet");
   }
 
+  /**
+   * Token deposit addresses for `count` outputs that default to this wallet
+   * in one transaction; an HD wallet gives each its own unused address.
+   */
+  protected getTokenDepositAddresses(count: number): string[] {
+    return Array.from({ length: count }, () => this.getTokenDepositAddress());
+  }
+
   // check if a given address belongs to this wallet
   public hasAddress(address: string): boolean {
     return (
@@ -1351,10 +1359,13 @@ export class BaseWallet implements WalletI {
     }
 
     const pinnedInputs = genesisInputs.slice(0, genesisRequests.length);
+    const depositAddresses = this.getTokenDepositAddresses(
+      genesisRequests.filter((request) => !request.cashaddr).length,
+    );
     const genesisSendRequests = genesisRequests.map(
       (request, i) =>
         new TokenSendRequest({
-          cashaddr: request.cashaddr || this.getTokenDepositAddress(),
+          cashaddr: request.cashaddr || depositAddresses.shift()!,
           amount: request.amount,
           value: request.value || 1000n,
           nft: request.nft,
@@ -1418,6 +1429,9 @@ export class BaseWallet implements WalletI {
     }
     const ensureUtxos: Utxo[] = [];
     const outputs: TokenSendRequest[] = [];
+    const depositAddresses = this.getTokenDepositAddresses(
+      mintRequests.filter((request) => !request.cashaddr).length,
+    );
 
     for (const [category, requests] of requestsByCategory) {
       const nftUtxos = utxos.filter(
@@ -1453,7 +1467,7 @@ export class BaseWallet implements WalletI {
       for (const request of requests) {
         outputs.push(
           new TokenSendRequest({
-            cashaddr: request.cashaddr || this.getTokenDepositAddress(),
+            cashaddr: request.cashaddr || depositAddresses.shift()!,
             amount: 0n,
             category: category,
             value: request.value,

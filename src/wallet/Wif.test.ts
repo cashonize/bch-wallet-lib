@@ -120,25 +120,19 @@ describe(`Test creation of wallet from walletId`, () => {
 
   describe(`Errors from walletId`, () => {
     test("Expect Error passing testnet wallet to mainnet", async () => {
-      expect.assertions(1);
-      try {
-        await TestNetWallet.fromId(
+      await expect(
+        TestNetWallet.fromId(
           "wif:testnet:KysvoRyDkxQycBGj49K8oC3minAfoXnVmkcgx6UsZx3g2VvyGCAa",
-        );
-      } catch (e: any) {
-        expect(e.message).toBe("WIF is for mainnet, expected testnet");
-      }
+        ),
+      ).rejects.toThrow("WIF is for mainnet, expected testnet");
     });
 
     test("Expect Error passing mainnet wallet to testnet", async () => {
-      expect.assertions(1);
-      try {
-        await Wallet.fromId(
+      await expect(
+        Wallet.fromId(
           "wif:mainnet:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
-        );
-      } catch (e: any) {
-        expect(e.message).toBe("WIF is for testnet, expected mainnet");
-      }
+        ),
+      ).rejects.toThrow("WIF is for testnet, expected mainnet");
     });
 
     test("A walletId without its network part does not quote the key back", async () => {

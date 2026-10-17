@@ -59,6 +59,20 @@ describe("request constructors", () => {
     }
   });
 
+  test("the commitment of a send or burn request is lowercased", async () => {
+    const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
+    const nft = { capability: none, commitment: "AB" };
+    expect(new TokenSendRequest({ cashaddr, category, nft }).nft).toEqual({
+      capability: none,
+      commitment: "ab",
+    });
+    expect(new TokenBurnRequest({ category, nft }).nft).toEqual({
+      capability: none,
+      commitment: "ab",
+    });
+    expect(nft.commitment).toBe("AB");
+  });
+
   test("a category is lowercased", async () => {
     const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
     const upper = "AB".repeat(32);
@@ -97,7 +111,10 @@ describe("request constructors", () => {
     }
     for (const good of ["", "00", "ABcd", "ab".repeat(128)]) {
       const nft = { capability: none, commitment: good };
-      expect(new TokenSendRequest({ cashaddr, category, nft }).nft).toBe(nft);
+      const lowercased = { capability: none, commitment: good.toLowerCase() };
+      expect(new TokenSendRequest({ cashaddr, category, nft }).nft).toEqual(
+        lowercased,
+      );
       expect(new TokenMintRequest({ category, nft }).nft).toBe(nft);
     }
   });
@@ -217,6 +234,67 @@ describe("a category in uppercase finds its coins", () => {
     expect(plain.category).toBe(upper);
     const [baton] = await getTokenUtxos(bob, category);
     expect(baton.token?.amount).toBe(80n);
+  });
+});
+
+describe("a commitment in uppercase names its NFT", () => {
+  // bob holds two immutable NFTs of one category, "aa" and "bb"
+  const twoNfts = async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100_000n });
+    const genesis = await bob.tokenGenesis({
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    const category = genesis.categories[0];
+    await bob.tokenMint([
+      new TokenMintRequest({
+        category,
+        nft: { capability: none, commitment: "aa" },
+      }),
+      new TokenMintRequest({
+        category,
+        nft: { capability: none, commitment: "bb" },
+      }),
+    ]);
+    const commitments = async (wallet: RegTestWallet) =>
+      (await getTokenUtxos(wallet, category))
+        .filter((utxo) => utxo.token?.nft?.capability === none)
+        .map((utxo) => utxo.token!.nft!.commitment)
+        .sort();
+    return { bob, category, commitments };
+  };
+
+  test("send", async () => {
+    const { bob, category, commitments } = await twoNfts();
+    const carol = await RegTestWallet.newRandom();
+
+    await bob.send(
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: none, commitment: "BB" },
+      }),
+    );
+
+    expect(await commitments(bob)).toEqual(["aa"]);
+    expect(await commitments(carol)).toEqual(["bb"]);
+  });
+
+  test("tokenBurn, from a request or a plain object", async () => {
+    const { bob, category, commitments } = await twoNfts();
+
+    await bob.tokenBurn(
+      new TokenBurnRequest({
+        category,
+        nft: { capability: none, commitment: "BB" },
+      }),
+    );
+    expect(await commitments(bob)).toEqual(["aa"]);
+    const nft = { capability: none, commitment: "AA" };
+    await bob.tokenBurn({ category, nft });
+    expect(nft.commitment).toBe("AA");
+    expect(await commitments(bob)).toEqual([]);
   });
 });
 

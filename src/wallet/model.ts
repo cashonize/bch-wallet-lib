@@ -41,10 +41,16 @@ export function toTokenCategory(category: unknown): string {
   return category.toLowerCase();
 }
 
-// libauth's hexToBin reads an odd-length or non-hex string as other bytes ("abc" as ab0c)
-export function checkTokenCommitment(nft: RequestNft | undefined): void {
-  const commitment = nft?.commitment;
-  if (commitment === undefined) return;
+/**
+ * The NFT with its commitment lowercased, a copy, so that a commitment in either case names the
+ * wallet's coin; throws when the commitment is not even-length hex of at most 128 bytes.
+ */
+export function toTokenNft<T extends RequestNft>(
+  nft: T | undefined,
+): T | undefined {
+  if (nft?.commitment === undefined) return nft;
+  const commitment: unknown = nft.commitment;
+  // libauth's hexToBin reads an odd-length or non-hex string as other bytes ("abc" as ab0c)
   if (
     typeof commitment !== "string" ||
     !/^([0-9a-fA-F]{2})*$/.test(commitment)
@@ -60,6 +66,7 @@ export function checkTokenCommitment(nft: RequestNft | undefined): void {
       { field: "nft.commitment", value: commitment },
     );
   }
+  return { ...nft, commitment: commitment.toLowerCase() };
 }
 
 /** The fungible amount as a bigint, 0n when not given; throws when it is out of range. */
@@ -101,21 +108,21 @@ export function checkTokenOutput(
 /** Validates a genesis request's token data, before the operation reads any coin. */
 export function checkGenesisRequest(request: TokenGenesisRequest): void {
   const amount = toTokenAmount(request.amount);
-  checkTokenCommitment(request.nft);
+  toTokenNft(request.nft);
   checkTokenOutput(amount, request.nft);
 }
 
 /** Validates a mint request's token data, before the operation reads any coin. */
 export function checkMintRequest(request: TokenMintRequest): void {
   toTokenCategory(request.category);
-  checkTokenCommitment(request.nft);
+  toTokenNft(request.nft);
   checkTokenOutput(0n, request.nft);
 }
 
 /** Validates a burn request's token data, before the operation reads any coin. */
 export function checkBurnRequest(request: TokenBurnRequest): void {
   toTokenCategory(request.category);
-  checkTokenCommitment(request.nft);
+  toTokenNft(request.nft);
   const amount = toTokenAmount(request.amount);
   if (amount === 0n && !hasNft(request.nft)) {
     throw new InvalidRequestError(
@@ -193,8 +200,8 @@ export class TokenBurnRequest {
     };
   }) {
     this.category = toTokenCategory(category);
+    this.nft = toTokenNft(nft);
     this.amount = toTokenAmount(amount);
-    this.nft = nft;
     checkBurnRequest(this);
   }
 }
@@ -226,14 +233,13 @@ export class TokenSendRequest {
     };
   }) {
     this.category = toTokenCategory(category);
-    checkTokenCommitment(nft);
+    this.nft = toTokenNft(nft);
     this.amount = toTokenAmount(amount);
     checkTokenOutput(this.amount, nft);
     checkTokenaddr(cashaddr, Config.EnforceCashTokenReceiptAddresses);
 
     this.cashaddr = cashaddr;
     this.value = value;
-    this.nft = nft;
   }
 }
 

@@ -163,7 +163,7 @@ test("the entry keeps the spend models' internals off its API", () => {
     "fromUtxoId",
     "toUtxoId",
     "toTokenCategory",
-    "checkTokenCommitment",
+    "toTokenNft",
     "toTokenAmount",
     "checkTokenOutput",
     "checkGenesisRequest",

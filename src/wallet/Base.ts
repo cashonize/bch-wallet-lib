@@ -47,6 +47,7 @@ import {
   SendRequestArray,
   SendRequestType,
   SendResponse,
+  SendResponseFor,
   SourceOutput,
   TokenBurnRequest,
   TokenGenesisRequest,
@@ -797,15 +798,15 @@ export class BaseWallet implements WalletI {
    * This is a first class function with REST analog, maintainers should strive to keep backward-compatibility
    *
    */
-  public async send(
+  public async send<B extends boolean | undefined = undefined>(
     requests:
       | SendRequest
       | TokenSendRequest
       | OpReturnData
       | Array<SendRequest | TokenSendRequest | OpReturnData>
       | SendRequestArray[],
-    options?: SendRequestOptionsI,
-  ): Promise<SendResponse> {
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
+  ): Promise<SendResponseFor<B>> {
     const { encodedTransaction, categories, sourceOutputs } =
       await this.encodeTransaction(requests, undefined, options);
     return this._send(encodedTransaction, categories, sourceOutputs, options);
@@ -819,10 +820,10 @@ export class BaseWallet implements WalletI {
    *
    * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
    */
-  public async sendMax(
+  public async sendMax<B extends boolean | undefined = undefined>(
     cashaddr: string,
-    options?: SendRequestOptionsI,
-  ): Promise<SendResponse> {
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
+  ): Promise<SendResponseFor<B>> {
     return await this.sendMaxRaw(cashaddr, options);
   }
 
@@ -834,11 +835,11 @@ export class BaseWallet implements WalletI {
    *
    * @returns the transaction id sent to the network
    */
-  protected async sendMaxRaw(
+  protected async sendMaxRaw<B extends boolean | undefined = undefined>(
     cashaddr: string,
-    options?: SendRequestOptionsI,
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
     privateKey?: Uint8Array,
-  ): Promise<SendResponse> {
+  ): Promise<SendResponseFor<B>> {
     const { value: maxSpendableAmount, utxos } = await this._getMaxAmountToSend(
       {
         outputCount: 1,
@@ -859,12 +860,12 @@ export class BaseWallet implements WalletI {
     return this._send(encodedTransaction, categories, sourceOutputs, options);
   }
 
-  protected async _send(
+  protected async _send<B extends boolean | undefined = undefined>(
     encodedTransaction: Uint8Array,
     categories: string[],
     sourceOutputs: SourceOutput[] | undefined,
-    options?: SendRequestOptionsI,
-  ): Promise<SendResponse> {
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
+  ): Promise<SendResponseFor<B>> {
     const resp = new SendResponse({});
     resp.categories = categories;
 
@@ -877,6 +878,7 @@ export class BaseWallet implements WalletI {
         sha256.hash(sha256.hash(encodedTransaction)).reverse(),
       );
     } else {
+      resp.transaction = binToHex(encodedTransaction);
       const awaitPropagation =
         options?.awaitTransactionPropagation === undefined ||
         options?.awaitTransactionPropagation === true;
@@ -902,7 +904,7 @@ export class BaseWallet implements WalletI {
       }
     }
 
-    return resp;
+    return resp as SendResponseFor<B>;
   }
 
   /**
@@ -1297,11 +1299,11 @@ export class BaseWallet implements WalletI {
    * @param  {SendRequestType | SendRequestType[]} sendRequests single or an array of extra send requests (OP_RETURN, value transfer, etc.) to include in genesis transaction
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async tokenGenesis(
+  public async tokenGenesis<B extends boolean | undefined = undefined>(
     genesisRequests: TokenGenesisRequest | TokenGenesisRequest[],
     sendRequests: SendRequestType | SendRequestType[] = [],
-    options?: SendRequestOptionsI,
-  ): Promise<SendResponse> {
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
+  ): Promise<SendResponseFor<B>> {
     if (!Array.isArray(genesisRequests)) {
       genesisRequests = [genesisRequests];
     }
@@ -1365,11 +1367,11 @@ export class BaseWallet implements WalletI {
    * @param  {boolean?} deductTokenAmount if a minting NFT contains a fungible amount, deduct from it by the number of mints in that category
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async tokenMint(
+  public async tokenMint<B extends boolean | undefined = undefined>(
     mintRequests: TokenMintRequest | Array<TokenMintRequest>,
     deductTokenAmount: boolean = false,
-    options?: SendRequestOptionsI,
-  ): Promise<SendResponse> {
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
+  ): Promise<SendResponseFor<B>> {
     if (!Array.isArray(mintRequests)) {
       mintRequests = [mintRequests];
     }
@@ -1462,11 +1464,11 @@ export class BaseWallet implements WalletI {
    * @param  {string?} message optional message to include in OP_RETURN
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async tokenBurn(
+  public async tokenBurn<B extends boolean | undefined = undefined>(
     burnRequests: TokenBurnRequest | TokenBurnRequest[],
     message?: string,
-    options?: SendRequestOptionsI,
-  ): Promise<SendResponse> {
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
+  ): Promise<SendResponseFor<B>> {
     if (!Array.isArray(burnRequests)) {
       burnRequests = [burnRequests];
     }

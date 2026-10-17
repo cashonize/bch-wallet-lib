@@ -27,7 +27,7 @@ import {
   OpReturnData,
   SendRequest,
   SendRequestArray,
-  SendResponse,
+  SendResponseFor,
   SourceOutput,
   TokenSendRequest,
 } from "./model.js";
@@ -488,10 +488,10 @@ export class Wallet extends WatchWallet {
    *
    * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
    */
-  public async sendMax(
+  public async sendMax<B extends boolean | undefined = undefined>(
     cashaddr: string,
-    options?: SendRequestOptionsI,
-  ): Promise<SendResponse> {
+    options?: SendRequestOptionsI & { buildUnsigned?: B },
+  ): Promise<SendResponseFor<B>> {
     return this.sendMaxRaw(cashaddr, options, this.privateKey);
   }
 

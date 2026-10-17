@@ -329,6 +329,32 @@ export class SendResponse {
   }
 }
 
+/** A send that signed its transaction: broadcast it, or built it with `broadcast: false`. */
+export type SignedSendResponse = SendResponse & {
+  txId: string;
+  transaction: string;
+  categories: string[];
+  unsignedTransaction?: undefined;
+  sourceOutputs?: undefined;
+};
+
+/** A send with `buildUnsigned: true`: nothing was signed or broadcast. */
+export type UnsignedSendResponse = SendResponse & {
+  txId?: undefined;
+  transaction?: undefined;
+  categories: string[];
+  unsignedTransaction: string;
+  sourceOutputs: SourceOutput[];
+};
+
+/**
+ * What a send returns for its `buildUnsigned` option: both, told apart by `txId`, when the
+ * option's value isn't known to the compiler.
+ */
+export type SendResponseFor<B extends boolean | undefined> = B extends true
+  ? UnsignedSendResponse
+  : SignedSendResponse;
+
 export class XPubKey {
   path: string;
   xPubKey: string;

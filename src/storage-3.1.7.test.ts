@@ -239,23 +239,9 @@ describe("data written by mainnet-js 3.1.7", () => {
     for (const [key, value] of before) {
       expect(after.get(key), key).toBe(value);
     }
-    // the only new records are those of the xpub wallets, which 3.1.7 could not write (its
-    // write throws on the missing private keys), in its form and without private keys
-    const xpubCacheIds = walletRows
-      .filter((row) => row.expected.kind === "hd" && !row.expected["xPriv"])
-      .map((row) => `walletCache-${row.expected.cacheId}`);
-    const added = [...after.keys()].filter((key) => !before.has(key));
-    expect(new Set(added)).toEqual(new Set(xpubCacheIds));
-    for (const key of added) {
-      const record = parse(after.get(key)!);
-      expect(Object.keys(record)).toEqual(["walletCache", "indexCache"]);
-      for (const [entryKey, entry] of Object.entries<any>(record.walletCache)) {
-        expect(entryKey).toBe(
-          `${key.slice(12)}-${entry.index}-${entry.change}`,
-        );
-        expect(entry.privateKey).toBeUndefined();
-      }
-    }
+    // and no new record: the xpub wallets, which 3.1.7 could not write a record for (its write
+    // throws on the missing private keys), keep their cache in memory
+    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
   });
 
   test.each(walletRows)(

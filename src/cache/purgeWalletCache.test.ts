@@ -396,6 +396,28 @@ describe("wallet cache records in indexeddb", () => {
       }
     }));
 
+  test("a watch-only HD wallet writes no record, as in 3.1.7", () =>
+    withIndexedDbCache(async (storage) => {
+      const signing = await RegTestHDWallet.newRandom();
+      await signing.stop();
+      const before = await storage.keys();
+      const watching = await quickWritingWallet(`hd:regtest:${signing.xPub}`);
+      try {
+        watching.getDepositAddress(500);
+        await watching.walletCache.persist(true);
+        await afterDebouncedWrites();
+        expect(await storage.keys()).toEqual(before);
+        // the cache works in memory
+        expect(watching.hasAddress(watching.getDepositAddress(500))).toBe(true);
+        expect(watching.getDepositAddress(0)).toBe(
+          signing.getDepositAddress(0),
+        );
+      } finally {
+        await watching.stop();
+      }
+      expect(await storage.keys()).toEqual(before);
+    }));
+
   test("purgeWalletCache removes the record of a stored wallet id", () =>
     withIndexedDbCache(async (storage) => {
       const wallet = await RegTestHDWallet.newRandom();

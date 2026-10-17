@@ -44,6 +44,16 @@ async function setStoredItem(key: string, value: string): Promise<void> {
   }
 }
 
+// a signing wallet's node: only those write a record
+function privateNodeAt(path: string) {
+  const node = deriveHdPath(
+    deriveHdPrivateNodeFromBip39Mnemonic(MNEMONIC),
+    path,
+  );
+  if (typeof node === "string") throw new Error(node);
+  return node;
+}
+
 function publicNodeOf(xpub: string) {
   const decoded = decodeHdPublicKey(xpub);
   if (typeof decoded === "string") throw new Error(decoded);
@@ -129,7 +139,7 @@ describe("HDWalletCache", () => {
     const prevIndexedDb = Config.UseIndexedDBCache;
     Config.UseIndexedDBCache = true;
     try {
-      const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
+      const node = privateNodeAt(ACCOUNT_PATH);
 
       const writer = new HDWalletCache(
         "wallet-persist",
@@ -180,7 +190,7 @@ describe("HDWalletCache", () => {
     const prevIndexedDb = Config.UseIndexedDBCache;
     Config.UseIndexedDBCache = true;
     try {
-      const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
+      const node = privateNodeAt(ACCOUNT_PATH);
       const walletId = "wallet-3.1.7";
       const derived = new HDWalletCache("wallet-derived", node, "bitcoincash");
       const entry = {
@@ -219,11 +229,44 @@ describe("HDWalletCache", () => {
     }
   });
 
+  test("a watch-only cache reads and writes no record", async () => {
+    const prevIndexedDb = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
+    try {
+      const walletId = "wallet-watch-only";
+      const signing = new HDWalletCache(
+        "wallet-signing",
+        privateNodeAt(ACCOUNT_PATH),
+        "bitcoincash",
+      );
+      const record = stringify({
+        walletCache: { [`${walletId}-0-false`]: signing.getByPath("0/0") },
+        indexCache: {},
+      });
+      await setStoredItem(`walletCache-${walletId}`, record);
+
+      const cache = new HDWalletCache(
+        walletId,
+        publicNodeOf(xpubAt(ACCOUNT_PATH)),
+        "bitcoincash",
+      );
+      await cache.init();
+      expect(cache.getByPath("0/0").privateKey).toBeUndefined();
+      expect(cache.getByPath("0/0").address).toBe(
+        signing.getByPath("0/0").address,
+      );
+      await cache.persist(true);
+      expect(await getStoredItem(`walletCache-${walletId}`)).toBe(record);
+    } finally {
+      Config.UseIndexedDBCache = prevIndexedDb;
+    }
+  });
+
   test("get() returns only the entry of the address asked for", async () => {
     const prevIndexedDb = Config.UseIndexedDBCache;
     Config.UseIndexedDBCache = true;
     try {
-      const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
+      const node = privateNodeAt(ACCOUNT_PATH);
       const walletId = "wallet-bad-index";
       const other = new HDWalletCache("wallet-other", node, "bitcoincash");
       const stranger = other.getByPath("0/5").address;
@@ -260,7 +303,7 @@ describe("a debounced write that fails", () => {
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
     try {
-      const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
+      const node = privateNodeAt(ACCOUNT_PATH);
       const hd = new HDWalletCache(
         "wallet-write-fails",
         node,

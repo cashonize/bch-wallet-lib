@@ -49,10 +49,12 @@ const { default: OldIndexedDBProvider } = await import(
 const chains = Object.fromEntries(
   NETWORKS.map((info) => [info.network, buildChain(info)]),
 );
+// the addresses of the HD wallets that keep a cache record: a watch-only (xpub) one keeps none in
+// either version, and fetches its addresses on every start
 const hdAddresses = new Set(
   NETWORKS.flatMap((info) =>
     walletSpecs(info)
-      .filter((spec) => spec.kind === "hd")
+      .filter((spec) => spec.kind === "hd" && !/:[xt]pub/.test(spec.walletId))
       .flatMap((spec) => spec.used.map(({ address }) => address)),
   ),
 );

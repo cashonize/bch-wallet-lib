@@ -321,6 +321,9 @@ export class HDWalletCache implements WalletCacheI {
   }
 
   public async init() {
+    // a watch-only wallet's cache stays in memory: 3.1.7 never wrote one, its write threw on the
+    // missing private keys, so a rollback would leave it behind
+    if (!("privateKey" in this.hdNode)) return;
     this._storage = getStorage();
     await this._storage?.init();
     const data = await this._storage?.getItem(CACHE_KEY_PREFIX + this.walletId);

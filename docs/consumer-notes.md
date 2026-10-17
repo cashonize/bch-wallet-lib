@@ -125,7 +125,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 - `watchBalance` still fires once on subscribe, so Cashonize's `electrumSubscriptionsActive` guard stays.
 - A `TokenSendRequest` with amount 0 and no NFT now throws `InvalidRequestError`. `createTokens.vue` builds one when the circulating amount is 0; skip that output instead.
 - Coins picked for mutable-NFT requests now come after the other token coins in the inputs.
-- mainnet-js 3.1.7 can't open an `hd:<xprv>` row, so a wallet stored that way can't be rolled back. Check whether Cashonize ever stores one.
+- mainnet-js 3.1.7 can't open an `hd:<xprv>` row, so a wallet stored that way can't be rolled back. Cashonize stores its HD wallets by mnemonic only (`walletUtils.ts`, `hd:<network>:<mnemonic>:<path>:0:0`), so a rollback keeps them; keep it that way while a rollback to 3.1.7 is possible.
 - `ExchangeRate.get(currency, true)` is gone: `store.ts` reads `(await ExchangeRate.getQuote(currency)).rate`, or passes `{ staleOnError: true }` and replaces `currentExchangeRate`'s fallback (section 4).
 - The `NetworkProvider` type is gone: `test/bchWalletLib.test.ts` casts its mock provider to `ElectrumNetworkProvider` instead (lines 15 and 40).
 - The free `getHistory` requires `utxos`; the test that calls it already passes `utxos: []`. Its `unit`, `start`, `fromHeight` and `toHeight` options are gone, which Cashonize never passed.

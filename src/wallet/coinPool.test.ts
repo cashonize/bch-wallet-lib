@@ -420,10 +420,9 @@ describe("coin-control hooks cannot add a coin to the pool", () => {
         coinSelection: () => [reserved],
       })
       .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe(
-      `coinSelection picked a coin it was not given: ${outpoint(reserved)}`,
-    );
+    expect(error).toBeInstanceOf(InvalidRequestError);
+    expect((error as InvalidRequestError).field).toBe("coinSelection");
+    expect((error as InvalidRequestError).value).toBe(outpoint(reserved));
   });
 
   test("an inputOrdering that adds a coin", async () => {
@@ -438,10 +437,28 @@ describe("coin-control hooks cannot add a coin to the pool", () => {
         inputOrdering: ({ inputs }) => [...inputs, reserved],
       })
       .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe(
-      "inputOrdering must return a permutation of its inputs",
-    );
+    expect(error).toBeInstanceOf(InvalidRequestError);
+    expect((error as InvalidRequestError).field).toBe("inputOrdering");
+    expect((error as InvalidRequestError).value).toBe(outpoint(reserved));
+  });
+
+  test("an inputOrdering that drops or repeats a coin", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n);
+    const request = new SendRequest({
+      cashaddr: bob.cashaddr!,
+      value: 25_000n,
+    });
+
+    for (const inputOrdering of [
+      ({ inputs }: { inputs: Utxo[] }) => inputs.slice(1),
+      ({ inputs }: { inputs: Utxo[] }) => [inputs[0], inputs[0]],
+    ]) {
+      const error = await bob
+        .send(request, { broadcast: false, inputOrdering })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InvalidRequestError).field).toBe("inputOrdering");
+    }
   });
 
   test("an inputOrdering that reorders is followed", async () => {

@@ -21,7 +21,10 @@ import { NFTCapability, TokenI, Utxo } from "../interface.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { FeePaidByEnum } from "../wallet/enum.js";
-import { InsufficientFundsError } from "../wallet/errors.js";
+import {
+  InsufficientFundsError,
+  InvalidRequestError,
+} from "../wallet/errors.js";
 import {
   OpReturnData,
   SendRequest,
@@ -535,8 +538,9 @@ export async function getSuitableUtxos(
         if (selectedSet.has(key)) continue;
         const coin = availableByKey.get(key);
         if (!coin) {
-          throw new Error(
+          throw new InvalidRequestError(
             `coinSelection picked a coin it was not given: ${key}`,
+            { field: "coinSelection", value: key },
           );
         }
         selectedSet.add(key);

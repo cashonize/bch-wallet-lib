@@ -92,17 +92,24 @@ function once(cancel: CancelFn): CancelFn {
 
 // The coins an inputOrdering returns, as the selected coins themselves: it may only reorder them
 function orderedInputs(selected: Utxo[], ordered: Utxo[]): Utxo[] {
-  const byId = new Map(selected.map((utxo) => [toUtxoId(utxo), utxo]));
-  const result = ordered.map((utxo) => byId.get(toUtxoId(utxo)));
-  const ids = new Set(result.map((utxo) => utxo && toUtxoId(utxo)));
-  if (
-    result.length !== selected.length ||
-    ids.size !== selected.length ||
-    ids.has(undefined)
-  ) {
-    throw new Error("inputOrdering must return a permutation of its inputs");
+  const notPermutation = (utxoId: string) =>
+    new InvalidRequestError(
+      `inputOrdering must return a permutation of its inputs: ${utxoId}`,
+      { field: "inputOrdering", value: utxoId },
+    );
+  const remaining = new Map(selected.map((utxo) => [toUtxoId(utxo), utxo]));
+  const result: Utxo[] = [];
+  for (const utxo of ordered) {
+    const utxoId = toUtxoId(utxo);
+    const coin = remaining.get(utxoId);
+    // a coin it was not given, or one it returned already
+    if (!coin) throw notPermutation(utxoId);
+    remaining.delete(utxoId);
+    result.push(coin);
   }
-  return result as Utxo[];
+  const [dropped] = remaining.keys();
+  if (dropped !== undefined) throw notPermutation(dropped);
+  return result;
 }
 
 /**

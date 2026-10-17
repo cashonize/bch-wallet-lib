@@ -465,8 +465,11 @@ export class BaseWallet implements WalletI {
    * Switch the wallet to another electrum provider of the same network: its subscriptions (an
    * HD wallet's address discovery included) are made again on the new provider and ended on
    * the old one, and deliver the new server's current state as they start. The old provider is
-   * left connected, as other wallets may still use it. If the new provider cannot connect or a
-   * subscription cannot be made there, the wallet stays on the old provider and this rejects.
+   * left connected, as other wallets may still use it. Each moved status watch fires again, so a
+   * balance callback may get an unchanged value. If the new provider cannot connect or a
+   * subscription cannot be made there, the wallet stays on the old provider and this rejects; if
+   * the old provider fails as well while moving them back, some subscriptions stay on the new one
+   * until setProvider is called again.
    */
   public async setProvider(provider: ElectrumNetworkProvider): Promise<void> {
     if ((provider.network as string) !== this.network) {

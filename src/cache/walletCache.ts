@@ -187,19 +187,31 @@ export async function purgeWalletCache(walletId: string): Promise<void> {
  * `Config` selects, e.g. records that wallets deleted without {@link purgeWalletCache} left
  * behind. Pass the stored id of every wallet that is kept, from all databases.
  *
+ * An id that cannot be read is skipped and keeps nothing: no wallet class loads it, so no
+ * record is its own. The others are pruned as usual.
+ *
  * @param keepWalletIds the stored ids of the wallets whose records stay
+ * @returns the positions in `keepWalletIds` of the ids that could not be read, empty when
+ * every one was read
  */
 export async function pruneWalletCaches(
   keepWalletIds: string[],
-): Promise<void> {
-  // derived before anything is removed, so an id that cannot be read removes nothing
+): Promise<number[]> {
   const keep = new Set<string>();
-  for (const walletId of keepWalletIds) {
-    const cacheId = walletCacheIdFromWalletId(walletId);
+  const unreadable: number[] = [];
+  keepWalletIds.forEach((walletId, position) => {
+    let cacheId: string | undefined;
+    try {
+      cacheId = walletCacheIdFromWalletId(walletId);
+    } catch (error) {
+      if (!(error instanceof InvalidWalletIdError)) throw error;
+      unreadable.push(position);
+      return;
+    }
     if (cacheId !== undefined) keep.add(CACHE_KEY_PREFIX + cacheId);
-  }
+  });
   const storage = getStorage();
-  if (!storage) return;
+  if (!storage) return unreadable;
   await storage.init();
   try {
     for (const key of await storage.keys()) {
@@ -210,6 +222,7 @@ export async function pruneWalletCaches(
   } finally {
     await storage.close();
   }
+  return unreadable;
 }
 
 /// Cache for single-address wallets (WatchWallet, Wif), in memory only as in mainnet-js 3.1.7: the

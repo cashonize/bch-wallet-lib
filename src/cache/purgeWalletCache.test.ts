@@ -360,16 +360,33 @@ describe("wallet cache records in indexeddb", () => {
       await storage.setItem(orphanKey, "{}");
       await storage.setItem("txraw-regtest-cd", "00");
 
-      // an id that cannot be read removes nothing
-      await expect(
-        pruneWalletCaches([kept.toDbString(), "enc:v1:abc:def"]),
-      ).rejects.toThrow();
-      expect(await storage.getItem(orphanKey)).not.toBeNull();
-
-      await pruneWalletCaches([kept.toDbString(), single.toDbString()]);
+      expect(
+        await pruneWalletCaches([kept.toDbString(), single.toDbString()]),
+      ).toEqual([]);
 
       expect(await storage.getItem(orphanKey)).toBeNull();
       expect(await storage.getItem(keptKey)).not.toBeNull();
       expect(await storage.getItem("txraw-regtest-cd")).toBe("00");
+    }));
+
+  test("pruneWalletCaches skips an id it cannot read and prunes the rest", () =>
+    withIndexedDbCache(async (storage) => {
+      const kept = await RegTestHDWallet.newRandom();
+      await kept.walletCache.persist(true);
+      await kept.stop();
+      const keptKey = `walletCache-${cacheIdOf(kept)}`;
+      const orphanKey = `walletCache-${"cd".repeat(32)}`;
+      await storage.setItem(orphanKey, "{}");
+
+      const unreadable = await pruneWalletCaches([
+        "enc:v1:abc:def",
+        kept.toDbString(),
+        "named:regtest:alias",
+        "",
+      ]);
+
+      expect(unreadable).toEqual([0, 2, 3]);
+      expect(await storage.getItem(orphanKey)).toBeNull();
+      expect(await storage.getItem(keptKey)).not.toBeNull();
     }));
 });

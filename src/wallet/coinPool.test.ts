@@ -351,6 +351,128 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
   });
 });
 
+describe("tokenUtxoIds narrows the token coins of every spend", () => {
+  // two fungible coins of one category, 60 and 40 tokens
+  const twoTokenCoins = async () => {
+    const bob = await fundedWallet(100_000n, 20_000n);
+    const category = (await bob.tokenGenesis({ amount: 100n })).categories![0];
+    await bob.send(
+      [60n, 40n].map(
+        (amount) =>
+          new TokenSendRequest({ cashaddr: bob.tokenaddr!, category, amount }),
+      ),
+      { checkTokenQuantities: false },
+    );
+    const coins = await getTokenUtxos(bob, category);
+    const big = coins.find((utxo) => utxo.token!.amount === 60n)!;
+    const small = coins.find((utxo) => utxo.token!.amount === 40n)!;
+    return { bob, category, big, small };
+  };
+
+  test("a token send spends only the listed token coin, and BCH coins as usual", async () => {
+    const { bob, category, big, small } = await twoTokenCoins();
+    const request = new TokenSendRequest({
+      cashaddr: bob.tokenaddr!,
+      category,
+      amount: 10n,
+    });
+
+    // left to itself the selection takes the larger coin
+    const free = await bob.send(request, { broadcast: false });
+    expect(inputOutpoints(free.transaction!)).toContain(outpoint(big));
+
+    const narrowed = await bob.send(request, {
+      broadcast: false,
+      tokenUtxoIds: [outpoint(small)],
+    });
+    const spent = inputOutpoints(narrowed.transaction!);
+    expect(spent).toContain(outpoint(small));
+    expect(spent).not.toContain(outpoint(big));
+    expect(spent.length).toBeGreaterThan(1);
+  });
+
+  test("an id the wallet does not hold is ignored, and a token request finds no coin", async () => {
+    const { bob, category, big } = await twoTokenCoins();
+    const request = new TokenSendRequest({
+      cashaddr: bob.tokenaddr!,
+      category,
+      amount: 10n,
+    });
+
+    await expect(
+      bob.send(request, {
+        broadcast: false,
+        tokenUtxoIds: [{ ...big, vout: 9 }],
+      }),
+    ).rejects.toThrow(InsufficientFundsError);
+    // a BCH send needs no token coin
+    await expect(
+      bob.send(new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n }), {
+        broadcast: false,
+        tokenUtxoIds: [],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  test("a token coin in ensureUtxos outside it is refused", async () => {
+    const { bob, big, small } = await twoTokenCoins();
+    const request = new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n });
+
+    const error = await notAvailable(
+      bob.send(request, {
+        broadcast: false,
+        checkTokenQuantities: false,
+        tokenUtxoIds: [small],
+        ensureUtxos: [big],
+      }),
+    );
+    expect(error.reason).toBe("not-in-tokenUtxoIds");
+    expect(error.utxoId).toBe(outpoint(big));
+  });
+
+  test("an id that is not an outpoint is refused", async () => {
+    const { bob } = await twoTokenCoins();
+    const error = await bob
+      .send(new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n }), {
+        broadcast: false,
+        tokenUtxoIds: ["not-an-outpoint"],
+      })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidRequestError);
+    expect((error as InvalidRequestError).field).toBe("tokenUtxoIds");
+  });
+
+  test("tokenMint takes the listed minting NFT of two", async () => {
+    const bob = await fundedWallet(100_000n, 20_000n);
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const category = (await bob.tokenGenesis({ nft: minting })).categories![0];
+    await bob.send(
+      [1, 2].map(
+        () =>
+          new TokenSendRequest({
+            cashaddr: bob.tokenaddr!,
+            category,
+            nft: minting,
+          }),
+      ),
+    );
+    const mintingCoins = await getTokenUtxos(bob, category);
+    expect(mintingCoins).toHaveLength(2);
+    const listed = mintingCoins[1];
+
+    const response = await bob.tokenMint(
+      new TokenMintRequest({
+        category,
+        nft: { capability: NFTCapability.none, commitment: "01" },
+      }),
+      { broadcast: false, tokenUtxoIds: [listed] },
+    );
+    const spent = inputOutpoints(response.transaction!);
+    expect(spent).toContain(outpoint(listed));
+    expect(spent).not.toContain(outpoint(mintingCoins[0]));
+  });
+});
+
 describe("the pool is a set", () => {
   test("a coin listed twice in utxoIds counts once", async () => {
     const bob = await fundedWallet(100_000n);

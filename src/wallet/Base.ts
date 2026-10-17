@@ -616,7 +616,8 @@ export class BaseWallet {
 
   /**
    * The coins a spend may use: the wallet's current coins, narrowed to `utxoIds` when given (in
-   * their order), minus `excludeUtxoIds`; and `ensureUtxos` resolved to coins of that pool.
+   * their order), their token coins narrowed to `tokenUtxoIds` when given, minus `excludeUtxoIds`;
+   * and `ensureUtxos` resolved to coins of that pool.
    * Coins are compared by outpoint, the txid in either case, so a caller's copy of a coin stands
    * for the wallet's. The token operations pick their inputs themselves and do not spend
    * `ensureUtxos`, but a coin named there outside the pool is refused for them too.
@@ -626,31 +627,38 @@ export class BaseWallet {
   ): Promise<{ pool: Utxo[]; ensureUtxos: Utxo[] }> {
     // an id the wallet does not hold is a reservation that outlived its coin and is ignored, but
     // one that cannot be an outpoint is a mistake, and ignoring it would spend the coin it names
-    const toExcludedOutpoint = (utxoId: Utxo | string) => {
-      let txid: unknown;
-      let vout: unknown;
-      if (typeof utxoId !== "string") {
-        ({ txid, vout } = utxoId);
-      } else if (/^[0-9a-f]{64}:\d+(:\d+)?$/i.test(utxoId)) {
-        ({ txid, vout } = fromUtxoId(utxoId));
-      }
-      if (
-        typeof txid !== "string" ||
-        !/^[0-9a-f]{64}$/i.test(txid) ||
-        typeof vout !== "number" ||
-        !Number.isSafeInteger(vout) ||
-        vout < 0
-      ) {
-        throw new InvalidRequestError(
-          "An excludeUtxoIds entry is not a txid:vout outpoint",
-          { field: "excludeUtxoIds", value: utxoId },
-        );
-      }
-      return toOutpoint({ txid, vout });
-    };
+    const toListedOutpoint =
+      (field: "excludeUtxoIds" | "tokenUtxoIds") => (utxoId: Utxo | string) => {
+        let txid: unknown;
+        let vout: unknown;
+        if (typeof utxoId !== "string") {
+          ({ txid, vout } = utxoId);
+        } else if (/^[0-9a-f]{64}:\d+(:\d+)?$/i.test(utxoId)) {
+          ({ txid, vout } = fromUtxoId(utxoId));
+        }
+        if (
+          typeof txid !== "string" ||
+          !/^[0-9a-f]{64}$/i.test(txid) ||
+          typeof vout !== "number" ||
+          !Number.isSafeInteger(vout) ||
+          vout < 0
+        ) {
+          throw new InvalidRequestError(
+            `An ${field} entry is not a txid:vout outpoint`,
+            { field, value: utxoId },
+          );
+        }
+        return toOutpoint({ txid, vout });
+      };
     const excluded = new Set(
-      (options?.excludeUtxoIds ?? []).map(toExcludedOutpoint),
+      (options?.excludeUtxoIds ?? []).map(toListedOutpoint("excludeUtxoIds")),
     );
+    let tokenAllowed: Set<string> | undefined;
+    if (options?.tokenUtxoIds) {
+      tokenAllowed = new Set(
+        options.tokenUtxoIds.map(toListedOutpoint("tokenUtxoIds")),
+      );
+    }
 
     const walletUtxos = await this.getUtxos();
     let pool = walletUtxos;
@@ -667,6 +675,7 @@ export class BaseWallet {
     pool = pool.filter((utxo) => {
       const utxoId = toOutpoint(utxo);
       if (excluded.has(utxoId) || seen.has(utxoId)) return false;
+      if (utxo.token && tokenAllowed && !tokenAllowed.has(utxoId)) return false;
       seen.add(utxoId);
       return true;
     });
@@ -687,6 +696,12 @@ export class BaseWallet {
         throw new UtxoNotAvailableError(
           `Utxo ${utxoId} in ensureUtxos not found in wallet`,
           { utxoId, reason: "not-found" },
+        );
+      }
+      if (tokenAllowed && !tokenAllowed.has(utxoId)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos is not among tokenUtxoIds`,
+          { utxoId, reason: "not-in-tokenUtxoIds" },
         );
       }
       throw new UtxoNotAvailableError(

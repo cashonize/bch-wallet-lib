@@ -6,6 +6,11 @@ export interface SendRequestOptionsI {
   /** coins no input of the spend may use, e.g. reserved ones; ids not in the wallet are ignored, malformed ones throw */
   excludeUtxoIds?: string[] | Utxo[];
   /**
+   * the only token coins the spend may use, e.g. an identity's UTXO; the pool's other token coins
+   * are left out, its BCH coins are not. Ids not in the wallet are ignored, malformed ones throw
+   */
+  tokenUtxoIds?: string[] | Utxo[];
+  /**
    * false: no token input matching and no token change, the outputs are the requests as given.
    * The check that the transaction burns no token stays on
    */

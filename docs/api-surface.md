@@ -73,26 +73,26 @@ Entry points (`package.json` `exports`): `bch-wallet-lib` and `bch-wallet-lib/in
 
 ### Spending
 
-| Member or export                                                  | Who needs it                                                                                                           |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `send(requests, options?)`                                        | Every ordinary send, through `store.spend`                                                                             |
-| `sendMax(cashaddr, options?)`                                     | `utxoManagement.vue`, `transferAssets.ts`, `store.ts`                                                                  |
-| `getMaxAmountToSend(options?)`                                    | `store.ts` max button                                                                                                  |
-| `tokenGenesis(genesis, sends?, options?)`                         | `createTokens.vue` through `store.ts`                                                                                  |
-| `tokenMint(requests, options?)`                                   | `nftMintForm.vue`, `tokenItemNFT.vue`, `nftChild.vue` through `store.ts`                                               |
-| `tokenBurn(requests, message?, options?)`                         | `tokenItemFT.vue`, `tokenItemNFT.vue`, `nftChild.vue` through `store.ts`                                               |
-| `submitTransaction(transaction)`                                  | `walletconnectStore.ts`, `wizardconnectStore.ts` broadcast dApp-built transactions                                     |
-| `SendRequestOptionsI`: `utxoIds`, `excludeUtxoIds`, `ensureUtxos` | The spend's pool (AGENTS.md "Which coins a spend uses"): `store.ts` `spendConfig`, `spendAuthUtxo`, `reservedUtxos.ts` |
-| `SendRequestOptionsI`: `broadcast`                                | `false` builds a signed transaction without broadcasting: Cashonize tests, and the build-then-submit rule              |
-| `SendRequestOptionsI`: `checkTokenQuantities`, `tokenOperation`   | A hand-built mint through `send`: `nftMintForm.vue` via `store.ts` `spendAuthUtxo`                                     |
-| `SendRequest` (type), `SendRequestType`                           | The plain `{ cashaddr, value }` request and the request union: `store.ts`                                              |
-| `SendResponse` (type)                                             | What a spend returns (`txId`, `transaction`, `categories`): every spend site                                           |
-| `TokenSendRequest`                                                | Token sends: `store.ts`, `authchainIdentity.ts`, token views                                                           |
-| `TokenGenesisRequest`, `TokenMintRequest`, `TokenBurnRequest`     | `store.ts`, `nftMintForm.vue`                                                                                          |
-| `OpReturnData.fromArray(chunks)`                                  | BCMR publication outputs: `authchainIdentity.ts`                                                                       |
-| `OpReturnData.parseBinary(script)`                                | Reading announcements and publications: `txDirection.ts`, `authchainIdentity.ts`                                       |
-| `OpReturnData.fromString(text)`                                   | Cashonize tests only                                                                                                   |
-| `new OpReturnData(script)`                                        | A complete OP_RETURN script as given; the factories build through it. No Cashonize use                                 |
+| Member or export                                                                  | Who needs it                                                                                                                            |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `send(requests, options?)`                                                        | Every ordinary send, through `store.spend`                                                                                              |
+| `sendMax(cashaddr, options?)`                                                     | `utxoManagement.vue`, `transferAssets.ts`, `store.ts`                                                                                   |
+| `getMaxAmountToSend(options?)`                                                    | `store.ts` max button                                                                                                                   |
+| `tokenGenesis(genesis, sends?, options?)`                                         | `createTokens.vue` through `store.ts`                                                                                                   |
+| `tokenMint(requests, options?)`                                                   | `nftMintForm.vue`, `tokenItemNFT.vue`, `nftChild.vue` through `store.ts`                                                                |
+| `tokenBurn(requests, message?, options?)`                                         | `tokenItemFT.vue`, `tokenItemNFT.vue`, `nftChild.vue` through `store.ts`                                                                |
+| `submitTransaction(transaction)`                                                  | `walletconnectStore.ts`, `wizardconnectStore.ts` broadcast dApp-built transactions                                                      |
+| `SendRequestOptionsI`: `utxoIds`, `excludeUtxoIds`, `ensureUtxos`, `tokenUtxoIds` | The spend's pool (AGENTS.md "Which coins a spend uses"): `store.ts` `spendConfig`, `spendAuthUtxo` (`tokenUtxoIds`), `reservedUtxos.ts` |
+| `SendRequestOptionsI`: `broadcast`                                                | `false` builds a signed transaction without broadcasting: Cashonize tests, and the build-then-submit rule                               |
+| `SendRequestOptionsI`: `checkTokenQuantities`, `tokenOperation`                   | A hand-built mint through `send`: `nftMintForm.vue` via `store.ts` `spendAuthUtxo`                                                      |
+| `SendRequest` (type), `SendRequestType`                                           | The plain `{ cashaddr, value }` request and the request union: `store.ts`                                                               |
+| `SendResponse` (type)                                                             | What a spend returns (`txId`, `transaction`, `categories`): every spend site                                                            |
+| `TokenSendRequest`                                                                | Token sends: `store.ts`, `authchainIdentity.ts`, token views                                                                            |
+| `TokenGenesisRequest`, `TokenMintRequest`, `TokenBurnRequest`                     | `store.ts`, `nftMintForm.vue`                                                                                                           |
+| `OpReturnData.fromArray(chunks)`                                                  | BCMR publication outputs: `authchainIdentity.ts`                                                                                        |
+| `OpReturnData.parseBinary(script)`                                                | Reading announcements and publications: `txDirection.ts`, `authchainIdentity.ts`                                                        |
+| `OpReturnData.fromString(text)`                                                   | Cashonize tests only                                                                                                                    |
+| `new OpReturnData(script)`                                                        | A complete OP_RETURN script as given; the factories build through it. No Cashonize use                                                  |
 
 ### Errors
 

@@ -320,7 +320,7 @@ describe("a hand-built send with checkTokenQuantities: false", () => {
     );
   });
 
-  test("mints the same way with the token checks left on", async () => {
+  test("mints the same way with the token checks left on, the other token coins left out", async () => {
     const wallet = await fundedWallet();
     const bob = await RegTestWallet.newRandom();
     const minting = { capability: NFTCapability.minting, commitment: "" };
@@ -343,6 +343,7 @@ describe("a hand-built send with checkTokenQuantities: false", () => {
       ],
       {
         tokenOperation: "mint",
+        tokenUtxoIds: [authhead],
         ensureUtxos: [authhead],
       },
     );

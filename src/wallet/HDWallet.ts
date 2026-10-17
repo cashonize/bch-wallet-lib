@@ -122,7 +122,12 @@ export class HDWallet extends BaseWallet {
   /** Per-branch: subscription cancel functions per address index. */
   watchCancels: Map<number, Array<CancelFn>> = new Map();
 
+  /** Settles when the latest address discovery ends, and never rejects. */
   watchPromise?: Promise<any> = undefined;
+  // the latest discovery, which rejects if it failed; reads await it through discovered()
+  private discovery: Promise<void> = Promise.resolve();
+  private discoveryFailed = false;
+  private stopped = false;
 
   public get networkPrefix(): CashAddressNetworkPrefix {
     return prefixFromNetworkMap[this.network];
@@ -301,7 +306,7 @@ export class HDWallet extends BaseWallet {
     // init wallet cache
     await this.walletCache.init();
     // start watching addresses asynchronously
-    this.watchPromise = this.makeWatchPromise().catch(() => {});
+    void this.startDiscovery();
 
     return this;
   }
@@ -309,6 +314,8 @@ export class HDWallet extends BaseWallet {
   /// Stops the wallet from watching for address changes
   /// After calling this method, the wallet will no longer update and is considered defunct
   public override async stop() {
+    // a stopped wallet's reads no longer retry a failed discovery, which would subscribe again
+    this.stopped = true;
     const cancels: Promise<void>[] = [super.stop()];
     for (const branch of this.branches) {
       for (const fn of this.watchCancels.get(branch) ?? []) {
@@ -324,22 +331,43 @@ export class HDWallet extends BaseWallet {
 
   /// Scan more addresses for activity beyond the current gap limit, extending the watched range as needed
   public async scanMoreAddresses(amount: number = GAP_SIZE) {
-    await this.watchPromise;
-    const scan = this.makeWatchPromise(amount);
-    // the caller gets the failure; later reads go on with what was discovered, as after construction
-    this.watchPromise = scan.catch(() => {});
-    await scan;
+    await this.startDiscovery(amount);
+  }
+
+  /// Run address discovery once the one in progress has ended. If it fails, the next read runs
+  /// it again: the addresses it could not watch are left unwatched, so the next run retries them
+  private startDiscovery(gapSize: number = GAP_SIZE): Promise<void> {
+    this.discoveryFailed = false;
+    const run = this.discovery
+      .catch(() => {})
+      .then(() => this.makeWatchPromise(gapSize));
+    this.discovery = run;
+    this.watchPromise = run.then(
+      () => {},
+      () => {
+        if (this.discovery === run) this.discoveryFailed = true;
+      },
+    );
+    return run;
+  }
+
+  /// Wait for address discovery, running it again first if the last one failed; rejects with
+  /// the error of a discovery that fails, rather than reading an incomplete set of addresses
+  private discovered(): Promise<void> {
+    if (this.discoveryFailed && !this.stopped) void this.startDiscovery();
+    return this.discovery;
   }
 
   /// Internal method to start watching addresses for activity, extending the watched range as needed
   private async makeWatchPromise(gapSize: number = GAP_SIZE) {
-    await this.watchPromise;
-
     let needsMore = true;
     while (needsMore) {
-      await Promise.all(
+      // every branch settles before this fails, so no address is still being watched when a retry starts
+      const results = await Promise.allSettled(
         this.branches.map((branch) => this.watchBranch(branch, gapSize)),
       );
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) throw failure.reason;
 
       // Check if we have a full gap of addresses beyond the last used index
       // for every tracked branch.
@@ -363,18 +391,22 @@ export class HDWallet extends BaseWallet {
       this.indices.set(branch, val);
     };
 
-    const startIndex = statuses.length;
+    // from the first address not watched, which a failed discovery may have left below the end
+    let startIndex = statuses.findIndex((status) => status === undefined);
+    if (startIndex === -1) startIndex = statuses.length;
     const stopIndex = getCurrentIndex() + gapSize;
 
     const addresses = arrayRange(startIndex, stopIndex).map(
       (i) => this.walletCache.getByPath(this.addressPath(branch, i)).address,
     );
 
-    await Promise.all(
+    const results = await Promise.allSettled(
       addresses.map(
         (addr, idx) =>
           new Promise<void>((resolve, reject) => {
             const index = startIndex + idx;
+            let discovered = false;
+            let failed = false;
 
             if (statuses[index] !== undefined) {
               resolve();
@@ -394,14 +426,33 @@ export class HDWallet extends BaseWallet {
             // Track lastConfirmedHeight in closure, updated after each fetch
             let lastConfirmedHeight = prevLastConfirmedHeight;
 
+            // An address whose subscription or first status fails is left unwatched, so that the
+            // next discovery subscribes it again
+            const fail = (error: unknown) => {
+              failed = true;
+              statuses[index] = undefined as any;
+              watchCancels[index]?.().catch(() => {});
+              reject(error);
+            };
+
             const callback = async (
               args: [address: string, status: string | null],
             ) => {
               const [address, status] = args;
-              if (address != addr) {
+              if (address != addr || failed) {
                 return;
               }
+              try {
+                await update(status);
+                discovered = true;
+                resolve();
+              } catch (error) {
+                // a later fetch that fails leaves the old status, so the next notification fetches again
+                if (!discovered) fail(error);
+              }
+            };
 
+            const update = async (status: string | null) => {
               if (status === null) {
                 utxosArray[index] = [];
                 historyArray[index] = [];
@@ -464,25 +515,29 @@ export class HDWallet extends BaseWallet {
 
                 // Maintain the gap: extend watched range if it shrank
                 const gap = statuses.length - getCurrentIndex();
-                if (gap < gapSize) {
+                if (gap < gapSize && discovered) {
+                  // as a discovery of its own, so that a failure reaches the next read
+                  void this.startDiscovery(gapSize);
+                } else if (gap < gapSize) {
                   await this.watchBranch(branch, gapSize);
                 }
               }
 
               // Notify wallet watchers of the status change
               this.notifyWalletWatchers(status, addr);
-
-              resolve();
             };
 
             this.subscribe((provider) =>
               provider.subscribeToAddress(addr, callback as any),
             ).then((cancel) => {
               watchCancels[index] = cancel;
-            }, reject);
+              if (failed) cancel().catch(() => {});
+            }, fail);
           }),
       ),
     );
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure) throw failure.reason;
 
     return addresses.length;
   }
@@ -520,7 +575,7 @@ export class HDWallet extends BaseWallet {
     callback: (status: string | null, address: string) => void,
     debounce: number = 100,
   ): Promise<CancelFn> {
-    await this.watchPromise;
+    await this.discovered();
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     let pendingStatus: string | null = null;
@@ -672,7 +727,7 @@ export class HDWallet extends BaseWallet {
    *   tracked branch. Empty array throws.
    */
   public async getUtxos(options: { branches?: number[] } = {}) {
-    await this.watchPromise;
+    await this.discovered();
 
     const utxos = this.collectUtxosFromBranches(options.branches);
 
@@ -686,7 +741,7 @@ export class HDWallet extends BaseWallet {
   public async getBalance(
     options: { branches?: number[] } = {},
   ): Promise<bigint> {
-    await this.watchPromise;
+    await this.discovered();
 
     const utxos = this.collectUtxosFromBranches(options.branches);
     return sumUtxoValue(utxos);
@@ -1077,7 +1132,7 @@ export class HDWallet extends BaseWallet {
     toHeight: number = -1,
     options: { branches?: number[] } = {},
   ): Promise<TxI[]> {
-    await this.watchPromise;
+    await this.discovered();
 
     const list = this.resolveBranches(options.branches);
     const historyArrays: TxI[][] = [];

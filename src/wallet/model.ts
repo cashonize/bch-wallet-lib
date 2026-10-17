@@ -11,11 +11,112 @@ import { Config } from "../config.js";
 import { DELIMITER, MAX_OP_RETURN_BYTES } from "../constant.js";
 import { NFTCapability, UtxoId } from "../interface.js";
 import { checkTokenaddr } from "../util/deriveCashaddr.js";
+import { InvalidRequestError } from "./errors.js";
 
 // These are the minimal models used to provide types for the express server
 //
 // This file will be deprecated auto-generated file in the future
 // Any business logic contained here should be moved elsewhere in src/
+
+// CashTokens limits: fungible amounts are 64-bit signed, commitments up to 128 bytes (May 2026)
+const MAX_FUNGIBLE_AMOUNT = 2n ** 63n - 1n;
+const MAX_COMMITMENT_BYTES = 128;
+
+const shown = (value: unknown) =>
+  typeof value === "string" ||
+  typeof value === "bigint" ||
+  typeof value === "number"
+    ? String(value)
+    : typeof value;
+
+type RequestNft = { capability?: NFTCapability; commitment?: string };
+
+export function checkTokenCategory(category: unknown): void {
+  if (typeof category !== "string" || !/^[0-9a-fA-F]{64}$/.test(category)) {
+    throw new InvalidRequestError(
+      `Invalid category supplied: ${shown(category)}, expected 64 hex characters`,
+      { field: "category", value: category },
+    );
+  }
+}
+
+// libauth's hexToBin reads an odd-length or non-hex string as other bytes ("abc" as ab0c)
+export function checkTokenCommitment(nft: RequestNft | undefined): void {
+  const commitment = nft?.commitment;
+  if (commitment === undefined) return;
+  if (
+    typeof commitment !== "string" ||
+    !/^([0-9a-fA-F]{2})*$/.test(commitment)
+  ) {
+    throw new InvalidRequestError(
+      `Invalid NFT commitment: ${shown(commitment)}, expected an even number of hex characters`,
+      { field: "nft.commitment", value: commitment },
+    );
+  }
+  if (commitment.length / 2 > MAX_COMMITMENT_BYTES) {
+    throw new InvalidRequestError(
+      `NFT commitment of ${commitment.length / 2} bytes exceeds ${MAX_COMMITMENT_BYTES} bytes`,
+      { field: "nft.commitment", value: commitment },
+    );
+  }
+}
+
+/** The fungible amount as a bigint, 0n when not given; throws when it is out of range. */
+export function toTokenAmount(amount: unknown): bigint {
+  if (amount === undefined || amount === null) return 0n;
+  let result: bigint | undefined;
+  if (typeof amount === "bigint") {
+    result = amount;
+  } else if (typeof amount === "number" && Number.isInteger(amount)) {
+    result = BigInt(amount);
+  } else if (typeof amount === "string" && /^-?[0-9]+$/.test(amount)) {
+    result = BigInt(amount);
+  }
+  if (result === undefined || result < 0n || result > MAX_FUNGIBLE_AMOUNT) {
+    throw new InvalidRequestError(
+      `Invalid fungible token amount: ${shown(amount)}, expected an integer from 0 to ${MAX_FUNGIBLE_AMOUNT}`,
+      { field: "amount", value: amount },
+    );
+  }
+  return result;
+}
+
+const hasNft = (nft: RequestNft | undefined) =>
+  nft?.capability !== undefined || nft?.commitment !== undefined;
+
+// a token prefix with no NFT and a zero amount is invalid on chain
+export function checkTokenOutput(
+  amount: bigint,
+  nft: RequestNft | undefined,
+): void {
+  if (amount === 0n && !hasNft(nft)) {
+    throw new InvalidRequestError(
+      "A token output needs a positive fungible amount or an NFT",
+      { field: "nft", value: nft },
+    );
+  }
+}
+
+/** Validates a genesis request's token data, before the operation reads any coin. */
+export function checkGenesisRequest(request: TokenGenesisRequest): void {
+  const amount = toTokenAmount(request.amount);
+  checkTokenCommitment(request.nft);
+  checkTokenOutput(amount, request.nft);
+}
+
+/** Validates a mint request's token data, before the operation reads any coin. */
+export function checkMintRequest(request: TokenMintRequest): void {
+  checkTokenCategory(request.category);
+  checkTokenCommitment(request.nft);
+  checkTokenOutput(0n, request.nft);
+}
+
+/** Validates a burn request's token data, before the operation reads any coin. */
+export function checkBurnRequest(request: TokenBurnRequest): void {
+  checkTokenCategory(request.category);
+  checkTokenCommitment(request.nft);
+  toTokenAmount(request.amount);
+}
 
 export type SendRequestType =
   | SendRequest
@@ -61,6 +162,7 @@ export class TokenGenesisRequest {
     this.nft = nft;
     this.cashaddr = cashaddr;
     this.value = value;
+    checkGenesisRequest(this);
   }
 }
 
@@ -88,9 +190,10 @@ export class TokenBurnRequest {
     };
   }) {
     this.category = category;
-    this.amount = amount ? BigInt(amount) : 0n;
+    this.amount = toTokenAmount(amount);
     this.nft = nft;
     this.cashaddr = cashaddr;
+    checkBurnRequest(this);
   }
 }
 
@@ -120,11 +223,14 @@ export class TokenSendRequest {
       commitment: string;
     };
   }) {
+    checkTokenCategory(category);
+    checkTokenCommitment(nft);
+    this.amount = toTokenAmount(amount);
+    checkTokenOutput(this.amount, nft);
     checkTokenaddr(cashaddr, Config.EnforceCashTokenReceiptAddresses);
 
     this.cashaddr = cashaddr;
     this.value = value;
-    this.amount = amount ? BigInt(amount) : 0n;
     this.category = category;
     this.nft = nft;
   }
@@ -157,6 +263,7 @@ export class TokenMintRequest {
     this.nft = nft;
     this.cashaddr = cashaddr;
     this.value = value;
+    checkMintRequest(this);
   }
 }
 

@@ -163,7 +163,7 @@ describe(`Cashtokens should function in the browser`, () => {
         cashaddr: alice.cashaddr!,
         nft: {
           capability: NFTCapability.none,
-          commitment: "test",
+          commitment: "74657374",
         },
       }),
       new TokenMintRequest({
@@ -171,7 +171,7 @@ describe(`Cashtokens should function in the browser`, () => {
         cashaddr: alice.cashaddr!,
         nft: {
           capability: NFTCapability.none,
-          commitment: "test2",
+          commitment: "7465737432",
         },
       }),
     ]);
@@ -466,7 +466,7 @@ describe(`Cashtokens should function in the browser`, () => {
       value: 5000n,
       nft: {
         capability: NFTCapability.minting,
-        commitment: "test",
+        commitment: "74657374",
       },
       cashaddr: alice.cashaddr!,
     });
@@ -489,7 +489,7 @@ describe(`Cashtokens should function in the browser`, () => {
             value: 1500n,
             nft: {
               capability: NFTCapability.minting,
-              commitment: "test",
+              commitment: "74657374",
             },
           }),
         ]),

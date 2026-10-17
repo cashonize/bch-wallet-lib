@@ -58,6 +58,9 @@ import {
   SendResponse,
   SendResponseFor,
   SourceOutput,
+  checkBurnRequest,
+  checkGenesisRequest,
+  checkMintRequest,
   TokenBurnRequest,
   TokenGenesisRequest,
   TokenMintRequest,
@@ -1405,6 +1408,7 @@ export class BaseWallet implements WalletI {
     if (genesisRequests.length === 0) {
       throw new Error("tokenGenesis requires at least one request");
     }
+    genesisRequests.forEach(checkGenesisRequest);
     if (!Array.isArray(sendRequests)) {
       sendRequests = [sendRequests];
     }
@@ -1455,6 +1459,8 @@ export class BaseWallet implements WalletI {
   /**
    * Mint new NFT cashtokens using existing minting tokens. Supports minting across
    * multiple categories in a single transaction; each request specifies its own category.
+   * Every request creates one output, and the library caps neither the number of requests nor
+   * the outputs they add up to: limit them yourself if they come from untrusted input.
    * Refer to spec https://github.com/cashtokens/cashtokens
    * @param  {TokenMintRequest | TokenMintRequest[]} mintRequests mint requests with new token properties and recipients
    *   For each request:
@@ -1479,9 +1485,7 @@ export class BaseWallet implements WalletI {
 
     const requestsByCategory = new Map<string, TokenMintRequest[]>();
     for (const request of mintRequests) {
-      if (request.category?.length !== 64) {
-        throw Error(`Invalid category supplied: ${request.category}`);
-      }
+      checkMintRequest(request);
       const bucket = requestsByCategory.get(request.category) ?? [];
       bucket.push(request);
       requestsByCategory.set(request.category, bucket);
@@ -1584,6 +1588,7 @@ export class BaseWallet implements WalletI {
     if (burnRequests.length === 0) {
       throw new Error("tokenBurn requires at least one request");
     }
+    burnRequests.forEach(checkBurnRequest);
 
     let utxos: Utxo[] = await this.getUtxos();
     if (options?.utxoIds) {
@@ -1595,13 +1600,9 @@ export class BaseWallet implements WalletI {
       );
     }
     const ensureUtxos: Utxo[] = [];
-    const changeSendRequests: TokenSendRequest[] = [];
+    const changeSendRequests: Array<SendRequest | TokenSendRequest> = [];
 
     for (const burnRequest of burnRequests) {
-      if (burnRequest.category?.length !== 64) {
-        throw Error(`Invalid category supplied: ${burnRequest.category}`);
-      }
-
       const tokenUtxos = utxos.filter(
         (val) =>
           val.token?.category === burnRequest.category &&
@@ -1665,16 +1666,23 @@ export class BaseWallet implements WalletI {
           }
 
           const newAmount = available - fungibleBurnAmount;
-          const safeNewAmount = newAmount < 0n ? 0n : newAmount;
-          changeSendRequests.push(
-            new TokenSendRequest({
-              cashaddr:
-                burnRequest.cashaddr || toTokenaddr(this.getChangeAddress()),
-              category: burnRequest.category,
-              amount: safeNewAmount,
-              value: tokenUtxos.reduce((a, c) => a + c.satoshis, 0n),
-            }),
-          );
+          const cashaddr =
+            burnRequest.cashaddr || toTokenaddr(this.getChangeAddress());
+          const value = tokenUtxos.reduce((a, c) => a + c.satoshis, 0n);
+          if (newAmount > 0n) {
+            changeSendRequests.push(
+              new TokenSendRequest({
+                cashaddr,
+                category: burnRequest.category,
+                amount: newAmount,
+                value,
+              }),
+            );
+          } else {
+            // nothing left of the category: the plain output libauth built when it dropped the
+            // empty token prefix of a zero-amount change
+            changeSendRequests.push(new SendRequest({ cashaddr, value }));
+          }
         }
       }
     }

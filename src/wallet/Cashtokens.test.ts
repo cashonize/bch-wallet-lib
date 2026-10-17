@@ -327,7 +327,7 @@ describe(`Test cashtokens`, () => {
         category: category,
         cashaddr: alice.cashaddr!,
         nft: {
-          commitment: "test",
+          commitment: "74657374",
           capability: NFTCapability.none,
         },
       }),
@@ -335,7 +335,7 @@ describe(`Test cashtokens`, () => {
         category: category,
         cashaddr: alice.cashaddr!,
         nft: {
-          commitment: "test2",
+          commitment: "7465737432",
           capability: NFTCapability.none,
         },
       }),
@@ -692,7 +692,7 @@ describe(`Test cashtokens`, () => {
       value: 5000n,
       nft: {
         capability: NFTCapability.minting,
-        commitment: "test",
+        commitment: "74657374",
       },
       cashaddr: alice.cashaddr!,
     });
@@ -722,7 +722,7 @@ describe(`Test cashtokens`, () => {
             value: 1500n,
             nft: {
               capability: NFTCapability.minting,
-              commitment: "test",
+              commitment: "74657374",
             },
           }),
         ])),
@@ -1480,7 +1480,7 @@ describe(`Test cashtokens`, () => {
 
     const wrap = (addr) => {
       return new Promise((resolve) => {
-        resolve(new TokenSendRequest({ cashaddr: addr, category: "" }));
+        resolve(new TokenSendRequest({ cashaddr: addr, category, amount: 1n }));
       });
     };
 

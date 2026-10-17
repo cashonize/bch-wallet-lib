@@ -1276,7 +1276,7 @@ describe("HDWallet", () => {
 
     const wrap = (addr) => {
       return new Promise((resolve) => {
-        resolve(new TokenSendRequest({ cashaddr: addr, category: "" }));
+        resolve(new TokenSendRequest({ cashaddr: addr, category, amount: 1n }));
       });
     };
 

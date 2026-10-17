@@ -17,3 +17,24 @@ export class InsufficientFundsError extends Error {
     this.category = category;
   }
 }
+
+/**
+ * Thrown before anything is built or fetched when a request's token data cannot go on chain as
+ * given: a malformed category or commitment, a fungible amount out of range, or a token output
+ * with neither fungible tokens nor an NFT. `field` names the request field (`category`,
+ * `nft.commitment`, `amount`, `nft`), `value` holds what was given.
+ */
+export class InvalidRequestError extends Error {
+  readonly field: string;
+  readonly value: unknown;
+
+  constructor(
+    message: string,
+    { field, value }: { field: string; value: unknown },
+  ) {
+    super(message);
+    this.name = "InvalidRequestError";
+    this.field = field;
+    this.value = value;
+  }
+}

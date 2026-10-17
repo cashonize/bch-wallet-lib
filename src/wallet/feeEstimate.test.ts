@@ -293,6 +293,7 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     const coins = await bob.getUtxos();
     // at 5 sat/byte a 600 sat coin costs more than it holds; the 20000 sat coin alone covers the
     // amount, and spending only it paid 3960 sats for 185 bytes and kept the small coins
+    const relayFeePerByte = Config.RelayFeePerByte;
     Config.RelayFeePerByte = 5;
     try {
       const max = await bob.getMaxAmountToSend();
@@ -300,7 +301,7 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
       expect(inputOutpoints(response.transaction)).toEqual(outpointsOf(coins));
       expect(outputValues(response.transaction)).toEqual([max]);
     } finally {
-      Config.RelayFeePerByte = undefined;
+      Config.RelayFeePerByte = relayFeePerByte;
     }
   });
 

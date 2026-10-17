@@ -14,9 +14,11 @@ function providerWithRelayFee(relayFeePerKbInCoins: number) {
   return provider;
 }
 
+const { RelayFeePerByte, MaxRelayFeePerByte } = Config;
+
 afterEach(() => {
-  Config.RelayFeePerByte = undefined;
-  Config.MaxRelayFeePerByte = 10;
+  Config.RelayFeePerByte = RelayFeePerByte;
+  Config.MaxRelayFeePerByte = MaxRelayFeePerByte;
 });
 
 test("uses the server's relay fee in satoshis per byte", async () => {

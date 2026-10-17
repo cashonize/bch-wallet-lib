@@ -1643,9 +1643,11 @@ export async function deleteNamedWallet(
   try {
     const savedWalletRecord = await db.getWallet(name);
     if (!savedWalletRecord) return;
-    // the cache record first: if it cannot be removed, the row that leads to it stays
-    await purgeWalletCache(savedWalletRecord.wallet);
-    await db.deleteWallet(name);
+    // the cache record first: if it cannot be removed, the row that leads to it stays. The row
+    // goes before the purge is done, so a wallet opened from it meanwhile writes no record either
+    await purgeWalletCache(savedWalletRecord.wallet, () =>
+      db.deleteWallet(name),
+    );
   } finally {
     await db.close();
   }

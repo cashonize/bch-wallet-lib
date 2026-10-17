@@ -170,10 +170,18 @@ export function walletCacheIdFromWalletId(
  * still writes its record back. {@link pruneWalletCaches} at a later start removes it.
  *
  * @param walletId the wallet's stored id, as `toDbString()` returns it and a database row holds it
+ * @param beforeDone runs once the record is removed, before the purge counts as done, so that a
+ * wallet of the id opened meanwhile writes no record either (deleteNamedWallet's row removal)
  */
-export async function purgeWalletCache(walletId: string): Promise<void> {
+export async function purgeWalletCache(
+  walletId: string,
+  beforeDone?: () => Promise<void>,
+): Promise<void> {
   const cacheId = walletCacheIdFromWalletId(walletId);
-  if (cacheId === undefined) return;
+  if (cacheId === undefined) {
+    await beforeDone?.();
+    return;
+  }
   const storage = getStorage();
   purgesRunning.set(cacheId, (purgesRunning.get(cacheId) ?? 0) + 1);
   try {
@@ -187,6 +195,7 @@ export async function purgeWalletCache(walletId: string): Promise<void> {
         await storage.close();
       }
     }
+    await beforeDone?.();
     purgesDone.set(cacheId, (purgesDone.get(cacheId) ?? 0) + 1);
   } finally {
     const running = purgesRunning.get(cacheId)! - 1;

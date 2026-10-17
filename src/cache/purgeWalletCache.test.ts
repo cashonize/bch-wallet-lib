@@ -375,6 +375,52 @@ describe("wallet cache records in indexeddb", () => {
       expect(await storage.getItem(key)).toBeNull();
     }));
 
+  test("a wallet opened while deleteNamedWallet removes the row writes no record after it", () =>
+    withIndexedDbCache(async (storage) => {
+      const prevProvider = BaseWallet.StorageProvider;
+      BaseWallet.StorageProvider = IndexedDBProvider;
+      const dbName = `delete-opened-${Math.random()}`;
+      const first = await storedIn(RegTestHDWallet, "hd", dbName);
+      const walletId = first.toDbString();
+      const key = `walletCache-${cacheIdOf(first)}`;
+      await first.stop();
+
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let held!: () => void;
+      const reached = new Promise<void>((resolve) => (held = resolve));
+      // the row's removal waits for the gate, the cache record already gone
+      const deleteWallet = Object.getOwnPropertyDescriptor(
+        IndexedDBProvider.prototype,
+        "deleteWallet",
+      )!.value as (this: IndexedDBProvider, name: string) => Promise<void>;
+      const holding = vi
+        .spyOn(IndexedDBProvider.prototype, "deleteWallet")
+        .mockImplementationOnce(async function (this: IndexedDBProvider, n) {
+          held();
+          await gate;
+          return deleteWallet.call(this, n);
+        });
+      let opened: RegTestHDWallet | undefined;
+      try {
+        const deletion = deleteNamedWallet("hd", dbName);
+        await reached;
+        opened = await quickWritingWallet(walletId);
+        release();
+        await deletion;
+
+        opened.getDepositAddress(500);
+        await opened.walletCache.persist(true);
+        await afterDebouncedWrites();
+        expect(await storage.getItem(key)).toBeNull();
+      } finally {
+        holding.mockRestore();
+        await opened?.stop();
+        BaseWallet.StorageProvider = prevProvider;
+      }
+      expect(await storage.getItem(key)).toBeNull();
+    }));
+
   test("a wallet goes on writing its record after a purge that failed", () =>
     withIndexedDbCache(async (storage) => {
       const wallet = await quickWritingWallet();

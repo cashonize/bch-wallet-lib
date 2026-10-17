@@ -868,12 +868,15 @@ export class BaseWallet implements WalletI {
     const resp = new SendResponse({});
     resp.categories = categories;
 
-    if (options?.broadcast === false) {
+    if (options?.buildUnsigned === true) {
+      resp.unsignedTransaction = binToHex(encodedTransaction);
+      resp.sourceOutputs = sourceOutputs;
+    } else if (options?.broadcast === false) {
       resp.transaction = binToHex(encodedTransaction);
       resp.txId = binToHex(
         sha256.hash(sha256.hash(encodedTransaction)).reverse(),
       );
-    } else if (options?.buildUnsigned !== true) {
+    } else {
       const awaitPropagation =
         options?.awaitTransactionPropagation === undefined ||
         options?.awaitTransactionPropagation === true;
@@ -897,9 +900,6 @@ export class BaseWallet implements WalletI {
       ) {
         resp.balance = await this.getBalance();
       }
-    } else {
-      resp.unsignedTransaction = binToHex(encodedTransaction);
-      resp.sourceOutputs = sourceOutputs;
     }
 
     return resp;

@@ -5,6 +5,9 @@ import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 // 1 sat/byte, the network's minrelaytxfee: below it a transaction does not propagate
 const MinRelayFeePerByte = 1;
 
+// The highest blockchain.relayfee the wallet trusts, 10 times the minimum
+const MaxRelayFeePerByte = 10;
+
 // The server's rate per provider, so that a wallet moved to another server (setProvider) asks that server
 const relayFeeCache = new WeakMap<ElectrumNetworkProvider, number>();
 
@@ -20,13 +23,9 @@ function checkFeeSetting(name: string, value: unknown): number {
 }
 
 // The fee rate for a send in satoshis per byte, never below 1: Config.RelayFeePerByte, or the server's
-// blockchain.relayfee. A server rate above Config.MaxRelayFeePerByte is ignored rather than capped, since
+// blockchain.relayfee. A server rate above MaxRelayFeePerByte is ignored rather than capped, since
 // an unchecked or capped server rate would let the server set what the wallet burns in fees (mainnet-js#254)
 export async function getRelayFeeCache(provider: ElectrumNetworkProvider) {
-  const maxFeePerByte = checkFeeSetting(
-    "MaxRelayFeePerByte",
-    Config.MaxRelayFeePerByte,
-  );
   if (Config.RelayFeePerByte !== undefined) {
     const feePerByte = checkFeeSetting(
       "RelayFeePerByte",
@@ -48,15 +47,15 @@ export async function getRelayFeeCache(provider: ElectrumNetworkProvider) {
     } else {
       console.warn("Couldn't get min relay fee, using default instead");
     }
-    if (serverFeePerByte > maxFeePerByte) {
+    if (serverFeePerByte > MaxRelayFeePerByte) {
       console.warn(
-        `Ignoring the server's relay fee of ${serverFeePerByte} sat/byte, above Config.MaxRelayFeePerByte (${maxFeePerByte})`,
+        `Ignoring the server's relay fee of ${serverFeePerByte} sat/byte, above the ${MaxRelayFeePerByte} sat/byte the wallet trusts`,
       );
     }
     relayFeeCache.set(provider, serverFeePerByte);
   }
 
   let feePerByte = serverFeePerByte;
-  if (feePerByte > maxFeePerByte) feePerByte = MinRelayFeePerByte;
+  if (feePerByte > MaxRelayFeePerByte) feePerByte = MinRelayFeePerByte;
   return Math.max(feePerByte, MinRelayFeePerByte);
 }

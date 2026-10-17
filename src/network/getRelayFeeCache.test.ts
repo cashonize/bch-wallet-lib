@@ -14,11 +14,10 @@ function providerWithRelayFee(relayFeePerKbInCoins: number) {
   return provider;
 }
 
-const { RelayFeePerByte, MaxRelayFeePerByte } = Config;
+const { RelayFeePerByte } = Config;
 
 afterEach(() => {
   Config.RelayFeePerByte = RelayFeePerByte;
-  Config.MaxRelayFeePerByte = MaxRelayFeePerByte;
 });
 
 test("uses the server's relay fee in satoshis per byte", async () => {
@@ -50,23 +49,12 @@ test("floors the server's relay fee at 1 sat/byte", async () => {
   expect(await getRelayFeeCache(providerWithRelayFee(0.0001))).toBe(10);
 });
 
-test("ignores a server relay fee above Config.MaxRelayFeePerByte", async () => {
+test("ignores a server relay fee above 10 sat/byte", async () => {
   const absurd = providerWithRelayFee(0.5);
   expect(await getRelayFeeCache(absurd)).toBe(1);
   expect(await getRelayFeeCache(providerWithRelayFee(0.00011))).toBe(1);
-  Config.MaxRelayFeePerByte = 50_000;
-  expect(await getRelayFeeCache(absurd)).toBe(50_000);
-  Config.MaxRelayFeePerByte = 10;
   Config.RelayFeePerByte = 3;
   expect(await getRelayFeeCache(absurd)).toBe(3);
-});
-
-test("a Config.MaxRelayFeePerByte below 1 still gives 1 sat/byte", async () => {
-  Config.MaxRelayFeePerByte = 0.5;
-  expect(await getRelayFeeCache(providerWithRelayFee(0.00001))).toBe(1);
-  expect(await getRelayFeeCache(providerWithRelayFee(0.000002))).toBe(1);
-  Config.MaxRelayFeePerByte = 0;
-  expect(await getRelayFeeCache(providerWithRelayFee(0))).toBe(1);
 });
 
 test("Config.RelayFeePerByte is floored at 1 sat/byte", async () => {
@@ -76,7 +64,7 @@ test("Config.RelayFeePerByte is floored at 1 sat/byte", async () => {
   expect(await getRelayFeeCache(providerWithRelayFee(0.00002))).toBe(1);
 });
 
-test("Config.RelayFeePerByte is not bounded by Config.MaxRelayFeePerByte", async () => {
+test("Config.RelayFeePerByte is not bounded by the 10 sat/byte the server is trusted with", async () => {
   Config.RelayFeePerByte = 50;
   expect(await getRelayFeeCache(providerWithRelayFee(0.00001))).toBe(50);
 });
@@ -88,16 +76,6 @@ test.each([NaN, -1, Infinity, -Infinity, "5", null])(
     Config.RelayFeePerByte = value as number;
     await expect(getRelayFeeCache(provider)).rejects.toThrow(
       /^Config\.RelayFeePerByte must be/,
-    );
-    Config.RelayFeePerByte = undefined;
-    Config.MaxRelayFeePerByte = value as number;
-    await expect(getRelayFeeCache(provider)).rejects.toThrow(
-      /^Config\.MaxRelayFeePerByte must be/,
-    );
-    // checked even when RelayFeePerByte is set, so a bad cap does not wait for it to be unset
-    Config.RelayFeePerByte = 2;
-    await expect(getRelayFeeCache(provider)).rejects.toThrow(
-      /^Config\.MaxRelayFeePerByte must be/,
     );
   },
 );
@@ -154,12 +132,6 @@ test("a send under an invalid server relay fee pays 1 sat/byte", async () => {
   }
 });
 
-test("a send under a Config.MaxRelayFeePerByte below 1 pays 1 sat/byte", async () => {
-  Config.MaxRelayFeePerByte = 0.5;
-  const { fee, size } = await sendWithRelayFee(0.00001);
-  expect(fee).toBe(feeAt(size, 1));
-});
-
 test("a send pays Config.RelayFeePerByte over an absurd server relay fee", async () => {
   Config.RelayFeePerByte = 3;
   const { fee, size } = await sendWithRelayFee(0.5);
@@ -167,8 +139,8 @@ test("a send pays Config.RelayFeePerByte over an absurd server relay fee", async
 });
 
 test("a send under an invalid fee setting rejects before anything is built", async () => {
-  Config.MaxRelayFeePerByte = NaN;
+  Config.RelayFeePerByte = NaN;
   await expect(sendWithRelayFee(0.00001)).rejects.toThrow(
-    /^Config\.MaxRelayFeePerByte must be/,
+    /^Config\.RelayFeePerByte must be/,
   );
 });

@@ -6,9 +6,6 @@ export class Config {
   static UseIndexedDBCache = false;
   // fee rate for every send in satoshis per byte, at least 1; when unset the server's blockchain.relayfee is used
   static RelayFeePerByte: number | undefined = undefined;
-  // the highest blockchain.relayfee in satoshis per byte the wallet trusts; a server rate above it is
-  // ignored and sends pay 1 sat/byte
-  static MaxRelayFeePerByte = 10;
 
   // custom exchange rate function
   public static GetExchangeRateFn:

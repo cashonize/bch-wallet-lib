@@ -18,7 +18,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+          registry-url: https://registry.npmjs.org
+      # @paryonusd/mem-cash, the test chain, is a private package
       - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck

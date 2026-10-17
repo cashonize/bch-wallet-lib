@@ -20,7 +20,7 @@ Status: early, not yet published.
 
 Requires Node 22.12+ and pnpm 11.
 
-The in-memory chain is [@paryonusd/mem-cash](https://github.com/ParyonUSD/paryon_mem_cash), a fork of mainnet-pat's mem-cash 0.0.9 that matches BCHN and Fulcrum more closely. It is not on npm yet, so it is installed from a local checkout at `../../ParyonUSD/paryon_mem_cash` (a dev dependency only; it is never part of the published package). Only the `bch-wallet-lib/mock` entry imports it, so using that entry needs it installed, and `pnpm check:dist-imports` (run in CI after the build) checks that no other entry reaches it.
+The in-memory chain is [@paryonusd/mem-cash](https://github.com/ParyonUSD/paryon_mem_cash), a fork of mainnet-pat's mem-cash 0.0.9 that matches BCHN and Fulcrum more closely. It is a private npm package, so `pnpm install` needs an npm login with access to the `@paryonusd` scope (CI reads an `NPM_TOKEN` secret). It is a dev dependency only and never part of the published package. Only the `bch-wallet-lib/mock` entry imports it, so using that entry needs it installed, and `pnpm check:dist-imports` (run in CI after the build) checks that no other entry reaches it.
 
 ```bash
 pnpm install

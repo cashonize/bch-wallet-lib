@@ -19,8 +19,8 @@ importers:
         version: 4.2.0
     devDependencies:
       '@paryonusd/mem-cash':
-        specifier: file:../../ParyonUSD/paryon_mem_cash
-        version: file:../../ParyonUSD/paryon_mem_cash
+        specifier: 0.1.0
+        version: 0.1.0
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.5
@@ -395,8 +395,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@paryonusd/mem-cash@file:../../ParyonUSD/paryon_mem_cash':
-    resolution: {directory: ../../ParyonUSD/paryon_mem_cash, type: directory}
+  '@paryonusd/mem-cash@0.1.0':
+    resolution: {integrity: sha512-AhB6/WJI2bc84qJStlj+uLdH3Lug/yT/FEbBsMyfeZ5HywYhkZwTEDLro8wMNfIC6aaM+PMw1Qas6m82W9LrEg==}
     engines: {node: '>=22.0.0'}
 
   '@polka/url@1.0.0-next.29':
@@ -1206,7 +1206,7 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.88.0':
     optional: true
 
-  '@paryonusd/mem-cash@file:../../ParyonUSD/paryon_mem_cash':
+  '@paryonusd/mem-cash@0.1.0':
     dependencies:
       '@bitauth/libauth': 3.1.0-next.8
 

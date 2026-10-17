@@ -178,6 +178,59 @@ describe.each(["indexeddb", "localstorage"] as const)(
         }
       }));
 
+    test("deleteNamedWallet keeps the row when the wallet id it holds cannot be read", () =>
+      withCacheBackend(backend, async () => {
+        const prevProvider = BaseWallet.StorageProvider;
+        BaseWallet.StorageProvider = IndexedDBProvider;
+        const dbName = `delete-unreadable-${Math.random()}`;
+        const db = new IndexedDBProvider(dbName);
+        await db.init();
+        try {
+          await db.addWallet("alias", "named:regtest:other");
+
+          await expect(deleteNamedWallet("alias", dbName)).rejects.toThrow();
+
+          expect(await db.walletExists("alias")).toBe(true);
+        } finally {
+          await db.close();
+          BaseWallet.StorageProvider = prevProvider;
+        }
+      }));
+
+    test("deleteNamedWallet keeps the row when the cache record cannot be removed", () =>
+      withCacheBackend(backend, async (storage) => {
+        const prevProvider = BaseWallet.StorageProvider;
+        BaseWallet.StorageProvider = IndexedDBProvider;
+        const dbName = `delete-failing-${Math.random()}`;
+        const cacheClass =
+          backend === "indexeddb" ? IndexedDbCache : WebStorageCache;
+        const removeItem = vi
+          .spyOn(cacheClass.prototype, "removeItem")
+          .mockRejectedValue(new Error("storage unavailable"));
+        try {
+          const wallet = await RegTestHDWallet.named("hd", dbName);
+          await wallet.stop();
+
+          await expect(deleteNamedWallet("hd", dbName)).rejects.toThrow(
+            "storage unavailable",
+          );
+
+          const db = new IndexedDBProvider(dbName);
+          await db.init();
+          expect(await db.walletExists("hd")).toBe(true);
+          await db.close();
+          removeItem.mockRestore();
+          // and the row still leads to the record, so deleting again removes both
+          await deleteNamedWallet("hd", dbName);
+          expect(
+            await storage.getItem(`walletCache-${cacheIdOf(wallet)}`),
+          ).toBeNull();
+        } finally {
+          removeItem.mockRestore();
+          BaseWallet.StorageProvider = prevProvider;
+        }
+      }));
+
     test("purgeWalletCache removes the record of a stored wallet id", () =>
       withCacheBackend(backend, async (storage) => {
         const wallet = await RegTestHDWallet.newRandom();

@@ -1,7 +1,6 @@
 import { binToHex, CashAddressNetworkPrefix, sha256 } from "@bitauth/libauth";
 import { purgeWalletCache, WalletCache } from "../cache/walletCache.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
-import type { WalletDbEntryI } from "../db/interface.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
 import {
@@ -1821,14 +1820,15 @@ export async function getNamedWalletId(
  * deleteNamedWallet - delete a named wallet from the database, and its cache record with it
  *
  * `StorageProvider.deleteWallet` removes only the row; the wallet's cache record (its derived
- * private keys and history, see {@link purgeWalletCache}) is removed here too. Stop the wallet
- * first if it is loaded, or it writes its cache record again. No-op for a missing name.
+ * private keys and history, see {@link purgeWalletCache}) is removed here too, before the row.
+ * Stop the wallet first if it is loaded, or it writes its cache record again. No-op for a missing
+ * name.
  *
  * @param name   user friendly wallet alias
  * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
  *
- * @throws {Error} if no StorageProvider is configured, or if the cache record could not be
- * removed, in which case the row is already deleted
+ * @throws {Error} if no StorageProvider is configured, if the row's wallet id cannot be read, or
+ * if the cache record could not be removed; the row is kept in each case
  */
 export async function deleteNamedWallet(
   name: string,
@@ -1847,14 +1847,15 @@ export async function deleteNamedWallet(
   }
 
   await db.init();
-  let savedWalletRecord: WalletDbEntryI | undefined;
   try {
-    savedWalletRecord = await db.getWallet(name);
-    if (savedWalletRecord) await db.deleteWallet(name);
+    const savedWalletRecord = await db.getWallet(name);
+    if (!savedWalletRecord) return;
+    // the cache record first: if it cannot be removed, the row that leads to it stays
+    await purgeWalletCache(savedWalletRecord.wallet);
+    await db.deleteWallet(name);
   } finally {
     await db.close();
   }
-  if (savedWalletRecord) await purgeWalletCache(savedWalletRecord.wallet);
 }
 
 export function getStorageProvider(

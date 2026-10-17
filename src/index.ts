@@ -84,6 +84,7 @@ export { FeePaidByEnum, WalletTypeEnum } from "./wallet/enum.js";
 export {
   InsufficientFundsError,
   InvalidRequestError,
+  TokenBurnError,
   UtxoNotAvailableError,
 } from "./wallet/errors.js";
 export {

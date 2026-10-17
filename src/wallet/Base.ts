@@ -27,6 +27,7 @@ import {
   placeholderPrivateKeyBin,
   selectFungibleTokenUtxos,
 } from "../transaction/Wif.js";
+import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import { checkUtxos } from "../util/checkUtxos.js";
 import {
   asSendRequestObject,
@@ -1117,6 +1118,12 @@ export class BaseWallet implements WalletI {
     if (options?.checkTokenQuantities === false) {
       checkTokenQuantities = false;
     }
+    // A send burns no token; a token operation turns checkTokenQuantities off for its own coin
+    // choice and says instead what it may burn, unless its caller turned the check off.
+    let tokenBurns = options?.tokenBurns;
+    if (!tokenBurns && checkTokenQuantities) {
+      tokenBurns = {};
+    }
 
     const spendPool = await this.getSpendPool(options);
     let utxos = spendPool.pool;
@@ -1314,6 +1321,7 @@ export class BaseWallet implements WalletI {
         buildUnsigned: options?.buildUnsigned === true,
         walletCache: this.walletCache,
         outputOrdering: options?.outputOrdering,
+        tokenBurns,
       },
     );
 
@@ -1547,6 +1555,7 @@ export class BaseWallet implements WalletI {
       checkTokenQuantities: false,
       queryBalance: false,
       tokenOperation: "genesis",
+      tokenBurns: options?.checkTokenQuantities === false ? undefined : {},
     });
   }
 
@@ -1588,6 +1597,8 @@ export class BaseWallet implements WalletI {
     const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
     const outputs: TokenSendRequest[] = [];
+    // deductTokenAmount takes one fungible token per mint off the minting NFT, and burns it
+    const fungibleBurns: Record<string, bigint> = {};
     const depositAddresses = this.getTokenDepositAddresses(
       mintRequests.filter((request) => !request.cashaddr).length,
     );
@@ -1611,6 +1622,7 @@ export class BaseWallet implements WalletI {
           ? mintingUtxo.token!.amount - BigInt(requests.length)
           : mintingUtxo.token!.amount;
       const safeNewAmount = newAmount < 0n ? 0n : newAmount;
+      fungibleBurns[category] = mintingUtxo.token!.amount - safeNewAmount;
 
       ensureUtxos.push(mintingUtxo);
       outputs.push(
@@ -1642,6 +1654,10 @@ export class BaseWallet implements WalletI {
       checkTokenQuantities: false,
       queryBalance: false,
       tokenOperation: "mint",
+      tokenBurns:
+        options?.checkTokenQuantities === false
+          ? undefined
+          : { fungible: fungibleBurns },
     });
   }
 
@@ -1679,6 +1695,7 @@ export class BaseWallet implements WalletI {
     const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
     const changeSendRequests: Array<SendRequest | TokenSendRequest> = [];
+    const tokenBurns: Required<TokenBurnAllowance> = { fungible: {}, nfts: [] };
 
     for (const burnRequest of burnRequests) {
       const tokenUtxos = utxos.filter(
@@ -1703,6 +1720,14 @@ export class BaseWallet implements WalletI {
         burnRequest.amount && burnRequest.amount > 0 ? burnRequest.amount! : 0n;
       fungibleBurnAmount = BigInt(fungibleBurnAmount);
       const hasNFT = burnRequest.nft !== undefined;
+      tokenBurns.fungible[burnRequest.category] =
+        (tokenBurns.fungible[burnRequest.category] ?? 0n) + fungibleBurnAmount;
+      if (hasNFT) {
+        tokenBurns.nfts.push({
+          category: burnRequest.category,
+          ...burnRequest.nft!,
+        });
+      }
 
       if (hasNFT) {
         if (totalFungibleAmount === 0n) {
@@ -1772,6 +1797,8 @@ export class BaseWallet implements WalletI {
       queryBalance: false,
       ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
       tokenOperation: "burn",
+      tokenBurns:
+        options?.checkTokenQuantities === false ? undefined : tokenBurns,
     });
   }
 

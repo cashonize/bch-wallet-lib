@@ -7,6 +7,7 @@ import type {
   InputOrderingFn,
   OutputOrderingFn,
 } from "../transaction/coin-control/types.js";
+import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
 
 export interface WalletRequestI {
@@ -59,6 +60,7 @@ export interface SendRequestOptionsI {
   feePaidBy?: FeePaidByEnum;
   checkTokenQuantities?: boolean; // true
   tokenOperation?: "send" | "genesis" | "mint" | "burn"; // undefined. internal use only
+  tokenBurns?: TokenBurnAllowance; // undefined. internal use only: what a token operation may burn
   ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction; they must be in the spend's pool
   buildUnsigned?: boolean; // false
   broadcast?: boolean; // true

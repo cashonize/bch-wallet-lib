@@ -1,3 +1,5 @@
+import type { NFTCapability } from "../interface.js";
+
 /**
  * Thrown when the wallet's coins (or the `utxoIds` given) cannot cover a send: too little BCH,
  * or no token coins, or too few, for a category. Tell it apart with `instanceof` rather than by
@@ -63,5 +65,37 @@ export class UtxoNotAvailableError extends Error {
     this.name = "UtxoNotAvailableError";
     this.utxoId = utxoId;
     this.reason = reason;
+  }
+}
+
+/**
+ * Thrown before a built transaction is signed when its outputs destroy tokens its inputs carry
+ * and the operation did not ask for that: a regression or a coin-control hook (e.g. an
+ * `outputOrdering` that drops the token change) would otherwise burn them. `category` is the
+ * token category; `amount` the fungible tokens missing from the outputs (0n when an NFT is),
+ * `nft` the NFT missing from them.
+ */
+export class TokenBurnError extends Error {
+  readonly category: string;
+  readonly amount: bigint;
+  readonly nft?: { capability: NFTCapability; commitment: string };
+
+  constructor(
+    message: string,
+    {
+      category,
+      amount,
+      nft,
+    }: {
+      category: string;
+      amount: bigint;
+      nft?: { capability: NFTCapability; commitment: string };
+    },
+  ) {
+    super(message);
+    this.name = "TokenBurnError";
+    this.category = category;
+    this.amount = amount;
+    this.nft = nft;
   }
 }

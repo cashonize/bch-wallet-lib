@@ -33,6 +33,10 @@ import {
   TokenSendRequest,
 } from "../wallet/model.js";
 import { allocateFee } from "./allocateFee.js";
+import {
+  checkTokenConservation,
+  TokenBurnAllowance,
+} from "./tokenConservation.js";
 import type {
   CoinSelectionFn,
   FeeFn,
@@ -54,6 +58,7 @@ export async function buildP2pkhNonHdTransaction({
   changeAddress = "",
   walletCache,
   outputOrdering,
+  tokenBurns,
 }: {
   inputs: Utxo[];
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -64,6 +69,8 @@ export async function buildP2pkhNonHdTransaction({
   changeAddress?: string;
   walletCache: WalletCache;
   outputOrdering?: OutputOrderingFn;
+  /** when given, refuse outputs that destroy more of the inputs' tokens than this allows */
+  tokenBurns?: TokenBurnAllowance;
 }) {
   if (!signingKey) {
     throw new Error("Missing signing key when building transaction");
@@ -107,6 +114,9 @@ export async function buildP2pkhNonHdTransaction({
   }
 
   const lockedOutputs = await prepareOutputs(outputs);
+  if (tokenBurns) {
+    checkTokenConservation(inputs, lockedOutputs, tokenBurns);
+  }
 
   const { preparedInputs, sourceOutputs } = prepareInputs({
     inputs,
@@ -901,6 +911,7 @@ export async function buildEncodedTransaction({
   buildUnsigned = false,
   walletCache,
   outputOrdering,
+  tokenBurns,
 }: {
   inputs: Utxo[];
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -912,6 +923,7 @@ export async function buildEncodedTransaction({
   buildUnsigned?: boolean;
   walletCache: WalletCache;
   outputOrdering?: OutputOrderingFn;
+  tokenBurns?: TokenBurnAllowance;
 }) {
   const { transaction, sourceOutputs } = await buildP2pkhNonHdTransaction({
     inputs,
@@ -923,6 +935,7 @@ export async function buildEncodedTransaction({
     changeAddress,
     walletCache,
     outputOrdering,
+    tokenBurns,
   });
 
   if (buildUnsigned === true) {

@@ -1,3 +1,4 @@
+import { liveTests } from "#test/live.js";
 import { Network } from "../interface.js";
 import { Wallet } from "../wallet/Wif.js";
 import * as config from "./configuration.js";
@@ -68,11 +69,15 @@ test("Should get electrum settings from env", async () => {
   ]);
 });
 
-test("Should get electrum settings from env, comma separated", async () => {
-  process.env.ELECTRUM =
-    "wss://bch.imaginary.cash:50004,wss://electrum.imaginary.cash:50004";
+// connects to the mainnet servers it names
+test.skipIf(!liveTests)(
+  "Should get electrum settings from env, comma separated",
+  async () => {
+    process.env.ELECTRUM =
+      "wss://bch.imaginary.cash:50004,wss://electrum.imaginary.cash:50004";
 
-  const wallet = await Wallet.newRandom();
-  expect(await wallet.getBalance()).toBe(0n);
-  await wallet.provider!.disconnect();
-});
+    const wallet = await Wallet.newRandom();
+    expect(await wallet.getBalance()).toBe(0n);
+    await wallet.provider!.disconnect();
+  },
+);

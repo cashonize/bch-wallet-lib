@@ -349,7 +349,9 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Broadcast a raw hex transaction and wait until the server reports it.
+   * Broadcast a raw hex transaction and wait until the server reports it. A node that answers it
+   * already holds the transaction (BroadcastRejectedError's `alreadyKnown`) has it from an earlier
+   * broadcast, so that answer returns the txid too.
    * @param txHex The raw transaction hex to be broadcast.
    * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
    * @returns The transaction ID (hash) corresponding to the broadcast transaction.
@@ -362,7 +364,18 @@ export default class ElectrumNetworkProvider {
       });
       // broadcast once subscribed, so that the transaction's first status is not missed
       this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-        (error) => onError(broadcastError(error, txHash)),
+        (error) => {
+          const rejection = broadcastError(error, txHash);
+          // the node holds a transaction of this txid, the hash of these very bytes
+          if (
+            rejection instanceof BroadcastRejectedError &&
+            rejection.alreadyKnown
+          ) {
+            done();
+          } else {
+            onError(rejection);
+          }
+        },
       );
       return cancel;
     });

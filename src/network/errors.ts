@@ -12,8 +12,8 @@ const ALREADY_KNOWN_REASONS = [
  * `ElectrumTimeoutError` instead, as the transaction may have reached the node all the same.
  *
  * `alreadyKnown` is set when the node's answer is that it already holds the transaction, in its
- * mempool or in a block: that is no refusal, an earlier broadcast of it went through, and a caller
- * treating it as a failed payment would have the user pay again.
+ * mempool or in a block: that is no refusal, an earlier broadcast of it went through.
+ * `sendRawTransaction`, and so every send, returns the txid for that answer instead of throwing.
  */
 export class BroadcastRejectedError extends Error {
   readonly reason: string;

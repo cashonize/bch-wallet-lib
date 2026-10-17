@@ -7,7 +7,7 @@ import {
   ElectrumTransport,
   type ElectrumServer,
 } from "./ElectrumTransport.js";
-import { BroadcastRejectedError } from "./errors.js";
+import { BroadcastRejectedError, parseRejection } from "./errors.js";
 import type { Transport } from "./Transport.js";
 
 type Reply = { result: unknown } | { error: { code: number; message: string } };
@@ -550,7 +550,7 @@ describe("a broadcast through the provider", () => {
     "txn-already-in-mempool (code 18)",
     "transaction already in block chain",
   ])(
-    "an answer that the node holds the transaction, %s, is alreadyKnown",
+    "an answer that the node holds the transaction, %s, returns its txid",
     async (answer) => {
       const fake = new FakeServer();
       const message = `the transaction was rejected by network rules.\n\n${answer}\n`;
@@ -558,12 +558,14 @@ describe("a broadcast through the provider", () => {
         error: { code: 1, message },
       }));
 
-      const error = await provider(fake)
-        .sendRawTransaction(txHex)
-        .catch((e: unknown) => e);
-
-      expect(error).toBeInstanceOf(BroadcastRejectedError);
-      expect((error as BroadcastRejectedError).alreadyKnown).toBe(true);
+      expect(
+        new BroadcastRejectedError(message, { reason: parseRejection(message) })
+          .alreadyKnown,
+      ).toBe(true);
+      // the server's status for the transaction is still null, as before it indexed it
+      expect(await provider(fake).sendRawTransaction(txHex)).toBe(
+        await getTransactionHash(txHex),
+      );
     },
   );
 

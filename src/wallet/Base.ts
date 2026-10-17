@@ -1220,6 +1220,8 @@ export class BaseWallet implements WalletI {
             waitForTransactionCallback,
           ),
         );
+        // the status of a known transaction arrives while subscribing, before cancel is set
+        if (txHashSeen) await cancel();
         return;
       }
 

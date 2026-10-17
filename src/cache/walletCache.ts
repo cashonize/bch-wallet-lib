@@ -173,8 +173,8 @@ export function walletCacheIdFromWalletId(walletId: string): string {
 
 /**
  * Removes the cache record of a wallet (its derived addresses with their private keys, status,
- * utxos and history) from the cache storage that `Config` selects. Use it when deleting a wallet.
- * A wallet still running writes its record again.
+ * utxos and history) from the cache storage that `Config` selects. Use it when deleting a wallet,
+ * which {@link deleteNamedWallet} does. A wallet still running writes its record again.
  *
  * @param walletId the wallet's stored id, as `toDbString()` returns it and a database row holds it
  */

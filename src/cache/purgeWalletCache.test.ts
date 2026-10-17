@@ -1,10 +1,14 @@
+import { binToHex } from "@bitauth/libauth";
 import { mkdtempSync } from "fs";
 import { LocalStorage } from "node-localstorage";
 import { tmpdir } from "os";
 import path from "path";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { Config } from "../config.js";
-import { BaseWallet } from "../wallet/Base.js";
+import EncryptedStorageProvider from "../db/EncryptedStorageProvider.js";
+import StorageProvider from "../db/StorageProvider.js";
+import IndexedDBProvider from "../indexeddb/IndexedDBProvider.js";
+import { BaseWallet, deleteNamedWallet } from "../wallet/Base.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
 import { RegTestWatchWallet } from "../wallet/Watch.js";
 import { RegTestWallet, RegTestWifWallet } from "../wallet/Wif.js";
@@ -107,6 +111,70 @@ describe("walletCacheIdFromWalletId", () => {
 describe.each(["indexeddb", "localstorage"] as const)(
   "wallet cache records in %s",
   (backend) => {
+    test("deleteNamedWallet removes the wallet's row and its cache record, and only those", () =>
+      withCacheBackend(backend, async (storage) => {
+        const prevProvider = BaseWallet.StorageProvider;
+        BaseWallet.StorageProvider = IndexedDBProvider;
+        const dbName = `delete-named-${Math.random()}`;
+        try {
+          const hd = await RegTestHDWallet.named("hd", dbName);
+          const single = await RegTestWallet.named("single", dbName);
+          const kept = await RegTestHDWallet.named("kept", dbName);
+          for (const wallet of [hd, single, kept]) {
+            await wallet.walletCache.persist(true);
+            await wallet.stop();
+          }
+          const hdKey = `walletCache-${cacheIdOf(hd)}`;
+          const singleKey = `walletCache-${cacheIdOf(single)}`;
+          const keptKey = `walletCache-${cacheIdOf(kept)}`;
+          // what is at stake: the records hold the private keys
+          expect(await storage.getItem(hdKey)).toContain("privateKey");
+          expect(await storage.getItem(singleKey)).toContain(
+            JSON.stringify(binToHex(single.privateKey)),
+          );
+
+          await deleteNamedWallet("hd", dbName);
+          await deleteNamedWallet("single", dbName);
+          await deleteNamedWallet("never-existed", dbName);
+
+          expect(await storage.getItem(hdKey)).toBeNull();
+          expect(await storage.getItem(singleKey)).toBeNull();
+          expect(await storage.getItem(keptKey)).not.toBeNull();
+          const db = new IndexedDBProvider(dbName);
+          await db.init();
+          expect((await db.getWallets()).map((row) => row.name)).toEqual([
+            "kept",
+          ]);
+          await db.close();
+        } finally {
+          BaseWallet.StorageProvider = prevProvider;
+        }
+      }));
+
+    test("deleteNamedWallet purges the cache record of an encrypted row", () =>
+      withCacheBackend(backend, async (storage) => {
+        const prevProvider = BaseWallet.StorageProvider;
+        BaseWallet.StorageProvider = EncryptedStorageProvider.wrapProvider(
+          IndexedDBProvider,
+          "passphrase",
+          { iterations: 1 },
+        ) as unknown as typeof StorageProvider;
+        const dbName = `delete-encrypted-${Math.random()}`;
+        try {
+          const wallet = await RegTestHDWallet.named("hd", dbName);
+          await wallet.walletCache.persist(true);
+          await wallet.stop();
+          const key = `walletCache-${cacheIdOf(wallet)}`;
+          expect(await storage.getItem(key)).not.toBeNull();
+
+          await deleteNamedWallet("hd", dbName);
+
+          expect(await storage.getItem(key)).toBeNull();
+        } finally {
+          BaseWallet.StorageProvider = prevProvider;
+        }
+      }));
+
     test("purgeWalletCache removes the record of a stored wallet id", () =>
       withCacheBackend(backend, async (storage) => {
         const wallet = await RegTestHDWallet.newRandom();

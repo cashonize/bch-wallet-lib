@@ -1,5 +1,6 @@
 import { binToHex, CashAddressNetworkPrefix, sha256 } from "@bitauth/libauth";
-import { WalletCache } from "../cache/walletCache.js";
+import { purgeWalletCache, WalletCache } from "../cache/walletCache.js";
+import type { WalletDbEntryI } from "../db/interface.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
 import {
@@ -1747,6 +1748,46 @@ export async function getNamedWalletId(
       "No database was available or configured to store the named wallet.",
     );
   }
+}
+
+/**
+ * deleteNamedWallet - delete a named wallet from the database, and its cache record with it
+ *
+ * `StorageProvider.deleteWallet` removes only the row; the wallet's cache record (its derived
+ * private keys and history, see {@link purgeWalletCache}) is removed here too. Stop the wallet
+ * first if it is loaded, or it writes its cache record again. No-op for a missing name.
+ *
+ * @param name   user friendly wallet alias
+ * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
+ *
+ * @throws {Error} if no StorageProvider is configured, or if the cache record could not be
+ * removed, in which case the row is already deleted
+ */
+export async function deleteNamedWallet(
+  name: string,
+  dbName?: string,
+): Promise<void> {
+  if (name.length === 0) {
+    throw Error("Named wallets must have a non-empty name");
+  }
+
+  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
+  const db = getStorageProvider(dbName);
+  if (!db) {
+    throw Error(
+      "No database was available or configured to store the named wallet.",
+    );
+  }
+
+  await db.init();
+  let savedWalletRecord: WalletDbEntryI | undefined;
+  try {
+    savedWalletRecord = await db.getWallet(name);
+    if (savedWalletRecord) await db.deleteWallet(name);
+  } finally {
+    await db.close();
+  }
+  if (savedWalletRecord) await purgeWalletCache(savedWalletRecord.wallet);
 }
 
 export function getStorageProvider(

@@ -64,6 +64,8 @@ export default abstract class StorageProvider {
 
   /**
    * Delete a named wallet from the database. No-op if the row does not exist.
+   * Removes only the row: `deleteNamedWallet` also purges the wallet's cache record, which holds
+   * its derived private keys.
    * @param name The user-defined name of the wallet to remove.
    * @throws {Error} If the deletion fails for reasons other than absence.
    */

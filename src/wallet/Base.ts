@@ -755,11 +755,7 @@ export class BaseWallet implements WalletI {
       },
     );
 
-    if (!options) {
-      options = {};
-    }
-
-    options.utxoIds = utxos;
+    options = { ...options, utxoIds: utxos };
 
     const sendRequest = new SendRequest({
       cashaddr: cashaddr,
@@ -927,10 +923,9 @@ export class BaseWallet implements WalletI {
             }
           }
           if (ensureUtxos.length) {
-            if (!options) {
-              options = {};
-            }
-            options!.ensureUtxos = [
+            // a copy: the caller's options stay as they were, e.g. for a retry
+            options = { ...options };
+            options.ensureUtxos = [
               ...(options.ensureUtxos ?? []),
               ...ensureUtxos,
             ].filter(
@@ -1081,7 +1076,7 @@ export class BaseWallet implements WalletI {
     },
   ): Promise<WaitForTransactionResponse> {
     if (options.getTransactionInfo === undefined) {
-      options.getTransactionInfo = true;
+      options = { ...options, getTransactionInfo: true };
     }
 
     return new Promise(async (resolve) => {

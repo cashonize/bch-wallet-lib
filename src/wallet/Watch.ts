@@ -31,6 +31,7 @@ import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
 import { CancelFn, WalletInfoI } from "./interface.js";
+import { networkPrefixError } from "../util/networkPrefixError.js";
 
 export interface WatchWalletOptions {
   name?: string;
@@ -485,14 +486,15 @@ export class WatchWallet extends BaseWallet {
     const [walletType, networkGiven, arg1, arg2]: string[] =
       walletId.split(":");
 
+    // checked first: a walletType is only quoted back once the id has a network part
+    if (this.network != networkGiven) {
+      throw networkPrefixError(networkGiven, this.network);
+    }
+
     if (walletType !== WalletTypeEnum.Watch) {
       throw Error(
         `fromId called on a ${walletType} wallet, expected a ${WalletTypeEnum.Watch} wallet`,
       );
-    }
-
-    if (this.network != networkGiven) {
-      throw Error(`Network prefix ${networkGiven} to a ${this.network} wallet`);
     }
 
     if (arg2) {

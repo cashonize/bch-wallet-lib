@@ -35,6 +35,7 @@ import {
   SendRequestArray,
   TokenSendRequest,
 } from "./model.js";
+import { networkPrefixError } from "../util/networkPrefixError.js";
 
 export const GAP_SIZE = 20;
 
@@ -870,7 +871,7 @@ export class HDWallet extends BaseWallet {
       walletId.split(":");
 
     if (this.network != networkGiven) {
-      throw Error(`Network prefix ${networkGiven} to a ${this.network} wallet`);
+      throw networkPrefixError(networkGiven, this.network);
     }
 
     if (walletType === WalletTypeEnum.Named) {

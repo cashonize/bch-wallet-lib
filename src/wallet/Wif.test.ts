@@ -31,6 +31,9 @@ import {
   TokenSendRequest,
   toUtxoId,
 } from "./model.js";
+import { walletFromId } from "./createWallet.js";
+import { HDWallet } from "./HDWallet.js";
+import { WatchWallet } from "./Watch.js";
 import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
 
 beforeAll(async () => {
@@ -134,6 +137,45 @@ describe(`Test creation of wallet from walletId`, () => {
         );
       } catch (e: any) {
         expect(e.message).toBe("WIF is for testnet, expected mainnet");
+      }
+    });
+
+    test("A walletId without its network part does not quote the key back", async () => {
+      const wif = "KysvoRyDkxQycBGj49K8oC3minAfoXnVmkcgx6UsZx3g2VvyGCAa";
+      const seed =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+      const cases: [() => Promise<unknown>, string, string][] = [
+        [
+          () => Wallet.fromId(`wif:${wif}`),
+          wif,
+          "Unknown network prefix to a mainnet wallet",
+        ],
+        [
+          () => Wallet.fromId(`seed:${seed}`),
+          seed,
+          "Unknown network prefix to a mainnet wallet",
+        ],
+        [
+          () => HDWallet.fromId(`hd:${seed}`),
+          seed,
+          "Unknown network prefix to a mainnet wallet",
+        ],
+        // fromId is protected; replaceNamed and named reach it with a caller's or stored walletId
+        [
+          async () => (new WatchWallet() as any).fromId(wif),
+          wif,
+          "Unknown network prefix to a mainnet wallet",
+        ],
+        [() => walletFromId(wif), wif, "Unknown wallet type in walletId"],
+        [() => walletFromId(`wif:${wif}`), wif, "Unknown network in walletId"],
+      ];
+      for (const [fn, secret, message] of cases) {
+        const error: Error = await fn().then(
+          () => Error("expected an error"),
+          (e) => e,
+        );
+        expect(error.message).toBe(message);
+        expect(error.message).not.toContain(secret);
       }
     });
 

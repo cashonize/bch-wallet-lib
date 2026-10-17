@@ -31,6 +31,7 @@ import {
   TokenSendRequest,
 } from "./model.js";
 import { WatchWallet } from "./Watch.js";
+import { networkPrefixError } from "../util/networkPrefixError.js";
 //#endregion Imports
 
 export interface WalletOptions {
@@ -333,7 +334,7 @@ export class Wallet extends WatchWallet {
       walletId.split(":");
 
     if (this.network !== networkGiven) {
-      throw Error(`Network prefix ${networkGiven} to a ${this.network} wallet`);
+      throw networkPrefixError(networkGiven, this.network);
     }
 
     // "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6"

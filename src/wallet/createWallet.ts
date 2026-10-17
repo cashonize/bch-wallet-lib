@@ -228,6 +228,13 @@ export async function walletFromId(walletId: string): Promise<any> {
     return await namedWallet(name, walletType, network);
   }
 
+  // neither part is quoted back: an id without colons, e.g. a bare WIF or seed, lands in walletType
+  if (!Object.hasOwn(walletClassMap, walletType)) {
+    throw Error("Unknown wallet type in walletId");
+  }
+  if (!Object.hasOwn(walletClassMap[walletType], network)) {
+    throw Error("Unknown network in walletId");
+  }
   const walletClass = walletClassMap[walletType][network]();
   const wallet = new walletClass();
   wallet.walletType = walletType;

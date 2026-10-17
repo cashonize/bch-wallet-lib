@@ -5,7 +5,7 @@ import {
   hexToBin,
   lockingBytecodeToCashAddress,
 } from "@bitauth/libauth";
-import { stringify } from "../cache/index.js";
+import { stringify } from "../cache/walletCache.js";
 import { Config } from "../config.js";
 import { NFTCapability } from "../interface.js";
 import { mine } from "../mine/index.js";
@@ -682,8 +682,8 @@ describe("HDWallet", () => {
   });
 
   it("WalletCache persistence, addresses", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -732,12 +732,12 @@ describe("HDWallet", () => {
       otherWallet.walletCache.get(hdWallet.getChangeAddress(100)),
     ).toBeDefined();
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("WalletCache persistence, status and utxo", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -783,12 +783,12 @@ describe("HDWallet", () => {
       ),
     );
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("WalletCache persistence, rawHistory", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -833,7 +833,7 @@ describe("HDWallet", () => {
       ),
     );
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("getRawHistory uses cached data", async () => {
@@ -888,8 +888,8 @@ describe("HDWallet", () => {
   });
 
   it("incremental history fetching with lastConfirmedHeight", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -939,7 +939,7 @@ describe("HDWallet", () => {
     );
     expect(reloadedEntry?.rawHistory.length).toBe(2);
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("watchWallet registers and removes callbacks", async () => {

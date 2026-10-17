@@ -1,7 +1,6 @@
 import { binToBase64, utf8ToBin } from "@bitauth/libauth";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { CacheProvider } from "../cache/interface.js";
-import { MemoryCache } from "../cache/MemoryCache.js";
 import { Config } from "../config.js";
 import {
   DsproofData,
@@ -46,21 +45,11 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
   private _cache: CacheProvider | undefined;
 
   get cache(): CacheProvider | undefined {
-    if (!Config.UseMemoryCache && !Config.UseIndexedDBCache) {
+    if (!Config.UseIndexedDBCache) {
       this._cache = undefined;
-      return this._cache;
-    }
-
-    if (Config.UseMemoryCache && !(this._cache instanceof MemoryCache)) {
-      this._cache = new MemoryCache();
-      return this._cache;
-    }
-
-    if (Config.UseIndexedDBCache && !(this._cache instanceof IndexedDbCache)) {
+    } else if (!this._cache) {
       this._cache = new IndexedDbCache();
-      return this._cache;
     }
-
     return this._cache;
   }
 

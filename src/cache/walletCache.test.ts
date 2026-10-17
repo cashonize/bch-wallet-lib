@@ -8,7 +8,7 @@ import {
 } from "@bitauth/libauth";
 
 import { Config } from "../config.js";
-import { MemoryCache } from "./MemoryCache.js";
+import { IndexedDbCache } from "./IndexedDbCache.js";
 import { HDWalletCache, parse, stringify } from "./walletCache.js";
 
 const MNEMONIC =
@@ -21,6 +21,27 @@ function xpubAt(path: string): string {
   const pub = deriveHdPublicNode(priv);
   return assertSuccess(encodeHdPublicKey({ node: pub, network: "mainnet" }))
     .hdPublicKey;
+}
+
+// the store HDWalletCache keeps its records in with Config.UseIndexedDBCache
+async function getStoredItem(key: string): Promise<string | null> {
+  const storage = new IndexedDbCache("WalletCache");
+  await storage.init();
+  try {
+    return await storage.getItem(key);
+  } finally {
+    await storage.close();
+  }
+}
+
+async function setStoredItem(key: string, value: string): Promise<void> {
+  const storage = new IndexedDbCache("WalletCache");
+  await storage.init();
+  try {
+    await storage.setItem(key, value);
+  } finally {
+    await storage.close();
+  }
 }
 
 function publicNodeOf(xpub: string) {
@@ -105,10 +126,8 @@ describe("HDWalletCache", () => {
   });
 
   test("persists branches 0 and 1 in mainnet-js 3.1.7's form, and other paths in memory only", async () => {
-    // Use the process-wide MemoryCache so a second HDWalletCache instance can
-    // read what the first persisted.
-    const prevMemory = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const prevIndexedDb = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
     try {
       const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
 
@@ -129,7 +148,7 @@ describe("HDWalletCache", () => {
       await writer.persist(true);
 
       const stored = parse(
-        (await new MemoryCache().getItem("walletCache-wallet-persist"))!,
+        (await getStoredItem("walletCache-wallet-persist"))!,
       );
       expect(Object.keys(stored)).toEqual(["walletCache", "indexCache"]);
       expect(Object.keys(stored.walletCache)).toEqual([
@@ -153,13 +172,13 @@ describe("HDWalletCache", () => {
       expect(reader.get(a7)).toBeUndefined();
       expect(reader.get(bare)).toBeUndefined();
     } finally {
-      Config.UseMemoryCache = prevMemory;
+      Config.UseIndexedDBCache = prevIndexedDb;
     }
   });
 
   test("loads a mainnet-js 3.1.7 record without writing, and writes back only its form", async () => {
-    const prevMemory = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const prevIndexedDb = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
     try {
       const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
       const walletId = "wallet-3.1.7";
@@ -172,7 +191,6 @@ describe("HDWalletCache", () => {
       };
       const nextEntry = derived.getByPath("0/1");
 
-      const storage = new MemoryCache();
       const record = stringify({
         walletCache: {
           [`${walletId}-0-false`]: entry,
@@ -181,35 +199,35 @@ describe("HDWalletCache", () => {
         },
         indexCache: { [entry.address]: { index: 0, change: false } },
       });
-      await storage.setItem(`walletCache-${walletId}`, record);
+      await setStoredItem(`walletCache-${walletId}`, record);
 
       const cache = new HDWalletCache(walletId, node, "bitcoincash");
       await cache.init();
-      expect(await storage.getItem(`walletCache-${walletId}`)).toBe(record);
+      expect(await getStoredItem(`walletCache-${walletId}`)).toBe(record);
       expect(cache.get(entry.address)?.status).toBe("status");
       expect(cache.getByPath("0/0").status).toBe("status");
       expect(cache.get(nextEntry.address)).toBeUndefined();
 
       await cache.persist(true);
-      const stored = parse((await storage.getItem(`walletCache-${walletId}`))!);
+      const stored = parse((await getStoredItem(`walletCache-${walletId}`))!);
       expect(stored).toEqual({
         walletCache: { [`${walletId}-0-false`]: parse(stringify(entry)) },
         indexCache: { [entry.address]: { index: 0, change: false } },
       });
     } finally {
-      Config.UseMemoryCache = prevMemory;
+      Config.UseIndexedDBCache = prevIndexedDb;
     }
   });
 
   test("get() returns only the entry of the address asked for", async () => {
-    const prevMemory = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const prevIndexedDb = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
     try {
       const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
       const walletId = "wallet-bad-index";
       const other = new HDWalletCache("wallet-other", node, "bitcoincash");
       const stranger = other.getByPath("0/5").address;
-      await new MemoryCache().setItem(
+      await setStoredItem(
         `walletCache-${walletId}`,
         stringify({
           walletCache: {},
@@ -221,15 +239,15 @@ describe("HDWalletCache", () => {
       await cache.init();
       expect(cache.get(stranger)).toBeUndefined();
     } finally {
-      Config.UseMemoryCache = prevMemory;
+      Config.UseIndexedDBCache = prevIndexedDb;
     }
   });
 });
 
 describe("a debounced write that fails", () => {
   test("is not left as an unhandled rejection", async () => {
-    const prevMemory = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const prevIndexedDb = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
     let writes = 0;
     // not vi.spyOn: a spy handles the promises it returns, which would hide the rejection
     const failWrites = (cache: object) => {
@@ -259,7 +277,7 @@ describe("a debounced write that fails", () => {
       expect(unhandled).toEqual([]);
     } finally {
       process.off("unhandledRejection", onUnhandled);
-      Config.UseMemoryCache = prevMemory;
+      Config.UseIndexedDBCache = prevIndexedDb;
     }
   });
 });

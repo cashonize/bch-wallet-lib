@@ -5,6 +5,7 @@ import {
   hexToBin,
   Opcodes,
 } from "@bitauth/libauth";
+import type { CacheProvider } from "../cache/interface.js";
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
 import { mine } from "../mine/index.js";
@@ -259,10 +260,14 @@ describe("Dynamic confirmations via fetchHeight", () => {
   });
 
   test("cached transaction has up-to-date confirmations", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
     try {
       const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+      // the provider connected before the cache was turned on, so its cache is not open yet
+      await (
+        alice.provider as unknown as { cache: CacheProvider }
+      ).cache.init();
       const utxo = (await alice.getUtxos())[0];
 
       const tx1 = await alice.provider.getRawTransactionObject(utxo.txid);
@@ -275,7 +280,7 @@ describe("Dynamic confirmations via fetchHeight", () => {
       expect(tx2.confirmations).toBe(confirmations1 + 1);
       expect((tx2 as any).fetchHeight).toBeUndefined();
     } finally {
-      Config.UseMemoryCache = memoryCacheValue;
+      Config.UseIndexedDBCache = indexedDbCacheValue;
     }
   });
 });

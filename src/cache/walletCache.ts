@@ -18,7 +18,6 @@ import { prefixFromNetworkMap } from "../enum.js";
 import { TxI, Utxo } from "../interface.js";
 import { IndexedDbCache } from "./IndexedDbCache.js";
 import { CacheProvider } from "./interface.js";
-import { MemoryCache } from "./MemoryCache.js";
 
 export const stringify = (_: any) =>
   JSON.stringify(_, (key, value) => {
@@ -92,7 +91,6 @@ export interface WalletCacheI extends WalletCache {
 }
 
 function getStorage(): CacheProvider | undefined {
-  if (Config.UseMemoryCache) return new MemoryCache();
   if (Config.UseIndexedDBCache) return new IndexedDbCache("WalletCache");
   return undefined;
 }

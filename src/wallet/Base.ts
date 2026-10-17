@@ -822,7 +822,14 @@ export class BaseWallet implements WalletI {
         walletUtxos,
       );
     }
-    pool = pool.filter((utxo) => !excluded.has(toUtxoId(utxo)));
+    // a coin listed twice is one coin: the first listing keeps its place in the caller's order
+    const seen = new Set<string>();
+    pool = pool.filter((utxo) => {
+      const utxoId = toUtxoId(utxo);
+      if (excluded.has(utxoId) || seen.has(utxoId)) return false;
+      seen.add(utxoId);
+      return true;
+    });
 
     const poolMap = new Map(pool.map((utxo) => [toUtxoId(utxo), utxo]));
     const walletIds = new Set(walletUtxos.map(toUtxoId));

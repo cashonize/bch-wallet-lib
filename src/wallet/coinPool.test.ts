@@ -380,6 +380,34 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
   });
 });
 
+describe("the pool is a set", () => {
+  test("a coin listed twice in utxoIds counts once", async () => {
+    const bob = await fundedWallet(100_000n);
+    const genesis = await bob.tokenGenesis({ amount: 100n, value: 5000n });
+    const category = genesis.categories![0];
+    const [tokenCoin] = await bob.getTokenUtxos(category);
+    const coins = await bob.getUtxos();
+    const request = new TokenBurnRequest({ category, amount: 10n });
+    const outputValues = (transactionHex: string) =>
+      decoded(transactionHex).outputs.map((output) => output.valueSatoshis);
+
+    const plain = await bob.tokenBurn(request, "", {
+      broadcast: false,
+      utxoIds: coins,
+    });
+    const twice = await bob.tokenBurn(request, "", {
+      broadcast: false,
+      utxoIds: [...coins, tokenCoin],
+    });
+    expect(outputValues(twice.transaction!)).toEqual(
+      outputValues(plain.transaction!),
+    );
+    expect(inputOutpoints(twice.transaction!)).toEqual(
+      inputOutpoints(plain.transaction!),
+    );
+  });
+});
+
 describe("coin-control hooks cannot add a coin to the pool", () => {
   test("a coinSelection pick it was not given", async () => {
     const bob = await fundedWallet(10_000n, 20_000n);

@@ -1,4 +1,5 @@
 import { randomUtxo } from "@paryonusd/mem-cash";
+import { countRequests } from "#test/countRequests.js";
 import { Config } from "../config.js";
 import { Network } from "../interface.js";
 import { RegTestWallet } from "../wallet/Wif.js";
@@ -82,8 +83,10 @@ test.each([NaN, -1, Infinity, -Infinity, "5", null])(
 
 // Funds a new wallet on a chain whose server reports the given relay fee, sends from it and returns
 // the fee the transaction paid and its size
-async function sendWithRelayFee(relayFeePerKbInCoins: number) {
-  const provider = providerWithRelayFee(relayFeePerKbInCoins);
+async function sendWithRelayFee(
+  relayFeePerKbInCoins: number,
+  provider = providerWithRelayFee(relayFeePerKbInCoins),
+) {
   await provider.connect();
   setGlobalProvider(Network.REGTEST, provider);
   try {
@@ -140,7 +143,14 @@ test("a send pays Config.RelayFeePerByte over an absurd server relay fee", async
 
 test("a send under an invalid fee setting rejects before anything is built", async () => {
   Config.RelayFeePerByte = NaN;
-  await expect(sendWithRelayFee(0.00001)).rejects.toThrow(
-    /^Config\.RelayFeePerByte must be/,
-  );
+  const provider = providerWithRelayFee(0.00001);
+  const { counts, restore } = countRequests(provider);
+  try {
+    await expect(sendWithRelayFee(0.00001, provider)).rejects.toThrow(
+      /^Config\.RelayFeePerByte must be/,
+    );
+  } finally {
+    restore();
+  }
+  expect(counts.byMethod["blockchain.transaction.broadcast"]).toBeUndefined();
 });

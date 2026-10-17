@@ -1,4 +1,9 @@
-import { binToHex, decodeTransaction, hexToBin } from "@bitauth/libauth";
+import {
+  binToHex,
+  decodeTransaction,
+  encodeCashAddress,
+  hexToBin,
+} from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
@@ -331,5 +336,58 @@ describe("a send's outputs", () => {
         (output) => output.token?.amount,
       ),
     ).toEqual([10n, undefined]);
+  });
+});
+
+describe("sendMax and the dust limit", () => {
+  // a P2SH32 output is 44 bytes, so its dust limit is 576 sats where P2PKH's is 546
+  const p2sh32 = encodeCashAddress({
+    prefix: "bchreg",
+    type: "p2sh",
+    payload: new Uint8Array(32).fill(1),
+  }).address;
+
+  test("a max below the destination's dust limit is refused before anything is built", async () => {
+    const { alice, bob, coins } = await fund(1, 600n);
+    const max = await bob.getMaxAmountToSend();
+    expect(max).toBeLessThan(546n);
+    // before, a 368-sat output was built: broadcast: false returned it, a broadcast was
+    // refused by the network as "dust"
+    const error = await bob
+      .sendMax(alice.cashaddr!, { broadcast: false })
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(InsufficientFundsError);
+    expect(error.asset).toBe("bch");
+    expect(error.data).toEqual({
+      required: 600n - max + 546n,
+      available: 600n,
+    });
+    await expect(bob.sendMax(alice.cashaddr!)).rejects.toBeInstanceOf(
+      InsufficientFundsError,
+    );
+    expect(outpointsOf(await bob.getUtxos())).toEqual(outpointsOf(coins));
+  });
+
+  test("the dust limit is that of the destination's locking bytecode", async () => {
+    const fee = 600n - (await (await fund(1, 600n)).bob.getMaxAmountToSend());
+    // a max of 560 sats: above P2PKH's dust limit, below P2SH32's
+    const { alice, bob, coins } = await fund(1, fee + 560n);
+    expect(await bob.getMaxAmountToSend()).toBe(560n);
+
+    const error = await bob
+      .sendMax(p2sh32, { broadcast: false })
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(InsufficientFundsError);
+    expect(error.data).toEqual({
+      required: fee + 576n,
+      available: fee + 560n,
+    });
+
+    const response = await bob.sendMax(alice.cashaddr!);
+    expect(inputOutpoints(response.transaction)).toEqual(outpointsOf(coins));
+    expect(outputValues(response.transaction)).toEqual([560n]);
+    const { paid } = await feeCheck(bob, response.transaction, coins);
+    expect(paid).toBe(fee);
+    expect(await bob.getBalance()).toBe(0n);
   });
 });

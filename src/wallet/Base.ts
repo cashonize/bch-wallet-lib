@@ -1,4 +1,9 @@
-import { binToHex, CashAddressNetworkPrefix, sha256 } from "@bitauth/libauth";
+import {
+  binToHex,
+  CashAddressNetworkPrefix,
+  getDustThreshold,
+  sha256,
+} from "@bitauth/libauth";
 import { purgeWalletCache, WalletCache } from "../cache/walletCache.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import StorageProvider from "../db/StorageProvider.js";
@@ -21,6 +26,7 @@ import {
 import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { checkUtxos } from "../util/checkUtxos.js";
+import { deriveLockscript } from "../util/deriveLockscript.js";
 import {
   getRuntimePlatform,
   sumUtxoValue,
@@ -696,9 +702,12 @@ export class BaseWallet {
     return { pool, ensureUtxos };
   }
 
-  protected async _getMaxAmountToSend(
-    options?: SendRequestOptionsI,
-  ): Promise<{ value: bigint; utxos: Utxo[]; ensureUtxos: Utxo[] }> {
+  protected async _getMaxAmountToSend(options?: SendRequestOptionsI): Promise<{
+    value: bigint;
+    fee: bigint;
+    utxos: Utxo[];
+    ensureUtxos: Utxo[];
+  }> {
     // get inputs
     const { pool, ensureUtxos } = await this.getSpendPool(options);
     // a BCH sweep has no token change to price, so a token coin's satoshis would go to the miners
@@ -734,7 +743,7 @@ export class BaseWallet {
       result = 0n;
     }
 
-    return { value: result, utxos: fundingUtxos, ensureUtxos };
+    return { value: result, fee, utxos: fundingUtxos, ensureUtxos };
   }
 
   /**
@@ -771,7 +780,9 @@ export class BaseWallet {
   }
 
   /**
-   * sendMax Send all available funds to a destination cash address
+   * sendMax Send all available funds to a destination cash address. Refuses with
+   * InsufficientFundsError when the max, the fee taken off, is below the dust limit of the
+   * destination's locking bytecode.
    *
    * @param  {string} cashaddr destination cash address
    * @param  {SendRequestOptionsI} options Options of the send requests
@@ -800,9 +811,20 @@ export class BaseWallet {
   ): Promise<SendResponse> {
     const {
       value: maxSpendableAmount,
+      fee,
       utxos,
       ensureUtxos,
     } = await this._getMaxAmountToSend(options);
+
+    // an output below its dust limit is refused by the network, so not built at all
+    const dustLimit = getDustThreshold({
+      lockingBytecode: deriveLockscript(cashaddr),
+      valueSatoshis: maxSpendableAmount,
+    });
+    if (maxSpendableAmount < dustLimit) {
+      const available = sumUtxoValue(utxos);
+      throw amountNotMetError(fee + dustLimit, available);
+    }
 
     // pinned as well: the selection would stop at the coins that cover the amount, leaving the
     // ones worth less than their own input fee unspent and their share of the fee to the miners.

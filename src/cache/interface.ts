@@ -5,7 +5,6 @@ export interface CacheProvider {
   getItems(keys: string[]): Promise<Map<string, string | null>>;
   setItems(entries: [string, string][]): Promise<void>;
   removeItem(key: string): Promise<void>;
-  clear(): Promise<void>;
   keys(): Promise<string[]>;
   // releases what init() opened; the provider is not used after it
   close(): Promise<void>;

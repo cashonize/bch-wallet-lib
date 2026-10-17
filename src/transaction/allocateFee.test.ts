@@ -1,4 +1,5 @@
-import { disconnectProviders, initProviders, SendRequest } from "../index.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
+import { SendRequest } from "../index.js";
 import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { FeePaidByEnum } from "../wallet/enum.js";
 import { RegTestWallet } from "../wallet/Wif.js";

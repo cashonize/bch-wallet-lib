@@ -1,12 +1,16 @@
 import type { Indexer, IndexerConfig } from "@paryonusd/mem-cash";
 import { asTransport, createIndexer } from "@paryonusd/mem-cash";
 import { Network, Utxo } from "../interface.js";
+import { setGlobalProvider } from "./default.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 
 export interface MockNetworkProviderOptions {
   /** Indexer config passed to createIndexer. */
   indexerConfig?: Partial<IndexerConfig>;
 }
+
+// The `bch-wallet-lib/mock` entry: kept out of the main entry so that app bundles never reach
+// @paryonusd/mem-cash, a dev dependency
 
 /**
  * In-memory NetworkProvider backed by @paryonusd/mem-cash.
@@ -88,4 +92,22 @@ export class MockNetworkProvider extends ElectrumNetworkProvider {
       ]);
     }
   }
+}
+
+export async function createMockProvider(): Promise<MockNetworkProvider> {
+  let verifier: import("@paryonusd/mem-cash/validation").TxVerifier | undefined;
+  try {
+    const { createTxVerifier } = await import("@paryonusd/mem-cash/validation");
+    verifier = await createTxVerifier({ vmVersion: "BCH_2026_05" });
+  } catch {}
+  return new MockNetworkProvider({ indexerConfig: { verifier } });
+}
+
+/** A mock chain as the global regtest provider, funding the address in `process.env.ADDRESS`. */
+export async function initMockProvider(): Promise<MockNetworkProvider> {
+  const provider = await createMockProvider();
+  await provider.ready();
+  await provider.seedAlice();
+  setGlobalProvider(Network.REGTEST, provider);
+  return provider;
 }

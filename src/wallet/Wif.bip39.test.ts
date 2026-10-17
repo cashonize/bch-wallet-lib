@@ -1,5 +1,5 @@
 import { deriveSeedFromBip39Mnemonic, hexToBin } from "@bitauth/libauth";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { RegTestWallet } from "./Wif.js";
 
 beforeAll(async () => {

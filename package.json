@@ -30,10 +30,15 @@
     "./coin-control": {
       "types": "./dist/transaction/coin-control/index.d.ts",
       "import": "./dist/transaction/coin-control/index.js"
+    },
+    "./mock": {
+      "types": "./dist/network/MockNetworkProvider.d.ts",
+      "import": "./dist/network/MockNetworkProvider.js"
     }
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check:dist-imports": "node scripts/check-dist-imports.mjs",
     "lint": "oxlint --type-aware",
     "format": "oxfmt",
     "format:check": "oxfmt --check",

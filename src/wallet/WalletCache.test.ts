@@ -1,4 +1,4 @@
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWatchWallet } from "./Watch.js";
 import { RegTestWallet, RegTestWifWallet } from "./Wif.js";

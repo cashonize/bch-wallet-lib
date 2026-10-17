@@ -1,5 +1,5 @@
 import { mine } from "../mine/index.js";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { toBch } from "../util/index.js";
 import { createWallet } from "../wallet/createWallet.js";
 import { WalletTypeEnum } from "../wallet/enum.js";

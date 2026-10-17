@@ -24,7 +24,7 @@ Run one file: `USE_MOCK_PROVIDER=1 pnpm exec vitest run --config test/vitest.con
 
 - `src/wallet/`: the wallet classes. `Base.ts` (`BaseWallet`: sending, token operations, history, watching), `Watch.ts` (watch-only), `Wif.ts` (single-address), `HDWallet.ts` (HD, address discovery over subscriptions, multiple derivation branches).
 - `src/transaction/`: transaction building (`Wif.ts`), fee allocation, and `coin-control/` (selection, input/output order, fee strategies; the `bch-wallet-lib/coin-control` entry).
-- `src/network/`: `ElectrumNetworkProvider` (the provider wallets talk to) over a `Transport`, `ElectrumTransport` (that transport over electrum-cash), `default.ts` (global providers per network), `MockNetworkProvider` (the in-memory chain used by `pnpm test`).
+- `src/network/`: `ElectrumNetworkProvider` (the provider wallets talk to) over a `Transport`, `ElectrumTransport` (that transport over electrum-cash), `default.ts` (global providers per network), `MockNetworkProvider` (the in-memory chain used by `pnpm test`, the `bch-wallet-lib/mock` entry; tests set up providers through `test/providers.ts`).
 - `src/cache/`: IndexedDB / web storage / memory caches, and `walletCache` (HD address and key cache).
 - `src/db/`: `StorageProvider` (wallet persistence), `EncryptedStorageProvider`. `src/indexeddb/`: the browser `IndexedDBProvider`.
 - `src/history/`, `src/message/`, `src/rate/`, `src/util/`: history decoding, signed messages, exchange rates, helpers.

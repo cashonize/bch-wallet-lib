@@ -1,7 +1,7 @@
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
 import { mine } from "../mine/index.js";
-import { disconnectProviders, initProviders } from "../network/index.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";
 import { decodeTransaction, getTransactionHash } from "./Util.js";
 import { RegTestWallet } from "./Wif.js";

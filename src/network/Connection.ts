@@ -1,28 +1,14 @@
 import { Network } from "../interface.js";
 import { networkTickerMap } from "./constant.js";
 import {
-  createMockProvider,
   createProvider,
   getGlobalProvider,
   removeGlobalProvider,
   setGlobalProvider,
 } from "./default.js";
-import type { MockNetworkProvider } from "./MockNetworkProvider.js";
-
-// `process` is undefined in a browser unless the bundler defines it
-const useMockProvider = () =>
-  typeof process !== "undefined" && !!process.env?.USE_MOCK_PROVIDER;
 
 export async function initProvider(network: Network) {
   if (!getGlobalProvider(network)) {
-    if (useMockProvider()) {
-      if (network !== Network.REGTEST) return;
-      const provider = (await createMockProvider()) as MockNetworkProvider;
-      await provider.ready();
-      await provider.seedAlice();
-      setGlobalProvider(network, provider);
-      return provider;
-    }
     const provider = await createProvider(network);
     await provider.connect();
     setGlobalProvider(network, provider);
@@ -48,7 +34,6 @@ export async function initProviders(networks?: Network[]) {
 }
 
 async function disconnectProvider(network: Network) {
-  if (useMockProvider()) return;
   const provider = getGlobalProvider(network);
   if (provider) {
     await provider.disconnect();

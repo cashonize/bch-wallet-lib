@@ -1,6 +1,6 @@
 import { hexToBin } from "@bitauth/libauth";
 import { DsproofData } from "../interface.js";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { createProvider } from "../network/default.js";
 import { MockNetworkProvider } from "../network/MockNetworkProvider.js";
 import { delay } from "../util/delay.js";

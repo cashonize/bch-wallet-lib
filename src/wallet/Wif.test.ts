@@ -10,7 +10,7 @@ import { bchParam } from "../chain.js";
 import { Config } from "../config.js";
 import { DERIVATION_PATHS, DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
 import { mine } from "../mine/index.js";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
 import json from "../test/json.test.js";
 import { delay } from "../util/delay.js";

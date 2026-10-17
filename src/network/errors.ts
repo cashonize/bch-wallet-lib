@@ -33,6 +33,24 @@ export class BroadcastRejectedError extends Error {
 }
 
 /**
+ * Thrown when the server accepted a broadcast but did not report the transaction afterwards, and
+ * a lookup of it then failed: the transaction may or may not have reached the network. `txid` is
+ * the transaction's id, `cause` the error of the lookup.
+ */
+export class BroadcastTimeoutError extends Error {
+  readonly txid: string;
+
+  constructor(
+    message: string,
+    { txid, cause }: { txid: string; cause?: unknown },
+  ) {
+    super(message, { cause });
+    this.name = "BroadcastTimeoutError";
+    this.txid = txid;
+  }
+}
+
+/**
  * The code of the JSON-RPC error a server answered with, or undefined for an error of the
  * connection (lost, closed, timed out). electrum-cash gives the server's error object as the
  * error's cause, mem-cash's transport puts the code on the error itself. A JSON-RPC error carries

@@ -7,7 +7,11 @@ import {
   ElectrumTransport,
   type ElectrumServer,
 } from "./ElectrumTransport.js";
-import { BroadcastRejectedError, parseRejection } from "./errors.js";
+import {
+  BroadcastRejectedError,
+  BroadcastTimeoutError,
+  parseRejection,
+} from "./errors.js";
 import type { Transport } from "./Transport.js";
 
 type Reply = { result: unknown } | { error: { code: number; message: string } };
@@ -630,5 +634,66 @@ describe("a broadcast through another Transport", () => {
 
     expect(error).toBeInstanceOf(BroadcastRejectedError);
     expect((error as BroadcastRejectedError).reason).toBe("Missing inputs");
+  });
+});
+
+describe("a broadcast the server accepts but does not report", () => {
+  // a Transport that takes the broadcast and never notifies; `holds` says whether the server then
+  // has the transaction
+  const silentTransport = (holds: boolean): Transport => ({
+    connect: async () => {},
+    close: async () => {},
+    request: async (method, params) => {
+      if (method === "blockchain.transaction.broadcast") return "txid";
+      if (method === "blockchain.transaction.get") {
+        if (holds) return params[0];
+        throw Object.assign(
+          new Error("No such mempool or blockchain transaction"),
+          { code: 2 },
+        );
+      }
+      return null;
+    },
+    subscribe: async () => async () => {},
+  });
+
+  test("returns the txid once the server holds the transaction", async () => {
+    const provider = new ElectrumNetworkProvider(silentTransport(true));
+    expect(
+      await provider.sendRawTransaction("0200", { statusTimeout: 20 }),
+    ).toBe(await getTransactionHash("0200"));
+    expect(provider.subscriptions).toBe(0);
+  });
+
+  test("is a BroadcastTimeoutError with the txid when the server does not hold it", async () => {
+    const provider = new ElectrumNetworkProvider(silentTransport(false));
+    const error = await provider
+      .sendRawTransaction("0200", { statusTimeout: 20 })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BroadcastTimeoutError);
+    const timedOut = error as BroadcastTimeoutError;
+    expect(timedOut.name).toBe("BroadcastTimeoutError");
+    expect(timedOut.txid).toBe(await getTransactionHash("0200"));
+    expect(timedOut.cause).toBeInstanceOf(Error);
+    expect(provider.subscriptions).toBe(0);
+  });
+
+  test("waits 30 seconds by default", async () => {
+    vi.useFakeTimers();
+    try {
+      const provider = new ElectrumNetworkProvider(silentTransport(false));
+      let outcome: unknown;
+      const sent = provider.sendRawTransaction("0200").catch((e: unknown) => {
+        outcome = e;
+      });
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(outcome).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await sent;
+      expect(outcome).toBeInstanceOf(BroadcastTimeoutError);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -99,6 +99,25 @@ describe("a subscription that cannot be made", () => {
     );
   }, 5000);
 
+  test("a broadcast whose report never comes returns the txid of the transaction the chain took", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    await fund(wallet.cashaddr, 10_000n);
+    const { transaction, txId } = await wallet.send(
+      { cashaddr: wallet.cashaddr, value: 5_000n },
+      { broadcast: false },
+    );
+    await wallet.stop();
+    // the subscription is made, and its notifications are dropped
+    const subscribe = provider.subscribeToTransaction.bind(provider);
+    provider.subscribeToTransaction = (txHash) => subscribe(txHash, () => {});
+
+    expect(
+      await provider.sendRawTransaction(transaction!, { statusTimeout: 50 }),
+    ).toBe(txId);
+    expect(await provider.getRawTransaction(txId)).toBe(transaction);
+    expect(provider.subscriptions).toBe(0);
+  }, 5000);
+
   test("rejects a single-address wallet's reads, and the next read subscribes again", async () => {
     refuse.address = true;
     const wallet = await RegTestWallet.newRandom();

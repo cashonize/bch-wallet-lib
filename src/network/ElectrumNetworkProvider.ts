@@ -21,6 +21,7 @@ import {
 } from "./interface.js";
 import {
   BroadcastRejectedError,
+  BroadcastTimeoutError,
   parseRejection,
   serverErrorCode,
 } from "./errors.js";
@@ -33,6 +34,9 @@ export interface ConcurrencyOptions {
   /** @internal A bound shared with other fan-outs, instead of `concurrency` */
   limiter?: Limiter;
 }
+
+// Fulcrum reports a transaction it accepted within a second or two
+const BROADCAST_STATUS_TIMEOUT = 30_000;
 
 /** Internal type for cached verbose transactions. fetchHeight is stripped before returning. */
 type CachedRawTransaction = ElectrumRawTransaction & { fetchHeight: number };
@@ -351,19 +355,46 @@ export default class ElectrumNetworkProvider {
   /**
    * Broadcast a raw hex transaction and wait until the server reports it. A node that answers it
    * already holds the transaction (BroadcastRejectedError's `alreadyKnown`) has it from an earlier
-   * broadcast, so that answer returns the txid too.
+   * broadcast, so that answer returns the txid too. A server that accepts the broadcast but does
+   * not report the transaction within 30 seconds is asked for it once: the txid when it has it,
+   * a BroadcastTimeoutError when not.
    * @param txHex The raw transaction hex to be broadcast.
+   * @param options.statusTimeout @internal Milliseconds to wait for the report, for the tests.
    * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
+   * @throws {BroadcastTimeoutError} If the server accepted the broadcast but neither reported nor holds the transaction.
    * @returns The transaction ID (hash) corresponding to the broadcast transaction.
    */
-  async sendRawTransaction(txHex: string): Promise<string> {
+  async sendRawTransaction(
+    txHex: string,
+    options: { statusTimeout?: number } = {},
+  ): Promise<string> {
     const txHash = await getTransactionHash(txHex);
+    const statusTimeout = options.statusTimeout ?? BROADCAST_STATUS_TIMEOUT;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // set once the wait has its outcome, so that a broadcast answered after it starts no timer
+    let settled = false;
     await waitOnWatch<void>(async (done, { onError }) => {
+      const finish = (error?: unknown) => {
+        settled = true;
+        clearTimeout(timer);
+        if (error === undefined) done();
+        else onError(error);
+      };
       const cancel = await this.subscribeToTransaction(txHash, (data) => {
-        if (data && data[0] === txHash && data[1] !== null) done();
+        if (data && data[0] === txHash && data[1] !== null) finish();
       });
       // broadcast once subscribed, so that the transaction's first status is not missed
-      this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
+      this.performRequest("blockchain.transaction.broadcast", [txHex]).then(
+        () => {
+          if (settled) return;
+          // the request timeout bounds the broadcast itself, this the report that follows it
+          timer = setTimeout(() => {
+            this.holdsTransaction(txHash, statusTimeout).then(
+              () => finish(),
+              finish,
+            );
+          }, statusTimeout);
+        },
         (error) => {
           const rejection = broadcastError(error, txHash);
           // the node holds a transaction of this txid, the hash of these very bytes
@@ -371,15 +402,30 @@ export default class ElectrumNetworkProvider {
             rejection instanceof BroadcastRejectedError &&
             rejection.alreadyKnown
           ) {
-            done();
+            finish();
           } else {
-            onError(rejection);
+            finish(rejection);
           }
         },
       );
       return cancel;
     });
     return txHash;
+  }
+
+  // The one check after a broadcast the server did not report: whether it holds the transaction
+  private async holdsTransaction(
+    txHash: string,
+    waited: number,
+  ): Promise<void> {
+    try {
+      await this.performRequest("blockchain.transaction.get", [txHash, false]);
+    } catch (error) {
+      throw new BroadcastTimeoutError(
+        `The server accepted transaction ${txHash} but did not report it within ${waited} ms, and does not hold it.`,
+        { txid: txHash, cause: error },
+      );
+    }
   }
 
   /**

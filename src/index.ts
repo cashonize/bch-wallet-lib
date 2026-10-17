@@ -27,7 +27,10 @@ export {
   setGlobalProvider,
 } from "./network/default.js";
 export { default as ElectrumNetworkProvider } from "./network/ElectrumNetworkProvider.js";
-export { BroadcastRejectedError } from "./network/errors.js";
+export {
+  BroadcastRejectedError,
+  BroadcastTimeoutError,
+} from "./network/errors.js";
 export { ElectrumTimeoutError } from "./network/ElectrumTransport.js";
 export type { ElectrumTransportOptions } from "./network/ElectrumTransport.js";
 export type {

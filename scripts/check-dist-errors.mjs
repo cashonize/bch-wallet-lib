@@ -6,6 +6,7 @@ import { createTxVerifier } from "@paryonusd/mem-cash/validation";
 import { fileURLToPath } from "node:url";
 import {
   BroadcastRejectedError,
+  BroadcastTimeoutError,
   ElectrumNetworkProvider,
   InsufficientFundsError,
   NetworkType,
@@ -65,6 +66,26 @@ await provider.sendRawTransaction(first.transaction);
 const refusal = await caught(provider.sendRawTransaction(second.transaction));
 if (!(refusal instanceof BroadcastRejectedError)) {
   problems.push(`a refused broadcast threw ${refusal}`);
+}
+
+// a server that takes the broadcast, never reports it and does not hold it
+const silent = new ElectrumNetworkProvider(
+  {
+    connect: async () => {},
+    close: async () => {},
+    request: async (method) => {
+      if (method === "blockchain.transaction.broadcast") return "";
+      throw Object.assign(new Error("No such transaction"), { code: 2 });
+    },
+    subscribe: async () => async () => {},
+  },
+  NetworkType.Regtest,
+);
+const unreported = await caught(
+  silent.sendRawTransaction(first.transaction, { statusTimeout: 10 }),
+);
+if (!(unreported instanceof BroadcastTimeoutError)) {
+  problems.push(`an unreported broadcast threw ${unreported}`);
 }
 
 await alice.stop();

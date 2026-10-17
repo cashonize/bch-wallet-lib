@@ -84,6 +84,10 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `sendMax` and `getMaxAmountToSend` honor `options.fee`, the fee strategy `send` takes: the max is the coins minus the strategy's fee for the estimated size, and `sendMax` builds the transaction at that fee. Before, both priced the max at the relay rate and ignored the strategy, so `sendMax` with a strategy above the relay rate threw "Amount required was not met" and one below it paid the relay-rate fee. `send` now also estimates the fee its coin selection must cover with the strategy rather than at the relay rate, as its built transaction already paid; a strategy below the relay rate no longer makes a send that its coins could pay throw "Amount required was not met".
 - `sendMax` with `feePaidBy` other than `change` sends what `getMaxAmountToSend` gives. The max already has the fee taken off, and the paying output was charged it a second time, which went to the miners: five coins of 1000 sats sent 3392 instead of 4176. The single output of a `sendMax` pays the fee whatever `feePaidBy` says.
 
+### Changed
+
+- `new IndexedDBProvider(dbName)` requires `dbName`. Without it the provider opened a database named `"wallet"`, which no wallet stores to: `named()` and `getNamedWalletId` use `"bitcoincash"` and `"bchtest"`. A caller that relied on the default passes `"wallet"`.
+
 ### Removed
 
 - The `bch-wallet-lib/encrypted-storage` entry, with `EncryptedStorageProvider`, `wrapProvider`, `changePassphrase`, `encryptPlaintextRows`, `removeEncryption` and `DecryptionError`. Wallet ids are stored as plaintext rows, as mainnet-js 3.1.7 stores them. A caller that wrapped a provider sets `BaseWallet.StorageProvider` to the provider itself; the library no longer reads `enc:v1:` rows, so one that wrote them runs `removeEncryption` with an earlier build first.

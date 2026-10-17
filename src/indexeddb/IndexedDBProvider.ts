@@ -7,7 +7,7 @@ export default class IndexedDBProvider implements StorageProvider {
   private dbName: string;
   private db: IDBDatabase | null = null;
 
-  constructor(dbName = "wallet") {
+  constructor(dbName: string) {
     this.dbName = dbName;
   }
 

@@ -17,6 +17,7 @@ import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
 import {
+  amountNotMetError,
   buildEncodedTransaction,
   getFeeAmount,
   getFeeAmountSimple,
@@ -1123,7 +1124,25 @@ export class BaseWallet implements WalletI {
       }
     };
     const initialEstimate = await estimateFee(ensureUtxos);
-    let settled = await settle(0n, initialEstimate);
+    let settled: Awaited<ReturnType<typeof settle>>;
+    try {
+      settled = await settle(0n, initialEstimate);
+    } catch (e) {
+      const shortfall: { required: bigint; available: bigint } | undefined =
+        e instanceof InsufficientFundsError ? e["data"] : undefined;
+      if (!shortfall) throw e;
+      // The last round's estimate leaves out the fee of the coins the selection could not reach;
+      // what is needed is told from the fee of spending every coin it could use.
+      const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
+      const usable = [
+        ...ensureUtxos,
+        ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
+      ];
+      const feeOfAll = await estimateFee(usable);
+      let required = spendAmount + feeOfAll;
+      if (shortfall.required > required) required = shortfall.required;
+      throw amountNotMetError(required, shortfall.available);
+    }
     // Change at or below dust is not built and goes to the miners. Selecting for change above
     // dust is kept when it pays the miners less, the extra inputs' fees included.
     const change =

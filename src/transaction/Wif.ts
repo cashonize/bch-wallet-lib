@@ -527,18 +527,19 @@ export async function getSuitableUtxos(
   if (typeof amountRequired === "undefined") {
     return suitableUtxos;
   } else if (amountAvailable < amountRequired) {
-    const e = new InsufficientFundsError(
-      `Amount required was not met, ${amountRequired} satoshis needed, ${amountAvailable} satoshis available`,
-      { asset: "bch" },
-    );
-    e["data"] = {
-      required: amountRequired,
-      available: amountAvailable,
-    };
-    throw e;
+    throw amountNotMetError(amountRequired, amountAvailable);
   } else {
     return suitableUtxos;
   }
+}
+
+export function amountNotMetError(required: bigint, available: bigint) {
+  const e = new InsufficientFundsError(
+    `Amount required was not met, ${required} satoshis needed, ${available} satoshis available`,
+    { asset: "bch" },
+  );
+  e["data"] = { required, available };
+  return e;
 }
 
 /**

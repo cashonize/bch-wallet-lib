@@ -14,6 +14,7 @@ import {
   TokenMintRequest,
   TokenSendRequest,
 } from "./model.js";
+import { InsufficientFundsError } from "./errors.js";
 import { RegTestWallet } from "./Wif.js";
 
 const decode = (transactionHex: string) => {
@@ -300,5 +301,19 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     } finally {
       Config.RelayFeePerByte = undefined;
     }
+  });
+
+  test("a shortfall reports the fee of spending every coin the send could use", async () => {
+    const { alice, bob } = await fund(5, 1000n);
+    // 5000 sats and the fee of five inputs and two outputs at the simple estimate; the fee of
+    // the last round's selection alone was the 84 sats of no inputs
+    const error = await bob
+      .send(new SendRequest({ cashaddr: alice.cashaddr!, value: 5000n }))
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(InsufficientFundsError);
+    expect(error.message).toBe(
+      "Amount required was not met, 5824 satoshis needed, 5000 satoshis available",
+    );
+    expect(error.data).toEqual({ required: 5824n, available: 5000n });
   });
 });

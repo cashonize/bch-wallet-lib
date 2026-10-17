@@ -32,7 +32,7 @@ Run one file: `USE_MOCK_PROVIDER=1 pnpm exec vitest run --config test/vitest.con
 
 ## Tests
 
-- The default suite runs on mem-cash, an in-memory Electrum server and BCH VM with the May 2026 consensus and policy rules. Use it for every change: wallets are funded on it, transactions are validated by it, and a test can broadcast and read back.
+- The default suite runs on `@paryonusd/mem-cash` (local checkout `~/ParyonUSD/paryon_mem_cash`, read-only for you), an in-memory Electrum server and BCH VM that follows BCHN and Fulcrum closely (Fulcrum's listunspent and history order, BCHN's refusal reasons), run here with the May 2026 rules. Don't write tests that depend on insertion order where Fulcrum defines another. Use it for every change: wallets are funded on it, transactions are validated by it, and a test can broadcast and read back.
 - A fix comes with a test that fails without it. For coin selection, change and fees, assert the actual transaction (inputs, outputs, amounts, token data), not just that a send succeeded.
 - Tests that need the Docker regtest (BCHN + Fulcrum) are skipped in mock mode; don't add new ones of that kind when mem-cash can do it.
 

@@ -19,9 +19,11 @@ Status: early, not yet published.
 
 Requires Node 22.12+ and pnpm 11.
 
+The in-memory chain is [@paryonusd/mem-cash](https://github.com/ParyonUSD/paryon_mem_cash), a fork of mainnet-pat's mem-cash 0.0.9 that matches BCHN and Fulcrum more closely. It is not on npm yet, so it is installed from a local checkout at `../../ParyonUSD/paryon_mem_cash` (a dev dependency only; it is never part of the published package).
+
 ```bash
 pnpm install
-pnpm test           # unit and integration tests on the in-memory chain (mem-cash), no Docker
+pnpm test           # unit and integration tests on the in-memory chain, no Docker
 pnpm test:regtest   # the same suite against BCHN + Fulcrum in Docker (pnpm regtest:up first)
 pnpm test:browser   # browser tests in headless Chromium
 pnpm typecheck

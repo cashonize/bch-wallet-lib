@@ -52,8 +52,7 @@
     "@rpckit/websocket": "^2.2.0"
   },
   "devDependencies": {
-    "@mem-cash/electrum": "^0.0.2",
-    "@mem-cash/validation": "^0.0.2",
+    "@paryonusd/mem-cash": "file:../../ParyonUSD/paryon_mem_cash",
     "@types/node": "^22.0.0",
     "@vitest/browser": "^4.1.2",
     "@vitest/browser-playwright": "^4.1.2",

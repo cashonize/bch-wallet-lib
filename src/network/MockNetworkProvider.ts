@@ -2,8 +2,8 @@ import type {
   ElectrumCashTestSchema,
   Indexer,
   IndexerConfig,
-} from "@mem-cash/electrum";
-import { asTransport, createIndexer } from "@mem-cash/electrum";
+} from "@paryonusd/mem-cash";
+import { asTransport, createIndexer } from "@paryonusd/mem-cash";
 import { Network, Utxo } from "../interface.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 
@@ -13,7 +13,7 @@ export interface MockNetworkProviderOptions {
 }
 
 /**
- * In-memory NetworkProvider backed by @mem-cash/electrum.
+ * In-memory NetworkProvider backed by @paryonusd/mem-cash.
  *
  * Inherits all Electrum protocol handling from ElectrumNetworkProvider.
  * Only adds test helpers (addUtxo, mine, setBlockHeight, reset) and

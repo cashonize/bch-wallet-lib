@@ -1,4 +1,4 @@
-import { randomUtxo } from "@mem-cash/electrum";
+import { randomUtxo } from "@paryonusd/mem-cash";
 import { Network, Utxo } from "../../interface.js";
 import {
   removeGlobalProvider,

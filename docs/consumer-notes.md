@@ -118,6 +118,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 
 - `wallet.provider = …` throws, because `provider` is now a getter; use `setProvider`. `Connection` no longer exists; use `createProvider`.
 - `wallet.sign()` and `wallet.verify()` no longer exist; use `SignedMessage.sign` / `verify`. `verify` takes the address as a required argument, and the responses carry only `signature` and `valid`.
+- `Network` is no longer exported: `Network.MAINNET` becomes `NetworkType.Mainnet` (`walletUtils.ts` and its mock).
 - `tokenMint(mintRequests, deductTokenAmount, options)`: the category now goes inside each request.
 - The HD fields `depositIndex`, `changeIndex`, `depositRawHistory` and `changeRawHistory` are replaced by per-branch `indices` / `rawHistory` maps. `walletCache.getByIndex(i, change)` became `getByIndex(i, branch)`.
 - Single-address wallets now subscribe on construction (their cache stays in memory, as in 3.1.7). Never construct one just to look something up.

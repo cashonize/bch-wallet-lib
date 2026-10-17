@@ -4,12 +4,13 @@ export type { WalletDbEntryI } from "./db/interface.js";
 // cache
 export { pruneWalletCaches } from "./cache/walletCache.js";
 // Enum
-export { NetworkType, UnitEnum } from "./enum.js";
+export { NetworkType } from "./enum.js";
 // history
 export { getHistory } from "./history/getHistory.js";
 export * from "./history/interface.js";
 // interfaces
-export * from "./interface.js";
+export { NFTCapability } from "./interface.js";
+export type { HeaderI, HexHeaderI, TokenI, TxI, Utxo } from "./interface.js";
 export type {
   SignedMessageResponseI,
   VerifyMessageResponseI,
@@ -57,8 +58,15 @@ export type { Transport, Unsubscribe } from "./network/Transport.js";
 export { getAddrsByXpubKey } from "./util/getAddrsByXpubKey.js";
 export { getXPubKey } from "./util/getXPubKey.js";
 export { MAX_OP_RETURN_BYTES } from "./constant.js";
+// rates and conversion
+export { ExchangeRate } from "./rate/ExchangeRate.js";
+export type {
+  ExchangeRateOptions,
+  ExchangeRateQuote,
+} from "./rate/ExchangeRate.js";
+export { convert } from "./util/convert.js";
 // utils
-export * from "./util/index.js";
+export { decodeHeader } from "./util/header.js";
 // wallets - explicit exports for tree-shaking
 export {
   BaseWallet,

@@ -66,6 +66,8 @@ Cashonize is a live wallet: its users' browsers hold data written by mainnet-js 
 
 Keep exported names and signatures unless the fix needs to change them. Every API or behavior change goes in `CHANGELOG.md` under "Unreleased", with what a caller has to change.
 
+`docs/api-surface.md` lists every export, public member and option group with who needs it. A new export needs a line there and a real consumer (a Cashonize use, or a library-internal reason it has to be public); a removal takes its line out.
+
 ## Commits
 
 - One logical change per commit. Summary line in lowercase, describing the change in plain words (e.g. "make tokenMint honor utxoIds"); the body says why, and what was broken before.

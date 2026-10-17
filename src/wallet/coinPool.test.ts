@@ -379,6 +379,31 @@ describe("the pool is a set", () => {
   });
 });
 
+describe("utxoIds must be in the wallet", () => {
+  test("a coin spent since it was read is refused, not dropped", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n);
+    const snapshot = await bob.getUtxos();
+    await bob.sendMax(bob.cashaddr!);
+    const request = new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n });
+
+    const error = await notAvailable(
+      bob.send(request, { broadcast: false, utxoIds: snapshot }),
+    );
+    expect(error.reason).toBe("not-found");
+    expect(error.utxoId).toBe(outpoint(snapshot[0]));
+
+    // the token operations and the max amount refuse it too
+    const genesis = await notAvailable(
+      bob.tokenGenesis({ amount: 1n }, [], { utxoIds: snapshot }),
+    );
+    expect(genesis.reason).toBe("not-found");
+    const max = await notAvailable(
+      bob.getMaxAmountToSend({ utxoIds: snapshot }),
+    );
+    expect(max.reason).toBe("not-found");
+  });
+});
+
 describe("ensureUtxos must be in the pool", () => {
   test("an excluded coin", async () => {
     const bob = await fundedWallet(10_000n, 20_000n);

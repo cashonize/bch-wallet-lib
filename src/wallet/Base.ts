@@ -568,14 +568,16 @@ export class BaseWallet implements WalletI {
       return currentBalance;
     }
 
-    return new Promise(async (resolve) => {
-      let watchCancel: CancelFn;
-      watchCancel = await this.watchBalance(async (balance: bigint) => {
+    return new Promise((resolve, reject) => {
+      let watchCancel: CancelFn | undefined;
+      this.watchBalance(async (balance: bigint) => {
         if (balance >= value) {
           await watchCancel?.();
           resolve(balance);
         }
-      });
+      }).then((cancel) => {
+        watchCancel = cancel;
+      }, reject);
     });
   }
 
@@ -603,17 +605,16 @@ export class BaseWallet implements WalletI {
       return currentBalance;
     }
 
-    return new Promise(async (resolve) => {
-      let watchCancel: CancelFn;
-      watchCancel = await this.watchTokenBalance(
-        category,
-        async (balance: bigint) => {
-          if (balance >= amount) {
-            await watchCancel?.();
-            resolve(balance);
-          }
-        },
-      );
+    return new Promise((resolve, reject) => {
+      let watchCancel: CancelFn | undefined;
+      this.watchTokenBalance(category, async (balance: bigint) => {
+        if (balance >= amount) {
+          await watchCancel?.();
+          resolve(balance);
+        }
+      }).then((cancel) => {
+        watchCancel = cancel;
+      }, reject);
     });
   }
 
@@ -1176,7 +1177,7 @@ export class BaseWallet implements WalletI {
       options = { ...options, getTransactionInfo: true };
     }
 
-    return new Promise(async (resolve) => {
+    return new Promise((resolve, reject) => {
       let txHashSeen = false;
 
       const makeResponse = async (txHash?: string) => {
@@ -1204,7 +1205,7 @@ export class BaseWallet implements WalletI {
 
       // waiting for a specific transaction to propagate
       if (options.txHash) {
-        let cancel: CancelFn;
+        let cancel: CancelFn | undefined;
 
         const waitForTransactionCallback = async (data) => {
           if (data && data[0] === options.txHash! && data[1] !== null) {
@@ -1214,23 +1215,29 @@ export class BaseWallet implements WalletI {
           }
         };
 
-        cancel = await this.subscribe((provider) =>
+        this.subscribe((provider) =>
           provider.subscribeToTransaction(
             options.txHash!,
             waitForTransactionCallback,
           ),
-        );
-        // the status of a known transaction arrives while subscribing, before cancel is set
-        if (txHashSeen) await cancel();
+        )
+          .then(async (subscribed) => {
+            cancel = subscribed;
+            // the status of a known transaction arrives while subscribing, before cancel is set
+            if (txHashSeen) await cancel();
+          })
+          .catch(reject);
         return;
       }
 
       // waiting for any address transaction
-      let watchCancel: CancelFn;
-      watchCancel = await this.watchStatus(async (_status) => {
+      let watchCancel: CancelFn | undefined;
+      this.watchStatus(async (_status) => {
         await watchCancel?.();
         resolve(makeResponse());
-      });
+      }).then((cancel) => {
+        watchCancel = cancel;
+      }, reject);
     });
   }
 

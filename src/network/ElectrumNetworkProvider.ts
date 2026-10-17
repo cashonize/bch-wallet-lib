@@ -385,36 +385,36 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     txHex: string,
     awaitPropagation: boolean = true,
   ): Promise<string> {
-    return new Promise(async (resolve, reject) => {
-      let txHash = await getTransactionHash(txHex);
-      if (!awaitPropagation) {
-        this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-          () => {},
-        );
-        resolve(txHash);
-      } else {
-        let cancel: CancelFn;
+    const txHash = await getTransactionHash(txHex);
+    if (!awaitPropagation) {
+      this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
+        () => {},
+      );
+      return txHash;
+    }
+    return new Promise((resolve, reject) => {
+      let cancel: CancelFn | undefined;
 
-        const waitForTransactionCallback = async (
-          data: [txHash: string, confirmations: number | null],
-        ) => {
-          if (data && data[0] === txHash && data[1] !== null) {
-            await cancel?.();
-            resolve(txHash);
-          }
-        };
-        cancel = await this.subscribeToTransaction(
-          txHash,
-          waitForTransactionCallback,
-        );
-
-        this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-          async (error) => {
+      const waitForTransactionCallback = async (
+        data: [txHash: string, confirmations: number | null],
+      ) => {
+        if (data && data[0] === txHash && data[1] !== null) {
+          await cancel?.();
+          resolve(txHash);
+        }
+      };
+      this.subscribeToTransaction(txHash, waitForTransactionCallback).then(
+        (subscribed) => {
+          cancel = subscribed;
+          this.performRequest("blockchain.transaction.broadcast", [
+            txHex,
+          ]).catch(async (error) => {
             await cancel?.();
             reject(error);
-          },
-        );
-      }
+          });
+        },
+        reject,
+      );
     });
   }
 
@@ -476,13 +476,13 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   // Wait for the next block or a block at given blockchain height.
   public async waitForBlock(height?: number): Promise<HexHeaderI> {
-    return new Promise(async (resolve) => {
-      let cancelWatch: CancelFn;
+    return new Promise((resolve, reject) => {
+      let cancelWatch: CancelFn | undefined;
       if (this.currentHeight && !height) {
         height = this.currentHeight + 1;
       }
 
-      cancelWatch = await this.watchBlocks(async (header) => {
+      this.watchBlocks(async (header) => {
         if (!height) {
           height = header.height + 1;
           return;
@@ -493,7 +493,9 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
           resolve(header);
           return;
         }
-      });
+      }).then((cancel) => {
+        cancelWatch = cancel;
+      }, reject);
     });
   }
 

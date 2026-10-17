@@ -204,8 +204,8 @@ export class WatchWallet extends BaseWallet {
     const addr = this.cashaddr;
     let resolved = false;
 
-    return new Promise<void>(async (resolve) => {
-      this.baseCancelFn = await this.subscribe((provider) =>
+    return new Promise<void>((resolve, reject) => {
+      this.subscribe((provider) =>
         provider.subscribeToAddress(
           addr,
           async (args: [address: string, status: string | null]) => {
@@ -224,7 +224,9 @@ export class WatchWallet extends BaseWallet {
             }
           },
         ),
-      );
+      ).then((cancel) => {
+        this.baseCancelFn = cancel;
+      }, reject);
     });
   }
 
@@ -299,15 +301,16 @@ export class WatchWallet extends BaseWallet {
   ): Promise<void> {
     const timeout = options.timeout ?? 100;
 
-    let cancel: CancelFn;
-    const statusChange = new Promise<void>(async (resolve) => {
-      cancel = await this.watchStatus(() => resolve());
+    let statusResolve: () => void;
+    const statusChange = new Promise<void>((resolve) => {
+      statusResolve = resolve;
     });
+    const cancel = await this.watchStatus(() => statusResolve());
 
     const timer = new Promise<void>((resolve) => setTimeout(resolve, timeout));
 
     await Promise.race([statusChange, timer]);
-    await cancel!();
+    await cancel();
   }
 
   public override async stop() {

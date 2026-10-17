@@ -324,8 +324,10 @@ export class HDWallet extends BaseWallet {
   /// Scan more addresses for activity beyond the current gap limit, extending the watched range as needed
   public async scanMoreAddresses(amount: number = GAP_SIZE) {
     await this.watchPromise;
-    this.watchPromise = this.makeWatchPromise(amount);
-    await this.watchPromise;
+    const scan = this.makeWatchPromise(amount);
+    // the caller gets the failure; later reads go on with what was discovered, as after construction
+    this.watchPromise = scan.catch(() => {});
+    await scan;
   }
 
   /// Internal method to start watching addresses for activity, extending the watched range as needed
@@ -369,8 +371,8 @@ export class HDWallet extends BaseWallet {
 
     await Promise.all(
       addresses.map(
-        async (addr, idx) =>
-          new Promise<void>(async (resolve) => {
+        (addr, idx) =>
+          new Promise<void>((resolve, reject) => {
             const index = startIndex + idx;
 
             if (statuses[index] !== undefined) {
@@ -472,9 +474,11 @@ export class HDWallet extends BaseWallet {
               resolve();
             };
 
-            watchCancels[index] = await this.subscribe((provider) =>
+            this.subscribe((provider) =>
               provider.subscribeToAddress(addr, callback as any),
-            );
+            ).then((cancel) => {
+              watchCancels[index] = cancel;
+            }, reject);
           }),
       ),
     );

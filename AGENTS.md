@@ -48,6 +48,18 @@ Run one file: `USE_MOCK_PROVIDER=1 pnpm exec vitest run --config test/vitest.con
 - **Comments earn their place**: context that isn't local to the code, a low-level detail, or a design note; not a restatement of the code. No paragraphs.
 - **Errors**: throw `Error` objects (never strings); don't put key material (WIFs, seeds, private keys) in error messages or logs.
 
+## Persistent storage is frozen
+
+Cashonize is a live wallet: its users' browsers hold data written by mainnet-js 3.1.7 (the wallet databases `bitcoincash`/`bchtest` at version 31, the `WalletCache` and electrum caches at version 1, the stored wallet ids, the `walletCache-…` keys and record shapes, the localStorage keys). The library must read all of it as it is, and keep writing it in a form that mainnet-js 3.1.7 can still read, so an app rollback doesn't lose wallets. No breaking change to database names, store names, versions, key formats, wallet id formats or record shapes. A new record type is allowed only when it is needed, never one that holds key material, and old records are never rewritten into a new form.
+
+## Conventions
+
+- **Errors**: throw exported `Error` subclasses (in `src/wallet/errors.ts`, or next to the transport for network errors) with `name` set, structured fields for what a caller branches on (`asset`, `category`, `utxoId`, `reason`, …) and the underlying error as `cause`. Callers tell errors apart with `instanceof` and fields, never by matching the message. Never throw strings or reject with non-Errors.
+- **Options**: per-call options go in an options object, the last parameter; the library never mutates it. A per-call option overrides `Config`. `Config` is for app-wide defaults only; new behavior gets a per-call option first. Values that are fixed for a wallet's life (provider, derivation) are factory options.
+- **Which coins a spend uses**: the pool is the wallet's current coins, narrowed to `utxoIds` when given, minus `excludeUtxoIds`. Every coin a spend uses comes from that pool: `ensureUtxos`, the inputs a token operation picks itself, and what coin-control hooks see. A coin named in `ensureUtxos` that is not in the pool is an error before anything is built, never a silent addition. This holds for `send`, `sendMax`, `getMaxAmountToSend`, `tokenGenesis`, `tokenMint` and `tokenBurn`.
+- **Concurrency**: the caller decides how many requests run at once. Where the library fans out itself (history, raw transactions, headers), it is bounded, never one unbounded `Promise.all` over a list that grows with the wallet.
+- **Reads have no side effects**: existence checks and lookups construct no wallet, open no subscription and write nothing.
+
 ## Public API
 
 Keep exported names and signatures unless the fix needs to change them. Every API or behavior change goes in `CHANGELOG.md` under "Unreleased", with what a caller has to change.

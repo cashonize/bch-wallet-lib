@@ -209,8 +209,10 @@ describe("data written by mainnet-js 3.1.7", () => {
   });
 
   test("loading every wallet leaves what 3.1.7 wrote as it is", async () => {
-    // past the debounce of the cache writes that loading schedules
-    await new Promise((resolve) => setTimeout(resolve, 2100));
+    // the cache writes that loading schedules, written now instead of after their debounce
+    for (const wallet of wallets.values()) {
+      await (wallet.walletCache as WalletCacheI).flush();
+    }
     const now = await dumpIndexedDB();
 
     const schema = (dump: DumpedDatabase[]) =>

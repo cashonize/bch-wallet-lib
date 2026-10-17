@@ -34,9 +34,6 @@ export default defineConfig({
         root,
         "node_modules/@mem-cash/validation/dist/index.js",
       ),
-      ...(process.env.USE_MOCK_PROVIDER
-        ? { pg: path.resolve(__dirname, "mocks/pg.cjs") }
-        : {}),
       "#test": path.resolve(__dirname),
     },
   },
@@ -44,18 +41,8 @@ export default defineConfig({
     root,
     globals: true,
     environment: "node",
-    include: [
-      "packages/mainnet-js/src/**/*.test.ts",
-      "packages/indexeddb-storage/src/**/*.test.ts",
-      "packages/postgresql-storage/src/**/*.test.ts",
-      "packages/bcmr/src/**/*.test.ts",
-    ],
-    exclude: [
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/*.test.browser.ts",
-      "**/packages/mainnet-cash/**",
-    ],
+    include: ["src/**/*.test.ts"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/*.test.browser.ts"],
     setupFiles: [
       "fake-indexeddb/auto",
       "node-localstorage/register",
@@ -69,12 +56,7 @@ export default defineConfig({
       enabled: process.env.COVERAGE === "true",
       provider: "v8",
       reporter: ["lcov", "text"],
-      include: [
-        "packages/mainnet-js/src/**/*.ts",
-        "packages/indexeddb-storage/src/**/*.ts",
-        "packages/postgresql-storage/src/**/*.ts",
-        "packages/bcmr/src/**/*.ts",
-      ],
+      include: ["src/**/*.ts"],
       exclude: ["**/*.d.ts", "**/*.test.ts", "**/*.test.browser.ts"],
     },
   },

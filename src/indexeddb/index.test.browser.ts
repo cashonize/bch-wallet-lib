@@ -1,4 +1,4 @@
-import { BaseWallet, TestNetWallet, Wallet } from "mainnet-js";
+import { BaseWallet, TestNetWallet, Wallet } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
 
 describe("WalletDatabase should handle indexeddb", () => {

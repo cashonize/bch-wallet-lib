@@ -1,4 +1,4 @@
-import { StorageProvider, WalletDbEntryI } from "mainnet-js";
+import { StorageProvider, WalletDbEntryI } from "../index.js";
 
 export default class IndexedDBProvider implements StorageProvider {
   private dbName: string;

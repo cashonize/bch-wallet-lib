@@ -6,7 +6,7 @@ import {
   RegTestWallet,
   TestNetWallet,
   Wallet,
-} from "mainnet-js";
+} from "../index.js";
 import { default as IndexedDBProvider } from "./IndexedDBProvider.js";
 
 beforeAll(async () => {

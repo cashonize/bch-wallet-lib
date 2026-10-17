@@ -14,7 +14,5 @@ test/attachments
 __screenshots__
 .vitest-attachments
 dist
-mainnet-js.tgz
-basecamp_archive
 tsconfig.tsbuildinfo
 test/playwright

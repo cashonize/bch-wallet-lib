@@ -7,9 +7,4 @@
 if (process.env.USE_MOCK_PROVIDER) {
   require("dotenv").config({ path: ".env.regtest" });
   require("dotenv").config({ path: ".env.testnet" });
-  // Provide a dummy DATABASE_URL so SqlProvider's constructor doesn't throw
-  // when pg is mocked in mock-provider mode.
-  if (!process.env.DATABASE_URL) {
-    process.env.DATABASE_URL = "postgresql://mock:mock@localhost:5432/mock";
-  }
 }

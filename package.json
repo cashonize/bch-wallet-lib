@@ -1,0 +1,75 @@
+{
+  "name": "bch-wallet-lib",
+  "version": "0.1.0",
+  "description": "Bitcoin Cash wallet library with CashTokens support, continued from mainnet-js",
+  "keywords": [
+    "bch",
+    "bitcoin cash",
+    "cashtokens",
+    "wallet"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./indexeddb": {
+      "types": "./dist/indexeddb/index.d.ts",
+      "import": "./dist/indexeddb/index.js"
+    },
+    "./encrypted-storage": {
+      "types": "./dist/db/EncryptedStorageProvider.d.ts",
+      "import": "./dist/db/EncryptedStorageProvider.js"
+    },
+    "./coin-control": {
+      "types": "./dist/transaction/coin-control/index.d.ts",
+      "import": "./dist/transaction/coin-control/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "lint": "oxlint --type-aware",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "test": "USE_MOCK_PROVIDER=1 vitest run --config test/vitest.config.ts",
+    "test:regtest": "vitest run --config test/vitest.config.ts",
+    "test:browser": "vitest run --config test/vitest.config.browser.ts",
+    "coverage": "COVERAGE=true pnpm test",
+    "regtest:up": "./test/docker/start.sh",
+    "regtest:down": "./test/docker/stop.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@bitauth/libauth": "^3.1.0-next.8",
+    "@rpckit/core": "^2.2.0",
+    "@rpckit/fallback": "^2.2.0",
+    "@rpckit/websocket": "^2.2.0"
+  },
+  "devDependencies": {
+    "@mem-cash/electrum": "^0.0.2",
+    "@mem-cash/validation": "^0.0.2",
+    "@types/node": "^22.0.0",
+    "@vitest/browser": "^4.1.2",
+    "@vitest/browser-playwright": "^4.1.2",
+    "@vitest/coverage-v8": "^4.1.2",
+    "dotenv": "^10.0.0",
+    "fake-indexeddb": "^6.2.5",
+    "node-localstorage": "^3.0.5",
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0",
+    "oxlint-tsgolint": "^7.0.2004",
+    "playwright": "^1.49.1",
+    "typescript": "^5.6.2",
+    "vitest": "^4.1.2"
+  },
+  "engines": {
+    "node": "^26 || ^24 || ^22.12.0"
+  },
+  "packageManager": "pnpm@11.10.0"
+}

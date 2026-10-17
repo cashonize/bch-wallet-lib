@@ -1,0 +1,14 @@
+# pnpm settings (pnpm v11). A single package; this file only carries the settings.
+
+# --- Supply-chain hardening: this is wallet key and signing code, prefer over-careful ---
+
+# Reject versions published less than 2 days ago (pnpm 11's own default is 1 day).
+minimumReleaseAge: 2880
+
+engineStrict: true
+preferFrozenLockfile: true
+fund: false
+
+# Packages allowed to run install/build lifecycle scripts. Everything else is blocked, so a
+# dependency that adds an install script fails the install until reviewed and added here.
+allowBuilds: { core-js: set this to true or false }

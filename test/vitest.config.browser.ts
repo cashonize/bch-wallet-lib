@@ -23,10 +23,6 @@ export default defineConfig({
         "node_modules/@rpckit/fallback/dist/electrum-cash/index.js",
       ),
       "#test": path.resolve(__dirname),
-      "mainnet-js": path.resolve(
-        root,
-        "packages/mainnet-js/dist/module/index.js",
-      ),
     },
   },
   define: {
@@ -52,7 +48,7 @@ export default defineConfig({
       instances: [{ browser: "chromium" }],
       screenshotDirectory: path.resolve(__dirname, "screenshots"),
     },
-    include: ["packages/*/src/**/*.test.browser.ts"],
+    include: ["src/**/*.test.browser.ts"],
     exclude: ["**/node_modules/**", "**/dist/**"],
     globalSetup: [path.resolve(__dirname, "vitest.global-setup.cjs")],
     attachmentsDir: path.resolve(__dirname, "attachments"),

@@ -4,7 +4,7 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "declaration": true,
-    "declarationMap": false,
+    "declarationMap": true,
     "sourceMap": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
@@ -13,15 +13,13 @@
     "noImplicitAny": false,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
+    "strictPropertyInitialization": false,
     "useDefineForClassFields": false,
 
     "lib": ["es2022", "dom", "webworker"],
-    "typeRoots": ["node_modules/@types", "src/types"],
+    "types": ["node"],
 
     "forceConsistentCasingInFileNames": true,
-    "composite": true,
-    "allowJs": false,
-    "noEmit": false,
     "skipLibCheck": true,
     "paths": {
       "#test/*": ["./test/*"],
@@ -36,6 +34,6 @@
       ]
     }
   },
-  "include": ["packages/*/src/**/*.ts", "test/*.ts", "test/*.d.ts"],
-  "exclude": ["node_modules/**", "dist"]
+  "include": ["src/**/*.ts", "test/*.ts", "test/vitest-globals.d.ts"],
+  "exclude": ["node_modules", "dist"]
 }

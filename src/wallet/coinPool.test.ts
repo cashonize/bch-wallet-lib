@@ -326,6 +326,67 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
   });
 });
 
+describe("coin-control hooks cannot add a coin to the pool", () => {
+  test("a coinSelection pick it was not given", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n);
+    const [reserved] = await bob.getUtxos();
+
+    const error = await bob
+      .send(new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n }), {
+        broadcast: false,
+        excludeUtxoIds: [reserved],
+        coinSelection: () => [reserved],
+      })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      `coinSelection picked a coin it was not given: ${outpoint(reserved)}`,
+    );
+  });
+
+  test("an inputOrdering that adds a coin", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n);
+    const coins = await bob.getUtxos();
+    const reserved = coins.find((utxo) => utxo.satoshis === 10_000n)!;
+
+    const error = await bob
+      .send(new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n }), {
+        broadcast: false,
+        excludeUtxoIds: [reserved],
+        inputOrdering: ({ inputs }) => [...inputs, reserved],
+      })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      "inputOrdering must return a permutation of its inputs",
+    );
+  });
+
+  test("an inputOrdering that reorders is followed", async () => {
+    const bob = await fundedWallet(10_000n, 20_000n);
+    const carol = await RegTestWallet.newRandom();
+    let order: string[] = [];
+
+    const response = await bob.send(
+      new SendRequest({ cashaddr: carol.cashaddr!, value: 25_000n }),
+      {
+        broadcast: false,
+        inputOrdering: ({ inputs }) => {
+          const reversed = [...inputs].reverse();
+          order = reversed.map(outpoint);
+          return reversed;
+        },
+      },
+    );
+    const inputs = decoded(response.transaction!).inputs.map(
+      (input) =>
+        `${binToHex(input.outpointTransactionHash)}:${input.outpointIndex}`,
+    );
+    expect(order).toHaveLength(2);
+    expect(inputs).toEqual(order);
+  });
+});
+
 describe("ensureUtxos must be in the pool", () => {
   test("an excluded coin", async () => {
     const bob = await fundedWallet(10_000n, 20_000n);

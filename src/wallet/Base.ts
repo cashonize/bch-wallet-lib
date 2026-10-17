@@ -86,6 +86,21 @@ function once(cancel: CancelFn): CancelFn {
   return () => (done ??= cancel());
 }
 
+// The coins an inputOrdering returns, as the selected coins themselves: it may only reorder them
+function orderedInputs(selected: Utxo[], ordered: Utxo[]): Utxo[] {
+  const byId = new Map(selected.map((utxo) => [toUtxoId(utxo), utxo]));
+  const result = ordered.map((utxo) => byId.get(toUtxoId(utxo)));
+  const ids = new Set(result.map((utxo) => utxo && toUtxoId(utxo)));
+  if (
+    result.length !== selected.length ||
+    ids.size !== selected.length ||
+    ids.has(undefined)
+  ) {
+    throw new Error("inputOrdering must return a permutation of its inputs");
+  }
+  return result as Utxo[];
+}
+
 /**
  * A class to hold features used by all wallets
  * @class  BaseWallet
@@ -1160,9 +1175,13 @@ export class BaseWallet implements WalletI {
         }
         let feeNeeded = await estimateFee(selectedUtxos);
         if (feeNeeded <= feeEstimate) {
-          const fundingUtxos = options?.inputOrdering
-            ? options.inputOrdering({ inputs: selectedUtxos })
-            : selectedUtxos;
+          let fundingUtxos = selectedUtxos;
+          if (options?.inputOrdering) {
+            fundingUtxos = orderedInputs(
+              selectedUtxos,
+              options.inputOrdering({ inputs: selectedUtxos }),
+            );
+          }
           const fee = await getFeeAmount({
             utxos: fundingUtxos,
             sendRequests: sendRequests,

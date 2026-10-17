@@ -527,12 +527,21 @@ export async function getSuitableUtxos(
         feePerByte: coinControl.feePerByte ?? 1,
         bestHeight,
       });
+      // a pick counts only as one of the coins it was given, so that it cannot add a coin from
+      // outside the spend's pool, e.g. an excluded one, or a copy with other satoshis
+      const availableByKey = new Map(available.map((u) => [utxoKey(u), u]));
       for (const u of picked) {
         const key = utxoKey(u);
         if (selectedSet.has(key)) continue;
+        const coin = availableByKey.get(key);
+        if (!coin) {
+          throw new Error(
+            `coinSelection picked a coin it was not given: ${key}`,
+          );
+        }
         selectedSet.add(key);
-        suitableUtxos.push(u);
-        amountAvailable += BigInt(u.satoshis);
+        suitableUtxos.push(coin);
+        amountAvailable += BigInt(coin.satoshis);
       }
     } else {
       for (let i = 0; i < inputs.length; i++) {

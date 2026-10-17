@@ -9,9 +9,13 @@ import {
 } from "./default.js";
 import type { MockNetworkProvider } from "./MockNetworkProvider.js";
 
+// `process` is undefined in a browser unless the bundler defines it
+const useMockProvider = () =>
+  typeof process !== "undefined" && !!process.env?.USE_MOCK_PROVIDER;
+
 export async function initProvider(network: Network) {
   if (!getGlobalProvider(network)) {
-    if (process.env.USE_MOCK_PROVIDER) {
+    if (useMockProvider()) {
       if (network !== Network.REGTEST) return;
       const provider = (await createMockProvider()) as MockNetworkProvider;
       await provider.ready();
@@ -44,7 +48,7 @@ export async function initProviders(networks?: Network[]) {
 }
 
 async function disconnectProvider(network: Network) {
-  if (process.env.USE_MOCK_PROVIDER) return;
+  if (useMockProvider()) return;
   const provider = getGlobalProvider(network);
   if (provider) {
     await provider.disconnect();

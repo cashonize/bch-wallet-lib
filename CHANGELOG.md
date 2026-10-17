@@ -16,3 +16,4 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
   - Protocol version 1.5 is asked of every server (mainnet asked for 1.6), as electrum-cash only accepts the exact version it asks for and chipnet servers stop at 1.5.
   - `daemonPassthrough()` is removed: Fulcrum's `daemon.passthrough` takes named params, which electrum-cash cannot send. The regtest `mine()` calls the node's RPC directly, with the `RPC_*` environment of the regtest (as mainnet-js 3 did).
   - New exports: `ElectrumTransport`, `ElectrumTimeoutError`, and the types `ElectrumServer`, `ElectrumTransportOptions`, `Transport`, `Unsubscribe`.
+- `initProviders` / `disconnectProviders` no longer throw a `ReferenceError` in a browser that has no global `process` (mainnet-js#251).

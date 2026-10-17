@@ -26,7 +26,7 @@ The in-memory chain is [@paryonusd/mem-cash](https://github.com/ParyonUSD/paryon
 pnpm install
 pnpm test           # unit and integration tests on the in-memory chain, no Docker
 pnpm test:regtest   # the same suite against BCHN + Fulcrum in Docker (pnpm regtest:up first)
-pnpm test:browser   # browser tests in headless Chromium
+pnpm test:browser   # browser tests in headless Chromium, on the in-memory chain (pnpm exec playwright install chromium first)
 pnpm typecheck
 pnpm lint           # oxlint, type-aware
 pnpm format         # oxfmt

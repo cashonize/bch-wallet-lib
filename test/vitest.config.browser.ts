@@ -18,6 +18,10 @@ export default defineConfig({
     },
   },
   define: {
+    "process.env.USE_MOCK_PROVIDER": JSON.stringify(
+      process.env.USE_MOCK_PROVIDER || "",
+    ),
+    "process.env.ADDRESS": JSON.stringify(process.env.ADDRESS || ""),
     "process.env.PRIVATE_WIF": JSON.stringify(process.env.PRIVATE_WIF || ""),
     "process.env.ALICE_ID": JSON.stringify(process.env.ALICE_ID || ""),
     "process.env.ALICE_TESTNET_ADDRESS": JSON.stringify(

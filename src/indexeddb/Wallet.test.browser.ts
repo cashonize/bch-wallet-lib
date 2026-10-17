@@ -1,3 +1,4 @@
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   BaseWallet,
   Config,
@@ -12,6 +13,13 @@ import {
   walletFromId,
 } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
+
+beforeAll(async () => {
+  await initProviders();
+});
+afterAll(async () => {
+  await disconnectProviders();
+});
 
 describe("Wallet should function in the browser", () => {
   beforeAll(() => {

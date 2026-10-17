@@ -1,9 +1,17 @@
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { utf8ToBin } from "@bitauth/libauth";
 import { NFTCapability } from "../interface.js";
 import * as libauth from "../libauth.js";
 import { binToHex, delay, hexToBin } from "../util/index.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
+
+beforeAll(async () => {
+  await initProviders();
+});
+afterAll(async () => {
+  await disconnectProviders();
+});
 
 describe(`Cashtokens should function in the browser`, () => {
   test(`Test fungible cashtoken genesis and sending`, async () => {

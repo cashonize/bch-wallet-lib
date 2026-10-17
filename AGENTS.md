@@ -11,7 +11,7 @@ bch-wallet-lib is a Bitcoin Cash wallet library, continued from mainnet-js `4.0.
 ```bash
 pnpm test           # vitest on the in-memory chain (mem-cash); the default, no Docker
 pnpm test:regtest   # the same suite against BCHN + Fulcrum in Docker
-pnpm test:browser   # browser tests (vitest browser mode, Chromium)
+pnpm test:browser   # browser tests (vitest browser mode, Chromium) on mem-cash; test:browser:regtest on Docker
 pnpm typecheck      # tsc --noEmit over src and test
 pnpm lint           # oxlint, type-aware (.oxlintrc.json); correctness and promise rules are errors
 pnpm format         # oxfmt (format:check in CI)

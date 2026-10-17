@@ -125,7 +125,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 - `wallet.walletType` is protected (round 3). `WalletPage.vue` tells an HD wallet by it; use `instanceof HDWallet` or `settingsStore.getWalletType` instead.
 - `watchBalance` still fires once on subscribe, so Cashonize's `electrumSubscriptionsActive` guard stays.
 - A `TokenSendRequest` with amount 0 and no NFT now throws `InvalidRequestError`. `createTokens.vue` builds one when the circulating amount is 0; skip that output instead.
-- Coins picked for mutable-NFT requests now come after the other token coins in the inputs.
+- Coins picked for mutable-NFT requests now come after those of the other NFT requests in the inputs, before the fungible token coins; `ensureUtxos` still go first.
 - A `tokenBurn` of more fungible tokens than the matching coins carry now throws `InsufficientFundsError` (`asset: "token"`), where it burned them all. `tokenItemFT.vue` checks the amount against the spendable balance first; if that balance counts fungible tokens on NFT coins, which a burn without an NFT does not spend, the error reaches the user.
 - A `tokenBurn` request with amount 0 and no NFT now throws `InvalidRequestError`. `tokenItemFT.vue` only checks that the typed amount is not empty, so `0` reaches the library; check for a positive amount there.
 - mainnet-js 3.1.7 can't open an `hd:<xprv>` row, so a wallet stored that way can't be rolled back. Cashonize stores its HD wallets by mnemonic only (`walletUtils.ts`, `hd:<network>:<mnemonic>:<path>:0:0`), so a rollback keeps them; keep it that way while a rollback to 3.1.7 is possible.

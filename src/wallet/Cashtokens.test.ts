@@ -1754,6 +1754,20 @@ describe("token change", () => {
     token: undefined,
   });
 
+  const outpointsOf = (...coins: Utxo[]) =>
+    coins.map((coin) => `${coin.txid}:${coin.vout}`).sort();
+
+  // the token coins among a transaction's inputs, every input being one of the wallet's coins
+  const spentTokenCoins = (transactionHex: string, coins: Utxo[]) => {
+    const spent = inputOutpoints(transactionHex);
+    expect(outpointsOf(...coins)).toEqual(expect.arrayContaining(spent));
+    return outpointsOf(
+      ...coins.filter(
+        (coin) => coin.token && spent.includes(`${coin.txid}:${coin.vout}`),
+      ),
+    );
+  };
+
   test("a fungible send keeps the minting NFT of a hybrid coin it spends", async () => {
     const bob = await fundedWallet();
     const carol = await RegTestWallet.newRandom();
@@ -1775,9 +1789,8 @@ describe("token change", () => {
     ]);
 
     // the fungible-only coin covers the amount, the hybrid is not spent (mainnet-js#246)
-    const hybrid = (await bob.getTokenUtxos(category)).find(
-      (val) => val.token!.nft,
-    )!;
+    let coins = [...(await bob.getUtxos())];
+    const fungible = coins.find((coin) => coin.token && !coin.token.nft)!;
     const first = await bob.send(
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
@@ -1785,8 +1798,8 @@ describe("token change", () => {
         amount: 50n,
       }),
     );
-    expect(inputOutpoints(first.transaction!)).not.toContain(
-      `${hybrid.txid}:${hybrid.vout}`,
+    expect(spentTokenCoins(first.transaction!, coins)).toEqual(
+      outpointsOf(fungible),
     );
     expect(decodeOutputs(first.transaction!)).toEqual([
       {
@@ -1803,13 +1816,18 @@ describe("token change", () => {
     ]);
 
     // a spent hybrid keeps its own amount, the rest of the change is a fungible coin
+    coins = [...(await bob.getUtxos())];
+    const tokenCoins = await bob.getTokenUtxos(category);
     const second = await bob.send(
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
         category,
         amount: 10n,
       }),
-      { ensureUtxos: await bob.getTokenUtxos(category) },
+      { ensureUtxos: tokenCoins },
+    );
+    expect(spentTokenCoins(second.transaction!, coins)).toEqual(
+      outpointsOf(...tokenCoins),
     );
     expect(decodeOutputs(second.transaction!)).toEqual([
       {
@@ -1831,12 +1849,16 @@ describe("token change", () => {
     ]);
 
     // an amount the fungible-only coins fall short of takes the hybrid, its NFT comes back
+    coins = [...(await bob.getUtxos())];
     const third = await bob.send(
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
         category,
         amount: 940n,
       }),
+    );
+    expect(spentTokenCoins(third.transaction!, coins)).toEqual(
+      outpointsOf(...coins.filter((coin) => coin.token)),
     );
     expect(decodeOutputs(third.transaction!)).toEqual([
       {
@@ -1875,6 +1897,7 @@ describe("token change", () => {
     ]);
 
     // a fungible request with it, as a send of the NFT alone does not spend the fungible coin
+    const coins = [...(await bob.getUtxos())];
     const response = await bob.send([
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
@@ -1887,6 +1910,9 @@ describe("token change", () => {
         amount: 10n,
       }),
     ]);
+    expect(spentTokenCoins(response.transaction!, coins)).toEqual(
+      outpointsOf(...coins.filter((coin) => coin.token)),
+    );
     expect(decodeOutputs(response.transaction!)).toEqual([
       {
         lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
@@ -1925,8 +1951,12 @@ describe("token change", () => {
     ]);
 
     // the fungible coin is not spent (mainnet-js#246)
+    const coins = [...(await bob.getUtxos())];
     const response = await bob.send(
       new TokenSendRequest({ cashaddr: carol.tokenaddr!, category, nft }),
+    );
+    expect(spentTokenCoins(response.transaction!, coins)).toEqual(
+      outpointsOf(...coins.filter((coin) => coin.token?.nft)),
     );
     expect(decodeOutputs(response.transaction!)).toEqual([
       {
@@ -1980,6 +2010,7 @@ describe("token change", () => {
     // fungible tokens off the hybrid, the minting NFT without the fungible coin of its category,
     // and the mutable NFT with a new commitment
     const mutated = { capability: NFTCapability.mutable, commitment: "02" };
+    const coins = [...(await bob.getUtxos())];
     const response = await bob.send([
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
@@ -1997,6 +2028,9 @@ describe("token change", () => {
         nft: mutated,
       }),
     ]);
+    expect(spentTokenCoins(response.transaction!, coins)).toEqual(
+      outpointsOf(...coins.filter((coin) => coin.token?.nft)),
+    );
     expect(decodeOutputs(response.transaction!)).toEqual([
       {
         lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
@@ -2034,10 +2068,14 @@ describe("token change", () => {
     const genesis = await bob.tokenGenesis({ amount: 10n, nft, value: 2000n });
     const category = genesis.categories![0];
     const [tokenCoin] = await bob.getTokenUtxos(category);
+    const coins = [...(await bob.getUtxos())];
 
     const response = await bob.send(
       new SendRequest({ cashaddr: carol.cashaddr!, value: 5000n }),
       { ensureUtxos: [tokenCoin] },
+    );
+    expect(spentTokenCoins(response.transaction!, coins)).toEqual(
+      outpointsOf(tokenCoin),
     );
     expect(decodeOutputs(response.transaction!)).toEqual([
       {

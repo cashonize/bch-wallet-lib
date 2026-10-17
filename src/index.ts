@@ -70,6 +70,7 @@ export { BaseWallet } from "./wallet/Base.js";
 // wallet utilities, models, interfaces - barrel re-export is fine (small items)
 export * from "./wallet/createWallet.js";
 export { FeePaidByEnum, WalletTypeEnum } from "./wallet/enum.js";
+export { InsufficientFundsError } from "./wallet/errors.js";
 export {
   CHANGE_BRANCH,
   DEFAULT_BRANCHES,

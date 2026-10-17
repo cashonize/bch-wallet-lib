@@ -21,6 +21,7 @@ import { NFTCapability, TokenI, Utxo } from "../interface.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { FeePaidByEnum } from "../wallet/enum.js";
+import { InsufficientFundsError } from "../wallet/errors.js";
 import {
   OpReturnData,
   SendRequest,
@@ -455,8 +456,9 @@ export async function getSuitableUtxos(
         }
       }
 
-      throw Error(
+      throw new InsufficientFundsError(
         `No suitable token utxos available to send token with id "${request.category}", capability "${request.nft?.capability}", commitment "${request.nft?.commitment}"`,
+        { asset: "token", category: request.category },
       );
     }
   }
@@ -520,8 +522,9 @@ export async function getSuitableUtxos(
   if (typeof amountRequired === "undefined") {
     return suitableUtxos;
   } else if (amountAvailable < amountRequired) {
-    const e = Error(
+    const e = new InsufficientFundsError(
       `Amount required was not met, ${amountRequired} satoshis needed, ${amountAvailable} satoshis available`,
+      { asset: "bch" },
     );
     e["data"] = {
       required: amountRequired,
@@ -636,8 +639,9 @@ export async function getFeeAmount({
       Math.ceil(draftTransaction.length * relayFeePerByteInSatoshi + 1),
     );
   } else {
-    throw Error(
+    throw new InsufficientFundsError(
       "The available inputs in the wallet cannot satisfy this send request",
+      { asset: "bch" },
     );
   }
 }

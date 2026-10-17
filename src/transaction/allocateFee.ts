@@ -1,5 +1,6 @@
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import { FeePaidByEnum } from "../wallet/enum.js";
+import { InsufficientFundsError } from "../wallet/errors.js";
 import {
   OpReturnData,
   SendRequest,
@@ -20,7 +21,10 @@ export function checkSatsAvailable(
     return sum + (r.value - DUST_UTXO_THRESHOLD);
   }, 0n);
   if (amountAvailable < fee) {
-    throw Error("Insufficient funds for transaction given fee");
+    throw new InsufficientFundsError(
+      "Insufficient funds for transaction given fee",
+      { asset: "bch" },
+    );
   }
 }
 

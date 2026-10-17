@@ -31,6 +31,7 @@ import {
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
+import { InsufficientFundsError } from "./errors.js";
 import {
   CancelFn,
   SendRequestOptionsI,
@@ -908,7 +909,10 @@ export class BaseWallet implements WalletI {
 
         const diff = inputAmountSum - outputAmountSum;
         if (diff < 0) {
-          throw new Error("Not enough token amount to send");
+          throw new InsufficientFundsError("Not enough token amount to send", {
+            asset: "token",
+            category,
+          });
         }
         if (diff >= 0) {
           let available = 0n;
@@ -955,7 +959,9 @@ export class BaseWallet implements WalletI {
     const spendAmount = await sumSendRequestAmounts(sendRequests);
 
     if (utxos.length === 0) {
-      throw Error("There were no Unspent Outputs");
+      throw new InsufficientFundsError("There were no Unspent Outputs", {
+        asset: "bch",
+      });
     }
     if (typeof spendAmount !== "bigint") {
       throw Error("Couldn't get spend amount when building transaction");
@@ -984,8 +990,9 @@ export class BaseWallet implements WalletI {
       },
     );
     if (selectedUtxos.length === 0) {
-      throw Error(
+      throw new InsufficientFundsError(
         "The available inputs couldn't satisfy the request with fees",
+        { asset: "bch" },
       );
     }
     const fundingUtxos = options?.inputOrdering
@@ -1202,8 +1209,9 @@ export class BaseWallet implements WalletI {
 
     const genesisInputs = utxos.filter((val) => val.vout === 0 && !val.token);
     if (genesisInputs.length < genesisRequests.length) {
-      throw new Error(
+      throw new InsufficientFundsError(
         `Not enough vout=0 inputs available for new token genesis: need ${genesisRequests.length}, have ${genesisInputs.length}`,
+        { asset: "bch" },
       );
     }
 
@@ -1275,8 +1283,9 @@ export class BaseWallet implements WalletI {
           val.token?.nft?.capability === NFTCapability.minting,
       );
       if (!nftUtxos.length) {
-        throw new Error(
+        throw new InsufficientFundsError(
           `You do not have any token UTXOs with minting capability for category ${category}`,
+          { asset: "token", category },
         );
       }
 
@@ -1367,8 +1376,9 @@ export class BaseWallet implements WalletI {
       );
 
       if (!tokenUtxos.length) {
-        throw new Error(
+        throw new InsufficientFundsError(
           `You do not have suitable token UTXOs to perform burn for category ${burnRequest.category}`,
+          { asset: "token", category: burnRequest.category },
         );
       }
 

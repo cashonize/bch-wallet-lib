@@ -487,7 +487,7 @@ export class Wallet extends WatchWallet {
    * @param  {string} cashaddr destination cash address
    * @param  {SendRequestOptionsI} options Options of the send requests
    *
-   * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
+   * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async sendMax(
     cashaddr: string,

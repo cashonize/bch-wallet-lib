@@ -880,10 +880,7 @@ export class BaseWallet implements WalletI {
   /**
    * send Send some amount to an address
    * this function processes the send requests, encodes the transaction, sends it to the network
-   * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
-   *
-   * This is a first class function with REST analog, maintainers should strive to keep backward-compatibility
-   *
+   * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async send(
     requests:
@@ -907,7 +904,7 @@ export class BaseWallet implements WalletI {
    * @param  {string} cashaddr destination cash address
    * @param  {SendRequestOptionsI} options Options of the send requests
    *
-   * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
+   * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async sendMax(
     cashaddr: string,

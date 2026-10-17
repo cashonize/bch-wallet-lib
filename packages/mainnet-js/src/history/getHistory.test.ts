@@ -1,0 +1,300 @@
+import { mine } from "../mine/index.js";
+import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { toBch } from "../util/index.js";
+import { createWallet } from "../wallet/createWallet.js";
+import { WalletTypeEnum } from "../wallet/enum.js";
+import { RegTestWallet } from "../wallet/Wif.js";
+
+beforeAll(async () => {
+  await initProviders();
+});
+afterAll(async () => {
+  await disconnectProviders();
+});
+
+test("Should get miner history", async () => {
+  const alice = await RegTestWallet.newRandom();
+  const minerWallet = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+  await minerWallet.send({ cashaddr: alice.cashaddr!, value: 10000n });
+  await mine({ cashaddr: minerWallet.getDepositAddress(), blocks: 1 });
+  const history = await alice.getHistory();
+  expect(history.length).toBeGreaterThan(0);
+});
+
+// // This class transforms outputs from electrum to a standard array of history.
+test("Should get an address history", async () => {
+  // Build Alice's wallet from Wallet Import Format string
+  if (!process.env.PRIVATE_WIF) {
+    throw Error("Attempted to pass an empty WIF");
+  } else {
+    let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
+    const bob = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    const charlie = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    let sendResponse = await alice.send([
+      {
+        cashaddr: bob.cashaddr!,
+        value: 31000n,
+      },
+      {
+        cashaddr: charlie.cashaddr!,
+        value: 41000n,
+      },
+    ]);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
+    await bob.send([
+      {
+        cashaddr: charlie.cashaddr!,
+        value: 2100n,
+      },
+    ]);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
+    await bob.send([
+      {
+        cashaddr: alice.cashaddr!,
+        value: 2100n,
+      },
+    ]);
+    expect(sendResponse!.txId!.length).toBe(64);
+    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
+
+    // Build Bob's wallet from a public address, check his balance.
+    const bobHistory = await bob.getHistory();
+    expect(bobHistory[0].valueChange).toBe(-2320);
+    expect(
+      bobHistory[0].outputs.some(
+        (output) => output.address === alice.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(
+      bobHistory[0].inputs.some(
+        (input) => input.address === bob.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(bobHistory[1].valueChange).toBe(-2320);
+    expect(
+      bobHistory[1].inputs.some(
+        (input) => input.address === bob.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(
+      bobHistory[1].outputs.some(
+        (output) => output.address === charlie.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(bobHistory[2].valueChange).toBe(31000);
+    expect(bobHistory[2].balance).toBe(31000);
+    expect(bobHistory[2].fee).not.toBe(0);
+    expect(
+      bobHistory[2].inputs.some(
+        (input) => input.address === alice.getDepositAddress(),
+      ),
+    ).toBe(true);
+  }
+});
+
+// This class transforms outputs from electrum to a standard array of history.
+test("Should get a history with multi-party sends", async () => {
+  // Build Alice's wallet from Wallet Import Format string
+  if (!process.env.PRIVATE_WIF) {
+    throw Error("Attempted to pass an empty WIF");
+  } else {
+    let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
+    const bob = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    const charlie = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    let sendResponse = await alice.send([
+      {
+        cashaddr: bob.cashaddr!,
+        value: 31000n,
+      },
+    ]);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
+    await bob.send([
+      {
+        cashaddr: charlie.cashaddr!,
+        value: 2100n,
+      },
+    ]);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
+    await bob.send([
+      {
+        cashaddr: alice.cashaddr!,
+        value: 2100n,
+      },
+    ]);
+    expect(sendResponse!.txId!.length).toBe(64);
+    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
+
+    // Build Bob's wallet from a public address, check his balance.
+    const bobHistory = await bob.getHistory();
+
+    expect(bobHistory[1].fee).toBeGreaterThan(120);
+    expect(bobHistory[1].fee).toBe(220);
+    expect(bobHistory[0].valueChange).toBe(-2320);
+    expect(
+      bobHistory[0].outputs.some(
+        (output) => output.address === alice.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(
+      bobHistory[0].inputs.some(
+        (input) => input.address === bob.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(bobHistory[1].valueChange).toBe(-2320);
+    expect(
+      bobHistory[1].outputs.some(
+        (output) => output.address === charlie.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(
+      bobHistory[1].inputs.some(
+        (input) => input.address === bob.getDepositAddress(),
+      ),
+    ).toBe(true);
+
+    expect(bobHistory[2].valueChange).toBe(31000);
+    expect(bobHistory[2].fee).not.toBe(0);
+    expect(
+      bobHistory[2].inputs.some(
+        (input) => input.address === alice.getDepositAddress(),
+      ),
+    ).toBe(true);
+  }
+});
+
+// This class transforms outputs from electrum to a standard array of history.
+test("Should cut results with a longer history to given count", async () => {
+  // Build Alice's wallet from Wallet Import Format string
+  if (!process.env.PRIVATE_WIF) {
+    throw Error("Attempted to pass an empty WIF");
+  } else {
+    let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
+    const bob = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    const charlie = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    let sendResponse = await alice.send([
+      {
+        cashaddr: bob.cashaddr!,
+        value: 31000n,
+      },
+    ]);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
+    await bob.send([
+      {
+        cashaddr: charlie.cashaddr!,
+        value: 2100n,
+      },
+      {
+        cashaddr: alice.cashaddr!,
+        value: 2100n,
+      },
+      {
+        cashaddr: alice.cashaddr!,
+        value: 2100n,
+      },
+    ]);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
+    expect(sendResponse!.txId!.length).toBe(64);
+    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
+
+    // Build Bob's wallet from a public address, check his balance.
+    const bobHistory = await bob.getHistory({
+      unit: "sat",
+      start: 0,
+      count: 2,
+    });
+    expect(bobHistory.length).toBe(2);
+
+    expect(bobHistory[0].valueChange).toBe(-6588);
+    expect(
+      bobHistory[0].outputs.some(
+        (output) => output.address === alice.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(bobHistory[1].valueChange).toBe(31000);
+    expect(
+      bobHistory[1].outputs.some(
+        (output) => output.address === alice.getDepositAddress(),
+      ),
+    ).toBe(true);
+  }
+});
+
+// This class transforms outputs from electrum to a standard array of history.
+test("Should handle input and fee from many utxos", async () => {
+  // Build Alice's wallet from Wallet Import Format string
+  if (!process.env.PRIVATE_WIF) {
+    throw Error("Attempted to pass an empty WIF");
+  } else {
+    let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
+    const bob = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    const charlie = await createWallet({
+      type: WalletTypeEnum.Wif,
+      network: "regtest",
+    });
+    let sendResponse = await alice.send([
+      {
+        cashaddr: bob.cashaddr!,
+        value: 600n,
+      },
+      {
+        cashaddr: bob.cashaddr!,
+        value: 600n,
+      },
+      {
+        cashaddr: bob.cashaddr!,
+        value: 600n,
+      },
+      {
+        cashaddr: bob.cashaddr!,
+        value: 600n,
+      },
+    ]);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
+    await bob.sendMax(charlie.cashaddr!);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
+    expect(sendResponse!.txId!.length).toBe(64);
+    expect(toBch(sendResponse.balance!)).toBeGreaterThan(0.01);
+    await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
+
+    // Build Bob's wallet from a public address, check his balance.
+    const bobHistory = await bob.getHistory({
+      unit: "sat",
+    });
+
+    expect(bobHistory[0].valueChange).toBeLessThan(-1700);
+    expect(
+      bobHistory[0].outputs.some(
+        (output) => output.address === charlie.getDepositAddress(),
+      ),
+    ).toBe(true);
+    expect(
+      bobHistory[1].inputs.some(
+        (input) => input.address === alice.getDepositAddress(),
+      ),
+    ).toBe(true);
+  }
+});

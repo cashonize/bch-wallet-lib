@@ -1,0 +1,19 @@
+const child_process = require("child_process");
+
+module.exports = async function (cwd) {
+  if (cwd instanceof Object || cwd === undefined) {
+    cwd = ".";
+  }
+
+  if (process.env.SKIP_REGTEST_INIT || process.env.USE_MOCK_PROVIDER) {
+    return;
+  }
+
+  // Stop regtest server
+  child_process.spawnSync("./test/docker/stop.sh", null, {
+    shell: false,
+    stdio: "inherit",
+    cwd: cwd,
+  });
+  console.log("stopped regtest node");
+};

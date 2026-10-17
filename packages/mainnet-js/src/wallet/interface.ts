@@ -1,0 +1,123 @@
+import { NetworkEnum } from "../enum.js";
+import { Utxo } from "../interface.js";
+import { ElectrumRawTransaction } from "../network/interface.js";
+import type {
+  CoinSelectionFn,
+  FeeFn,
+  InputOrderingFn,
+  OutputOrderingFn,
+} from "../transaction/coin-control/types.js";
+import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
+
+export interface WalletRequestI {
+  name?: string;
+  network?: string;
+  type?: WalletTypeEnum;
+  platform?: string;
+  walletId?: string;
+}
+
+export interface WalletResponseI {
+  name: string;
+  cashaddr?: string;
+  address?: string;
+  walletId: string;
+  network?: NetworkEnum;
+  wif?: string;
+  privkey?: string;
+  seed?: string;
+  derivationPath?: string;
+  parentDerivationPath?: string;
+}
+
+export interface WalletInfoI {
+  cashaddr?: string;
+  tokenaddr?: string;
+  isTestnet?: boolean;
+  name?: string;
+  network: NetworkEnum;
+  seed?: string;
+  derivationPath?: string;
+  parentDerivationPath?: string;
+  parentXPubKey?: string;
+  publicKey?: string;
+  publicKeyHash?: string;
+  privateKey?: string;
+  privateKeyWif?: string;
+  walletId: string;
+  walletDbEntry: string;
+}
+
+export interface SendRequestOptionsI {
+  utxoIds?: string[] | Utxo[];
+  changeAddress?: string;
+  slpSemiAware?: boolean; // a flag which requires an utxo to have more than 546 sats to be spendable and counted in the balance
+  queryBalance?: boolean;
+  awaitTransactionPropagation?: boolean;
+  feePaidBy?: FeePaidByEnum;
+  checkTokenQuantities?: boolean; // true
+  tokenOperation?: "send" | "genesis" | "mint" | "burn"; // undefined. internal use only
+  ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction
+  buildUnsigned?: boolean; // false
+  broadcast?: boolean; // true
+
+  // ----- Coin control hooks ---------------------------------------------
+  // Import named strategies from `mainnet-js/coin-control`, or pass any
+  // function matching the signature. When omitted, the historical
+  // behaviour is preserved.
+
+  /** Choose BCH UTXOs to top up the transaction. */
+  coinSelection?: CoinSelectionFn;
+  /** Reorder selected inputs before signing. */
+  inputOrdering?: InputOrderingFn;
+  /** Reorder outputs (including the change output) before signing. */
+  outputOrdering?: OutputOrderingFn;
+  /** Compute the absolute fee for the encoded transaction size. */
+  fee?: FeeFn;
+}
+
+export interface MnemonicI {
+  seed: string;
+  derivationPath: string;
+  parentDerivationPath: string;
+}
+
+export interface WalletI {
+  // Accessors
+  getDepositAddress(): string;
+  getTokenDepositAddress(): string;
+  // getSeed(): MnemonicI;
+  // getNetworkProvider(network: NetworkType): any;
+  // generate(): Promise<this>;
+
+  // Serialization
+  toString(): string;
+  toDbString(): string;
+
+  // Static constructors
+  // fromId(walletId: string): Promise<this>;
+  // fromSeed(mnemonic: string, derivationPath?: string): Promise<this>;
+  // newRandom(name: string, dbName?: string): Promise<this>;
+  // watchOnly(address: string): Promise<this>;
+  // named(name: string, dbName?: string, forceNew?: boolean): Promise<this>;
+  // namedExists(name: string, dbName?: string): Promise<boolean>;
+
+  // Funds
+  getBalance(): Promise<any>;
+  getMaxAmountToSend(params?: any): Promise<any>;
+  send(requests: any, options?: any): Promise<any>;
+  sendMax(address: string, options?: any): Promise<any>;
+}
+
+export interface WaitForTransactionOptions {
+  getTransactionInfo?: boolean;
+  getBalance?: boolean;
+  txHash?: string;
+}
+
+export interface WaitForTransactionResponse {
+  transactionInfo?: ElectrumRawTransaction;
+  balance?: bigint;
+}
+
+export type CancelFn = () => Promise<void>;

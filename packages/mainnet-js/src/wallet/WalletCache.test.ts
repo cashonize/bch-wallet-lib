@@ -1,0 +1,57 @@
+import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { RegTestHDWallet } from "./HDWallet.js";
+import { RegTestWatchWallet } from "./Watch.js";
+import { RegTestWallet, RegTestWifWallet } from "./Wif.js";
+
+beforeAll(async () => {
+  await initProviders();
+});
+afterAll(async () => {
+  await disconnectProviders();
+});
+
+describe("Wallet cache initialization", () => {
+  test("Seed wallet should have walletCache with at least one entry", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    expect(wallet.walletCache).toBeDefined();
+    expect(wallet.walletCache!.get(wallet.cashaddr)).toBeDefined();
+    expect(wallet.walletCache!.get(wallet.cashaddr)!.privateKey).toBeDefined();
+  });
+
+  test("Wif wallet should have walletCache with at least one entry", async () => {
+    const wallet = await RegTestWifWallet.newRandom();
+    expect(wallet.walletCache).toBeDefined();
+    expect(wallet.walletCache!.get(wallet.cashaddr)).toBeDefined();
+    expect(wallet.walletCache!.get(wallet.cashaddr)!.privateKey).toBeDefined();
+  });
+
+  test("Wif wallet from ID should have walletCache with at least one entry", async () => {
+    const wallet = await RegTestWallet.fromId(
+      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
+    );
+    expect(wallet.walletCache).toBeDefined();
+    expect(wallet.walletCache!.get(wallet.cashaddr)).toBeDefined();
+    expect(wallet.walletCache!.get(wallet.cashaddr)!.privateKey).toBeDefined();
+  });
+
+  test("HD wallet should have walletCache with at least one entry", async () => {
+    const wallet = await RegTestHDWallet.newRandom();
+    expect(wallet.walletCache).toBeDefined();
+    const depositAddr = wallet.getDepositAddress();
+    expect(wallet.walletCache!.get(depositAddr)).toBeDefined();
+    expect(wallet.walletCache!.get(depositAddr)!.privateKey).toBeDefined();
+    await wallet.stop();
+  });
+
+  test("Watch wallet should have walletCache without private key", async () => {
+    const wallet = await RegTestWatchWallet.watchOnly(
+      "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0",
+    );
+    expect(wallet.walletCache).toBeDefined();
+    expect(wallet.walletCache!.get(wallet.cashaddr)).toBeDefined();
+    expect(
+      wallet.walletCache!.get(wallet.cashaddr)!.privateKey,
+    ).toBeUndefined();
+    await wallet.stop();
+  });
+});

@@ -1,0 +1,73 @@
+import { NFTCapability } from "../interface.js";
+
+export interface BlockHeader {
+  height: number;
+  hex: string;
+}
+
+export interface ElectrumTokenData {
+  amount: string;
+  category: string;
+  nft?: {
+    capability: NFTCapability;
+    commitment: string;
+  };
+}
+
+export interface ElectrumUtxo {
+  tx_pos: number;
+  value: number;
+  tx_hash: string;
+  height: number;
+  token_data?: ElectrumTokenData;
+}
+
+export interface ElectrumRawTransaction {
+  blockhash: string;
+  blocktime: number;
+  confirmations: number;
+  hash: string;
+  hex: string;
+  locktime: number;
+  size: number;
+  time: number;
+  txid: string;
+  version: number;
+  vin: ElectrumRawTransactionVin[];
+  vout: ElectrumRawTransactionVout[];
+}
+
+export interface ElectrumRawTransactionVinScriptSig {
+  asm: string;
+  hex: string;
+}
+
+export interface ElectrumRawTransactionVin {
+  scriptSig: ElectrumRawTransactionVinScriptSig;
+  sequence: number;
+  txid: string;
+  vout: number;
+}
+
+export type ElectrumRawTransactionVinWithValues = ElectrumRawTransactionVin &
+  ElectrumRawTransactionVout;
+
+export interface ElectrumRawTransactionWithInputValues
+  extends Omit<ElectrumRawTransaction, "vin"> {
+  vin: ElectrumRawTransactionVinWithValues[];
+}
+
+export interface ElectrumRawTransactionVout {
+  n: number;
+  scriptPubKey: ElectrumRawTransactionVoutScriptPubKey;
+  value: number;
+  tokenData?: ElectrumTokenData;
+}
+
+export interface ElectrumRawTransactionVoutScriptPubKey {
+  addresses: string[];
+  asm: string;
+  hex: string;
+  reqSigs: number;
+  type: string;
+}

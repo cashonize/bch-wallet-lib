@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
+    "strict": true,
+    "noImplicitAny": false,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "useDefineForClassFields": false,
+
+    "lib": ["es2022", "dom", "webworker"],
+    "typeRoots": ["node_modules/@types", "src/types"],
+
+    "forceConsistentCasingInFileNames": true,
+    "composite": true,
+    "allowJs": false,
+    "noEmit": false,
+    "skipLibCheck": true,
+    "paths": {
+      "#test/*": ["./test/*"],
+      "@rpckit/core/electrum-cash": [
+        "./node_modules/@rpckit/core/dist/electrum-cash/index.d.ts"
+      ],
+      "@rpckit/websocket/electrum-cash": [
+        "./node_modules/@rpckit/websocket/dist/electrum-cash/index.d.ts"
+      ],
+      "@rpckit/fallback/electrum-cash": [
+        "./node_modules/@rpckit/fallback/dist/electrum-cash/index.d.ts"
+      ]
+    }
+  },
+  "include": ["packages/*/src/**/*.ts", "test/*.ts", "test/*.d.ts"],
+  "exclude": ["node_modules/**", "dist"]
+}

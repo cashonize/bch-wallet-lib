@@ -54,8 +54,10 @@ describe("Fee tests", () => {
         ],
         { feePaidBy: FeePaidByEnum.changeThenAny },
       );
+      // the 298 sats of change cover the fee, so no output pays; the change charged the fee
+      // twice and bob's output paid the shortfall, which left it below dust
       expect(await alice.getBalance()).toBe(0n);
-      expect(await bob.getBalance()).toBe(0n);
+      expect(await bob.getBalance()).toBe(549n);
       expect(await charlie.getBalance()).toBe(550n);
       expect(await dave.getBalance()).toBe(551n);
       expect(await edward.getBalance()).toBe(2552n);

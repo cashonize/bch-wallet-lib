@@ -14,6 +14,7 @@ import {
   TokenMintRequest,
   TokenSendRequest,
 } from "./model.js";
+import { FeePaidByEnum } from "./enum.js";
 import { InsufficientFundsError } from "./errors.js";
 import { RegTestWallet } from "./Wif.js";
 
@@ -315,5 +316,39 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
       "Amount required was not met, 5824 satoshis needed, 5000 satoshis available",
     );
     expect(error.data).toEqual({ required: 5824n, available: 5000n });
+  });
+
+  test("an output that pays the fee is not charged it a second time on the change", async () => {
+    const { alice, bob, coins } = await fund(10, 1000n);
+    const send = (value: bigint, feePaidBy: FeePaidByEnum, utxoIds?: Utxo[]) =>
+      bob.send(new SendRequest({ cashaddr: alice.cashaddr!, value }), {
+        feePaidBy,
+        utxoIds,
+        broadcast: false,
+      });
+
+    // the change took the fee off as well, leaving 75 sats that went to the miners
+    const first = await send(5000n, FeePaidByEnum.first);
+    expect(decode(first.transaction).inputs.length).toBe(6);
+    const { paid, expected } = await feeCheck(bob, first.transaction, coins);
+    expect(paid).toBe(expected);
+    expect(outputValues(first.transaction)).toEqual([5000n - expected, 1000n]);
+
+    // the 500 sats of change pay part of the fee and the output the rest; the output paid the
+    // whole fee and the 391 sats the change fell short by again
+    const changeThenFirst = await send(
+      5500n,
+      FeePaidByEnum.changeThenFirst,
+      coins.slice(0, 6),
+    );
+    const changeThenFirstFee = await feeCheck(
+      bob,
+      changeThenFirst.transaction,
+      coins,
+    );
+    expect(changeThenFirstFee.paid).toBe(changeThenFirstFee.expected);
+    expect(outputValues(changeThenFirst.transaction)).toEqual([
+      6000n - changeThenFirstFee.expected,
+    ]);
   });
 });

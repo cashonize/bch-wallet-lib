@@ -219,7 +219,7 @@ describe("HDWallet", () => {
     expect(restored.getDepositAddress(0)).toBe(original.getDepositAddress(0));
   });
 
-  it("end-to-end: tracks a [0, 1, 7] wallet and filters utxos by branch", async () => {
+  it("end-to-end: tracks a [0, 1, 7] wallet and counts branch 7's coins", async () => {
     const fundingWallet = await RegTestWallet.fromId(
       "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
     );
@@ -238,30 +238,12 @@ describe("HDWallet", () => {
     await w.waitForUpdate({ indices: { 7: 1 } });
     expect(w.indices.get(7)).toBe(1);
 
-    // Default getUtxos returns funds from every tracked branch.
+    // getUtxos and getBalance cover every tracked branch, branches 0 and 1 being empty
     const all = await w.getUtxos();
-    expect(all.some((u) => u.satoshis === 50_000n)).toBe(true);
-
-    // Filter to branch 7 only.
-    const justSeven = await w.getUtxos({ branches: [7] });
-    expect(justSeven.length).toBe(1);
-    expect(justSeven[0].satoshis).toBe(50_000n);
-
-    // Branches 0 and 1 are empty.
-    expect((await w.getUtxos({ branches: [0] })).length).toBe(0);
-    expect((await w.getUtxos({ branches: [1] })).length).toBe(0);
-
-    // Balance filtering matches.
-    expect(await w.getBalance({ branches: [7] })).toBe(50_000n);
-    expect(await w.getBalance({ branches: [0, 1] })).toBe(0n);
-
-    // Empty filter throws.
-    await expect(w.getUtxos({ branches: [] })).rejects.toThrow(/empty/i);
-
-    // Untracked branch throws.
-    await expect(w.getUtxos({ branches: [99] })).rejects.toThrow(
-      /not tracked/i,
-    );
+    expect(all).toHaveLength(1);
+    expect(all[0].satoshis).toBe(50_000n);
+    expect(all[0].address).toBe(w.getAddressByBranch(7, 0));
+    expect(await w.getBalance()).toBe(50_000n);
   });
 
   it("end-to-end: a depth-4 wallet advances its single branch on receipt", async () => {
@@ -285,11 +267,6 @@ describe("HDWallet", () => {
 
     expect(w.indices.get(0)).toBe(1);
     expect(await w.getBalance()).toBe(30_000n);
-
-    // Branch 1 isn't tracked on a depth-4 wallet; filtering rejects it.
-    await expect(w.getBalance({ branches: [1] })).rejects.toThrow(
-      /not tracked/i,
-    );
   });
 
   it("should serialize", async () => {

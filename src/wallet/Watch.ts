@@ -13,7 +13,6 @@ import {
   WalletCacheEntry,
   WalletCacheI,
 } from "../cache/walletCache.js";
-import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import {
   NetworkType,
   networkPrefixMap,
@@ -455,13 +454,10 @@ export class WatchWallet extends BaseWallet {
     await this.watched();
     await this.updatePromise;
 
-    return this._slpSemiAware
-      ? this.utxos.filter((u) => u.satoshis > DUST_UTXO_THRESHOLD)
-      : this.utxos;
+    return this.utxos;
   }
 
-  // Gets balance by summing value in all utxos in sats
-  // Balance includes DUST utxos which could be slp tokens and also cashtokens with BCH amounts
+  // Gets balance by summing value in all utxos in sats, those of token utxos included
   public async getBalance(): Promise<bigint> {
     await this.watched();
     await this.updatePromise;

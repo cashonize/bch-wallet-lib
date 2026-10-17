@@ -12,7 +12,7 @@ import { disconnectProviders, initProviders } from "#test/providers.js";
 import { BroadcastRejectedError } from "../network/errors.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
 import { delay } from "../util/delay.js";
-import { convert, sumUtxoValue } from "../util/index.js";
+import { convert } from "../util/index.js";
 import { CancelFn } from "./interface.js";
 import {
   OpReturnData,
@@ -1129,31 +1129,6 @@ describe(`Wallet extrema behavior regression testing`, () => {
     await expect(wallet.send([first, third])).rejects.toThrow(
       "OP_RETURN outputs can not exceed 223 bytes in total, got 224",
     );
-  });
-
-  test("Test slpSemiAware", async () => {
-    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const bob = await RegTestWallet.newRandom();
-    await alice.send([
-      { cashaddr: bob.getDepositAddress(), value: 546n },
-      { cashaddr: bob.getDepositAddress(), value: 1000n },
-    ]);
-    await bob.waitForUpdate();
-    expect(sumUtxoValue(await bob.getUtxos())).toBe(1546n);
-    bob.slpSemiAware();
-    expect(sumUtxoValue(await bob.getUtxos())).toBe(1000n);
-
-    expect(
-      await bob.getMaxAmountToSend({ options: { slpSemiAware: true } }),
-    ).toBe(768n);
-    await bob.sendMax(alice.getDepositAddress());
-    expect(await bob.getBalance()).toBe(0n + 546n);
-
-    bob.slpSemiAware(false);
-    expect(await bob.getBalance()).toBe(546n);
-    expect(
-      await bob.getMaxAmountToSend({ options: { slpSemiAware: false } }),
-    ).toBeLessThanOrEqual(546n);
   });
 
   test("Should send with utxoIds", async () => {

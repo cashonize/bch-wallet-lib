@@ -19,7 +19,6 @@ import {
   WalletCacheI,
 } from "../cache/walletCache.js";
 import { Config } from "../config.js";
-import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
 import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
@@ -756,31 +755,18 @@ export class HDWallet extends BaseWallet {
     return out;
   }
 
-  /**
-   * utxos Get unspent outputs for the wallet.
-   *
-   * @param options.branches Restrict to the listed branches. Default: every
-   *   tracked branch. Empty array throws.
-   */
-  public async getUtxos(options: { branches?: number[] } = {}) {
+  /** utxos Get unspent outputs of every tracked branch. */
+  public async getUtxos(): Promise<Utxo[]> {
     await this.discovered();
 
-    const utxos = this.collectUtxosFromBranches(options.branches);
-
-    return this._slpSemiAware
-      ? utxos.filter((u) => u.satoshis > DUST_UTXO_THRESHOLD)
-      : utxos;
+    return this.collectUtxosFromBranches();
   }
 
-  // Gets balance by summing value in all utxos in sats
-  // Balance includes DUST utxos which could be slp tokens and also cashtokens with BCH amounts
-  public async getBalance(
-    options: { branches?: number[] } = {},
-  ): Promise<bigint> {
+  // Gets balance by summing value in all utxos in sats, those of token utxos included
+  public async getBalance(): Promise<bigint> {
     await this.discovered();
 
-    const utxos = this.collectUtxosFromBranches(options.branches);
-    return sumUtxoValue(utxos);
+    return sumUtxoValue(this.collectUtxosFromBranches());
   }
 
   /// Relative derivation path for an address slot. Single-branch (depth-4)

@@ -100,7 +100,6 @@ export class BaseWallet implements WalletI {
   private _provider: ElectrumNetworkProvider;
   readonly network: NetworkType;
   readonly walletType: WalletTypeEnum;
-  _slpSemiAware: boolean = false; // a flag which requires an utxo to have more than 546 sats to be spendable and counted in the balance
   readonly isTestnet: boolean;
   name: string = "";
   private subscriptions = new Set<WalletSubscription>();
@@ -120,11 +119,6 @@ export class BaseWallet implements WalletI {
   // Return wallet info
   public getInfo(): WalletInfoI {
     throw Error("getInfo not implemented in BaseWallet");
-  }
-
-  public slpSemiAware(value: boolean = true): this {
-    this._slpSemiAware = value;
-    return this;
   }
 
   //#region Accessors
@@ -851,10 +845,6 @@ export class BaseWallet implements WalletI {
       options: {},
     },
   ): Promise<{ value: bigint; utxos: Utxo[]; ensureUtxos: Utxo[] }> {
-    if (params.options && params.options.slpSemiAware) {
-      this._slpSemiAware = true;
-    }
-
     // get inputs
     const { pool, ensureUtxos } = await this.getSpendPool(params.options);
     // a BCH sweep has no token change to price, so a token coin's satoshis would go to the miners
@@ -1050,10 +1040,6 @@ export class BaseWallet implements WalletI {
     privateKey?: Uint8Array,
   ) {
     let sendRequests = asSendRequestObject(requests);
-
-    if (options && options.slpSemiAware) {
-      this._slpSemiAware = true;
-    }
 
     let changeAddress: string;
     if (options?.changeAddress) {

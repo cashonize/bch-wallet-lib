@@ -161,6 +161,14 @@ describe("the provider factory option", () => {
     await wallet.stop();
   });
 
+  test("setProvider on a wallet made with new creates no global provider", async () => {
+    removeGlobalProvider(Network.REGTEST);
+    const wallet = new RegTestWallet();
+    await wallet.setProvider(chosen);
+    expect(wallet.provider).toBe(chosen);
+    expect(getGlobalProvider(Network.REGTEST)).toBeUndefined();
+  });
+
   test("refuses a provider of another network", async () => {
     const mainnet = await createProvider(Network.MAINNET, "wss://127.0.0.1:1");
     await expect(

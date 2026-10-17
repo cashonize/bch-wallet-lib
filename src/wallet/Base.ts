@@ -458,7 +458,8 @@ export class BaseWallet {
   private async moveSubscriptions(provider: ElectrumNetworkProvider) {
     // an unreachable server rejects here, before anything moved
     await provider.connect();
-    const previous = this.provider;
+    // not the getter, which would create the global provider for a wallet made with `new`
+    const previous = this._provider;
     this._provider = provider;
     try {
       await this.settleSubscriptions();

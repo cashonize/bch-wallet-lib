@@ -356,6 +356,15 @@ export class WatchWallet extends BaseWallet {
     return this.tokenaddr;
   }
 
+  /**
+   * getTokenChangeAddress - get a cashtoken aware wallet change address
+   *
+   * @returns The cashtoken aware change address as a string
+   */
+  public getTokenChangeAddress(): string {
+    return this.tokenaddr;
+  }
+
   // returns the public key hash for an address
   public getPublicKeyHash(hex = false): string | Uint8Array {
     return hex ? binToHex(this.publicKeyHash) : this.publicKeyHash;

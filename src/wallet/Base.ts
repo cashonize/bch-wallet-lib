@@ -158,13 +158,12 @@ export class BaseWallet implements WalletI {
   }
 
   /**
-   * getTokenDepositAddress - get a cashtoken aware wallet deposit address
+   * getTokenChangeAddress - get a cashtoken aware wallet change address
    *
-   * @returns The cashtoken aware deposit address as a string
+   * @returns The cashtoken aware change address as a string
    */
   public getTokenChangeAddress(): string {
-    // return this.tokenaddr;
-    throw Error("getTokenDepositAddress not implemented in BaseWallet");
+    throw Error("getTokenChangeAddress not implemented in BaseWallet");
   }
 
   // check if a given address belongs to this wallet

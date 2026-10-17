@@ -755,11 +755,16 @@ export class HDWallet extends BaseWallet {
   /// Get next unused token change address (branch 1), or the token address at
   /// the specified index. For depth-4 (single-branch) wallets branch 1 is not
   /// tracked; the deposit branch is used instead.
-  public getChangeTokenAddress(index: number = -1): string {
+  public getTokenChangeAddress(index: number = -1): string {
     if (this.singleBranch || !this.branches.includes(CHANGE_BRANCH)) {
       return this.getTokenDepositAddress(index);
     }
     return this.getTokenAddressByBranch(CHANGE_BRANCH, index);
+  }
+
+  /** @deprecated Use {@link getTokenChangeAddress}. */
+  public getChangeTokenAddress(index: number = -1): string {
+    return this.getTokenChangeAddress(index);
   }
 
   public hasAddress(address: string): boolean {

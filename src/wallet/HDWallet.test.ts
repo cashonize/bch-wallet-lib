@@ -5,10 +5,12 @@ import { NFTCapability } from "../interface.js";
 import { mine } from "../mine/index.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";
+import { toTokenaddr } from "../util/deriveCashaddr.js";
 import { getNextUnusedIndex } from "../util/hd.js";
 import { GAP_SIZE, HDWallet, RegTestHDWallet } from "./HDWallet.js";
 import { CancelFn } from "./interface.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
+import { RegTestWatchWallet } from "./Watch.js";
 import { RegTestWallet, Wallet } from "./Wif.js";
 
 beforeAll(async () => {
@@ -138,7 +140,24 @@ describe("HDWallet", () => {
     await (w as any).initialize({ mnemonic, branches: [0, 7] });
 
     expect(w.getChangeAddress(0)).toBe(w.getDepositAddress(0));
-    expect(w.getChangeTokenAddress(0)).toBe(w.getTokenDepositAddress(0));
+    expect(w.getTokenChangeAddress(0)).toBe(w.getTokenDepositAddress(0));
+  });
+
+  it("getTokenChangeAddress returns the token form of the change address", async () => {
+    const w = await HDWallet.fromSeed(
+      "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
+    );
+    expect(w.getTokenChangeAddress(2)).toBe(toTokenaddr(w.getChangeAddress(2)));
+    expect(w.getTokenChangeAddress()).toBe(toTokenaddr(w.getChangeAddress()));
+    expect(w.getTokenChangeAddress()).not.toBe(w.getTokenDepositAddress());
+    // the deprecated name
+    expect(w.getChangeTokenAddress(2)).toBe(w.getTokenChangeAddress(2));
+
+    // it threw on single-address and watch-only wallets
+    const single = await RegTestWallet.newRandom();
+    expect(single.getTokenChangeAddress()).toBe(single.tokenaddr);
+    const watch = await RegTestWatchWallet.watchOnly(single.cashaddr);
+    expect(watch.getTokenChangeAddress()).toBe(single.tokenaddr);
   });
 
   it("seeds per-branch indices from the `indices` constructor option", async () => {

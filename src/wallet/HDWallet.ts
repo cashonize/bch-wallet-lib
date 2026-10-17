@@ -994,7 +994,8 @@ export class HDWallet extends BaseWallet {
       );
     }
 
-    if (arg1.startsWith("priv", 1)) {
+    // the whole prefix: a Czech mnemonic can start with "zprvu"
+    if (arg1.startsWith("xprv") || arg1.startsWith("tprv")) {
       return this.initialize({
         xPriv: arg1,
         indices: {

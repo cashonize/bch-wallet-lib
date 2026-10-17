@@ -13,7 +13,12 @@ import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";
 import { toTokenaddr } from "../util/deriveCashaddr.js";
 import { getNextUnusedIndex, getNextUnusedIndices } from "../util/hd.js";
-import { GAP_SIZE, HDWallet, RegTestHDWallet } from "./HDWallet.js";
+import {
+  GAP_SIZE,
+  HDWallet,
+  RegTestHDWallet,
+  TestNetHDWallet,
+} from "./HDWallet.js";
 import { CancelFn } from "./interface.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWatchWallet } from "./Watch.js";
@@ -318,6 +323,53 @@ describe("HDWallet", () => {
     expect(() => uninitializedWallet.toDbString()).toThrowError(
       "HDWallet has no mnemonic, xPriv or xPub to serialize",
     );
+  });
+
+  it("restores an xprv, tprv or xpub walletId", async () => {
+    const mnemonic =
+      "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
+    const fromSeed = await HDWallet.fromSeed(mnemonic);
+
+    const xPrivWallet = await HDWallet.fromXPriv(expectedXprv);
+    const xPrivRestored = await HDWallet.fromId(xPrivWallet.toDbString());
+    expect(xPrivRestored.mnemonic).toBeUndefined();
+    expect(xPrivRestored.xPriv).toBe(expectedXprv);
+    expect(xPrivRestored.toDbString()).toBe(xPrivWallet.toDbString());
+    expect(xPrivRestored.getDepositAddress(0)).toBe(
+      fromSeed.getDepositAddress(0),
+    );
+
+    const xPubWallet = await HDWallet.fromXPub(expectedXpub);
+    const xPubRestored = await HDWallet.fromId(xPubWallet.toDbString());
+    expect(xPubRestored.xPriv).toBeUndefined();
+    expect(xPubRestored.xPub).toBe(expectedXpub);
+    expect(xPubRestored.toDbString()).toBe(xPubWallet.toDbString());
+
+    const testnetSeed = await TestNetHDWallet.fromSeed(mnemonic);
+    const tPriv = testnetSeed.xPriv;
+    expect(tPriv.startsWith("tprv")).toBe(true);
+    const tPrivWallet = await TestNetHDWallet.fromXPriv(tPriv);
+    const tPrivRestored = await TestNetHDWallet.fromId(
+      tPrivWallet.toDbString(),
+    );
+    expect(tPrivRestored.toDbString()).toBe(`hd:testnet:${tPriv}:0:0`);
+    expect(tPrivRestored.getDepositAddress(0)).toBe(
+      testnetSeed.getDepositAddress(0),
+    );
+    // an xprv id is not one of a testnet wallet's
+    await expect(
+      TestNetHDWallet.fromId(`hd:testnet:${expectedXprv}:0:0`),
+    ).rejects.toThrow("does not match wallet network");
+  });
+
+  it("restores a mnemonic walletId whose first word starts like an xprv", async () => {
+    // a Czech mnemonic, the only BIP39 word with "prv" at index 1
+    const mnemonic =
+      "zprvu abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace adresa";
+    const wallet = await HDWallet.fromSeed(mnemonic);
+    const restored = await HDWallet.fromId(wallet.toDbString());
+    expect(restored.mnemonic).toBe(mnemonic);
+    expect(restored.getDepositAddress(0)).toBe(wallet.getDepositAddress(0));
   });
 
   it("Get next unused indices", () => {

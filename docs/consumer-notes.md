@@ -65,7 +65,7 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
 Done in round 2 and moved to section 4: reserved coins out of every spend (`excludeUtxoIds`, `ensureUtxos` inside the pool), the exchange-rate fallback, request validation, cheaper history.
 
 1. Done in round 3, moved to section 4 (the provider chosen at construction).
-2. **Saving constructs nothing.** `replaceNamed` (and `named` when it creates) constructs the wallet, and construction subscribes: the chipnet copy Cashonize stores of every new wallet subscribes on chipnet, and an import's two copies do the same. Add a store-only `saveNamedWallet(name, walletId, dbName)`. The `namedExists` half is done: the free `namedWalletExists(name, dbName?)` constructs nothing (round 3).
+2. Done in round 3, moved to section 4 (saving constructs nothing).
 3. Done on the app side, moved to section 4 (an address scan that constructs no wallets).
 4. **Explicit coins in token operations.**
    - A `genesisInputs` option on `tokenGenesis` that throws if the coin isn't available (today: narrow with `utxoIds` and rely on order).
@@ -73,7 +73,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
    - The outpoint of each requested output in `SendResponse`.
 5. **Public HD address info.** Add `addressInfo(branch, index)` returning `{address, tokenAddress, publicKeyHash, used, txCount, utxos}`, and make `getUsedAddresses(branch)` public. Also derive addresses on untracked branches, such as the defi chain 7, without counting them in the balance. Cashonize reads `walletCache` and the raw history maps directly (`addressRows.ts`, `hdAddresses.vue`, `hdAddressSelect.vue`, `wizSigning.ts`, `cauldronPools.ts`).
 6. Done in round 3: typed errors for a `utxoIds` coin not in the wallet, the IndexedDB cache, walletIds and WIFs (the WIF rows are in section 4). The relay-fee setting errors stay plain `Error`s: they are programmer errors.
-7. **Storage helpers that don't stop at one bad row.** `pruneWalletCaches` throws "Not a stored wallet id" on one unreadable stored id, which blocks every later prune; skip such ids (Cashonize's old prune did). `getNamedWalletId` returns `''` for an empty stored id; return `undefined`.
+7. Done in round 3, moved to section 4 (storage helpers that skip a bad row).
 8. Done in round 3: `tokenBurn` allows exactly what it burns, one NFT per request that destroys one and never an NFT it brings back, and every NFT on a coin it spends for fungible tokens comes back.
 9. **History.** Let `getRawTransactions` and `getHeaders` fail per item; one failure still rejects the whole call. An HD wallet's address discovery still subscribes, and fetches for, every address of a gap extension at once.
 10. **Smaller additions.**
@@ -111,6 +111,8 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 | `DefaultProvider.servers` set before the first wallet is constructed                                                | `fromId(id, {provider})`, `named(name, {provider})` and the other factories start the wallet on that provider, creating no global one (round 3)                                             |
 | `scanDerivationPaths` building ~83 wallets that each subscribe and are never stopped                                | The scan derives each path's addresses with `getXPubKey` and `getAddrsByXpubKey` and asks `getNetworkProvider(…).getHistory` directly, building no wallet (Cashonize `e747c92`)             |
 | Comments about `UseLocalStorageCache` and `DefaultCurrency` being unsafe                                            | `UseLocalStorageCache` is removed; the rate fix (#262)                                                                                                                                      |
+| `replaceNamed(…).stop()` storing the chipnet copy of a new wallet and an import's copies                            | `saveNamedWallet(name, walletId, dbName)` writes the same row and constructs nothing (round 3)                                                                                              |
+| An unreadable stored id blocking `pruneWalletCaches`; `''` from `getNamedWalletId`                                  | `pruneWalletCaches` skips it and returns its position; an empty id reads as `undefined` (round 3)                                                                                           |
 
 ## 5. API breaks Cashonize will hit
 

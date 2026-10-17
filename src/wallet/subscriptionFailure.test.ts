@@ -22,7 +22,7 @@ const onUnhandled = (reason: unknown) => unhandled.push(reason);
 
 beforeEach(async () => {
   provider = new MockNetworkProvider();
-  await provider.ready();
+  await provider.connect();
   refuse = {
     address: false,
     addresses: new Set(),
@@ -349,8 +349,14 @@ describe("a fetch that fails during HD address discovery", () => {
       await delay(100);
       return cancel;
     };
+    // the first fetch is still in flight when the move fails, whichever provider it went to
+    const getUtxos = provider.getUtxos.bind(provider);
+    provider.getUtxos = async (...args) => {
+      await delay(200);
+      return getUtxos(...args);
+    };
     const newProvider = new MockNetworkProvider();
-    await newProvider.ready();
+    await newProvider.connect();
     let refuseNew = true;
     const subscribeNew = newProvider.subscribeToAddress.bind(newProvider);
     newProvider.subscribeToAddress = async (...args) => {

@@ -546,7 +546,7 @@ export default class ElectrumNetworkProvider {
     method: string,
     parameters: unknown[] = [],
   ): Promise<T> {
-    await this.ready();
+    await this.connect();
     return this.transport.request(method, parameters) as Promise<T>;
   }
 
@@ -555,7 +555,7 @@ export default class ElectrumNetworkProvider {
     parameters: unknown[],
     callback: (data: any) => unknown,
   ): Promise<CancelFn> {
-    await this.ready();
+    await this.connect();
 
     // a callback's throw or rejection is reported, and it stays subscribed
     const unsubscribe = await this.transport.subscribe(
@@ -569,10 +569,6 @@ export default class ElectrumNetworkProvider {
       await unsubscribe();
       this.subscriptions--;
     };
-  }
-
-  async ready(): Promise<void> {
-    return this.connect();
   }
 
   /** Connect to the server; resolves when connected, rejects when no connection can be made. */

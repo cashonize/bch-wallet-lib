@@ -216,7 +216,7 @@ describe("decodeTransaction outputs", () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const utxo = (await alice.getUtxos())[0];
     const otherChain = await createMockProvider();
-    await otherChain.ready();
+    await otherChain.connect();
     await expect(
       decodeTransaction(utxo.txid, false, undefined, { provider: otherChain }),
     ).rejects.toThrowError("might not exist");

@@ -19,7 +19,7 @@ const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 describe("getRawTransactions and getHeaders fan out bounded", () => {
   test("at most 10 requests in flight by default, one request per item", async () => {
     const provider = await createMockProvider();
-    await provider.ready();
+    await provider.connect();
     const txIds = await provider.mine(address, 25);
     const heights = Array.from({ length: 25 }, (_, i) => 201 + i);
 
@@ -45,7 +45,7 @@ describe("getRawTransactions and getHeaders fan out bounded", () => {
 
   test("the concurrency option overrides the default", async () => {
     const provider = await createMockProvider();
-    await provider.ready();
+    await provider.connect();
     const txIds = await provider.mine(address, 12);
 
     const { counts, restore } = countRequests(provider);
@@ -61,7 +61,7 @@ describe("getRawTransactions and getHeaders fan out bounded", () => {
 
   test("one missing transaction still rejects the whole call", async () => {
     const provider = await createMockProvider();
-    await provider.ready();
+    await provider.connect();
     const txIds = await provider.mine(address, 3);
 
     await expect(

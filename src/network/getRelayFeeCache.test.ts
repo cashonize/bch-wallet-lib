@@ -106,7 +106,7 @@ test.each([NaN, -1, Infinity, -Infinity, "5", null])(
 // the fee the transaction paid and its size
 async function sendWithRelayFee(relayFeePerKbInCoins: number) {
   const provider = providerWithRelayFee(relayFeePerKbInCoins);
-  await provider.ready();
+  await provider.connect();
   setGlobalProvider(Network.REGTEST, provider);
   try {
     const alice = await RegTestWallet.newRandom();

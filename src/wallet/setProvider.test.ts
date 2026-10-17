@@ -18,8 +18,8 @@ let newProvider: MockNetworkProvider;
 beforeEach(async () => {
   oldProvider = new MockNetworkProvider();
   newProvider = new MockNetworkProvider();
-  await oldProvider.ready();
-  await newProvider.ready();
+  await oldProvider.connect();
+  await newProvider.connect();
   setGlobalProvider(Network.REGTEST, oldProvider);
 });
 afterEach(() => {
@@ -138,7 +138,7 @@ describe("setProvider", () => {
 
     let calls = 0;
     const flaky = new MockNetworkProvider();
-    await flaky.ready();
+    await flaky.connect();
     const subscribeToAddress = flaky.subscribeToAddress.bind(flaky);
     flaky.subscribeToAddress = async (...args) => {
       if (++calls === 5) throw new Error("subscription refused");

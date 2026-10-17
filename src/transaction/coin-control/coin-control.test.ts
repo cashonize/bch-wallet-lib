@@ -313,7 +313,7 @@ describe("coin-control: fee", () => {
 describe("coin-control: end-to-end via mock provider", () => {
   test("selectLargestFirst affects which UTXO funds the transaction", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -355,7 +355,7 @@ describe("coin-control: end-to-end via mock provider", () => {
 
   test("outputOrderBip69 reorders outputs in the broadcast transaction", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -392,7 +392,7 @@ describe("coin-control: end-to-end via mock provider", () => {
 
   test("feeAbsolute is honoured by the builder", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -418,7 +418,7 @@ describe("coin-control: end-to-end via mock provider", () => {
 
   test("custom inputOrdering callback is invoked with the selected inputs", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -452,7 +452,7 @@ describe("coin-control: end-to-end via mock provider", () => {
 
   test("custom outputOrdering callback receives the change output index", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -485,7 +485,7 @@ describe("coin-control: end-to-end via mock provider", () => {
 
   test("custom outputOrdering: changeOutputIndex is undefined when no change", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -513,7 +513,7 @@ describe("coin-control: end-to-end via mock provider", () => {
 
   test("custom fee callback receives the encoded tx size", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -545,7 +545,7 @@ describe("coin-control: end-to-end via mock provider", () => {
 
   test("custom coinSelection callback is invoked", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {

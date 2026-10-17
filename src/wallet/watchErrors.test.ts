@@ -18,7 +18,7 @@ const onUnhandled = (reason: unknown) => unhandled.push(reason);
 
 beforeEach(async () => {
   provider = new MockNetworkProvider();
-  await provider.ready();
+  await provider.connect();
   refuseAddress = false;
   const subscribeToAddress = provider.subscribeToAddress.bind(provider);
   provider.subscribeToAddress = async (...args) => {

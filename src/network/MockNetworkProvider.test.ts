@@ -27,7 +27,7 @@ describe("MockNetworkProvider", () => {
 
   test("should get balance", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, randomUtxo({ satoshis: 50000n }));
@@ -39,7 +39,7 @@ describe("MockNetworkProvider", () => {
 
   test("should get utxos", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, randomUtxo({ satoshis: 10000n }));
@@ -51,7 +51,7 @@ describe("MockNetworkProvider", () => {
 
   test("should get utxos with tokens", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(
@@ -74,7 +74,7 @@ describe("MockNetworkProvider", () => {
 
   test("should subscribe to address and receive initial status", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     const received: Array<[string, string | null]> = [];
@@ -91,7 +91,7 @@ describe("MockNetworkProvider", () => {
 
   test("should subscribe and get non-null status when funded", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, randomUtxo({ satoshis: 50000n }));
@@ -109,7 +109,7 @@ describe("MockNetworkProvider", () => {
 
   test("should get history", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, {
@@ -127,7 +127,7 @@ describe("MockNetworkProvider", () => {
 
   test("should get block height and header", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     await provider.setBlockHeight(300);
 
     const height = await provider.getBlockHeight();
@@ -139,7 +139,7 @@ describe("MockNetworkProvider", () => {
 
   test("should reset state", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, randomUtxo());
@@ -151,7 +151,7 @@ describe("MockNetworkProvider", () => {
 
   test("should work as global provider for wallets", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -179,7 +179,7 @@ describe("MockNetworkProvider", () => {
 
   test("should send BCH between wallets", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -212,7 +212,7 @@ describe("MockNetworkProvider", () => {
 
   test("should send multiple outputs", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -241,7 +241,7 @@ describe("MockNetworkProvider", () => {
 
   test("should chain transactions (send, then send again)", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -274,14 +274,14 @@ describe("MockNetworkProvider", () => {
 
   test("should reject invalid transactions", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
 
     await expect(provider.sendRawTransaction("deadbeef")).rejects.toThrow();
   });
 
   test("should send fungible tokens", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -321,7 +321,7 @@ describe("MockNetworkProvider", () => {
 
   test("should send NFTs", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {

@@ -53,12 +53,12 @@ export class MockNetworkProvider extends ElectrumNetworkProvider {
   // --- Test helpers ---
 
   async addUtxo(address: string, utxo: Omit<Utxo, "address">): Promise<void> {
-    await this.ready();
+    await this.connect();
     await this.mc.request("test.add_utxo", [address, utxo]);
   }
 
   override async mine(cashaddr: string, blocks: number): Promise<string[]> {
-    await this.ready();
+    await this.connect();
     const result = (await this.mc.request("test.mine", [cashaddr, blocks])) as {
       height: number;
       coinbaseTxids: string[];
@@ -67,12 +67,12 @@ export class MockNetworkProvider extends ElectrumNetworkProvider {
   }
 
   async setBlockHeight(height: number): Promise<void> {
-    await this.ready();
+    await this.connect();
     await this.mc.request("test.set_chain_tip", [height, 1700000000]);
   }
 
   async reset(): Promise<void> {
-    await this.ready();
+    await this.connect();
     await this.mc.request("test.reset", []);
     await this.mc.request("test.set_chain_tip", [200, 1700000000]);
   }
@@ -80,7 +80,7 @@ export class MockNetworkProvider extends ElectrumNetworkProvider {
   async seedAlice(): Promise<void> {
     const address = process.env.ADDRESS;
     if (!address) return;
-    await this.ready();
+    await this.connect();
     for (let i = 0; i < 110; i++) {
       await this.mc.request("test.add_utxo", [
         address,
@@ -106,7 +106,7 @@ export async function createMockProvider(): Promise<MockNetworkProvider> {
 /** A mock chain as the global regtest provider, funding the address in `process.env.ADDRESS`. */
 export async function initMockProvider(): Promise<MockNetworkProvider> {
   const provider = await createMockProvider();
-  await provider.ready();
+  await provider.connect();
   await provider.seedAlice();
   setGlobalProvider(Network.REGTEST, provider);
   return provider;

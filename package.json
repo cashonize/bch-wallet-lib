@@ -23,10 +23,6 @@
       "types": "./dist/indexeddb/index.d.ts",
       "import": "./dist/indexeddb/index.js"
     },
-    "./encrypted-storage": {
-      "types": "./dist/db/EncryptedStorageProvider.d.ts",
-      "import": "./dist/db/EncryptedStorageProvider.js"
-    },
     "./coin-control": {
       "types": "./dist/transaction/coin-control/index.d.ts",
       "import": "./dist/transaction/coin-control/index.js"

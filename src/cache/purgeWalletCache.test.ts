@@ -4,8 +4,6 @@ import { tmpdir } from "os";
 import path from "path";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { Config } from "../config.js";
-import EncryptedStorageProvider from "../db/EncryptedStorageProvider.js";
-import StorageProvider from "../db/StorageProvider.js";
 import IndexedDBProvider from "../indexeddb/IndexedDBProvider.js";
 import { BaseWallet, deleteNamedWallet } from "../wallet/Base.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
@@ -167,30 +165,6 @@ describe.each(["indexeddb", "localstorage"] as const)(
             "kept",
           ]);
           await db.close();
-        } finally {
-          BaseWallet.StorageProvider = prevProvider;
-        }
-      }));
-
-    test("deleteNamedWallet purges the cache record of an encrypted row", () =>
-      withCacheBackend(backend, async (storage) => {
-        const prevProvider = BaseWallet.StorageProvider;
-        BaseWallet.StorageProvider = EncryptedStorageProvider.wrapProvider(
-          IndexedDBProvider,
-          "passphrase",
-          { iterations: 1 },
-        ) as unknown as typeof StorageProvider;
-        const dbName = `delete-encrypted-${Math.random()}`;
-        try {
-          const wallet = await RegTestHDWallet.named("hd", dbName);
-          await wallet.walletCache.persist(true);
-          await wallet.stop();
-          const key = `walletCache-${cacheIdOf(wallet)}`;
-          expect(await storage.getItem(key)).not.toBeNull();
-
-          await deleteNamedWallet("hd", dbName);
-
-          expect(await storage.getItem(key)).toBeNull();
         } finally {
           BaseWallet.StorageProvider = prevProvider;
         }

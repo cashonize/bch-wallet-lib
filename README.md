@@ -8,13 +8,12 @@ Status: early, not yet published.
 
 ## Entry points
 
-| Import                             | Contents                                                    |
-| ---------------------------------- | ----------------------------------------------------------- |
-| `bch-wallet-lib`                   | wallets, transactions, history, network provider, utilities |
-| `bch-wallet-lib/indexeddb`         | `IndexedDBProvider`, wallet storage for browsers            |
-| `bch-wallet-lib/encrypted-storage` | `EncryptedStorageProvider`, encrypts stored wallet ids      |
-| `bch-wallet-lib/coin-control`      | coin selection, input and output ordering, fee strategies   |
-| `bch-wallet-lib/mock`              | `MockNetworkProvider`, the in-memory chain for tests        |
+| Import                        | Contents                                                    |
+| ----------------------------- | ----------------------------------------------------------- |
+| `bch-wallet-lib`              | wallets, transactions, history, network provider, utilities |
+| `bch-wallet-lib/indexeddb`    | `IndexedDBProvider`, wallet storage for browsers            |
+| `bch-wallet-lib/coin-control` | coin selection, input and output ordering, fee strategies   |
+| `bch-wallet-lib/mock`         | `MockNetworkProvider`, the in-memory chain for tests        |
 
 ## Development
 

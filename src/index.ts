@@ -5,8 +5,6 @@ export type { WalletDbEntryI } from "./db/interface.js";
 export { pruneWalletCaches, purgeWalletCache } from "./cache/walletCache.js";
 // db
 export { default as StorageProvider } from "./db/StorageProvider.js";
-// EncryptedStorageProvider is available via the sub-entry "mainnet-js/encrypted-storage"
-// so it stays out of the main bundle for consumers that don't use it.
 // Enum
 export { NetworkType, UnitEnum } from "./enum.js";
 // history

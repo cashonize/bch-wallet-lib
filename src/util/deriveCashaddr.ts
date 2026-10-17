@@ -61,7 +61,7 @@ export function toTokenaddr(address: string): string {
   }).address;
 }
 
-export function isTokenaddr(address: string): boolean {
+function isTokenaddr(address: string): boolean {
   const result = decodeAddress(address);
 
   return result.type.endsWith("WithTokens");

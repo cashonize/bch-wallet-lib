@@ -477,15 +477,6 @@ export class WatchWallet extends BaseWallet {
 }
 
 /**
- * Class to manage a testnet watch wallet.
- */
-export class TestNetWatchWallet extends WatchWallet {
-  constructor(name = "", network = NetworkType.Testnet) {
-    super(name, network);
-  }
-}
-
-/**
  * Class to manage a regtest watch wallet.
  */
 export class RegTestWatchWallet extends WatchWallet {

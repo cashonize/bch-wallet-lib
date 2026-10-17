@@ -10,6 +10,7 @@
     "dist",
     "src/**/*.test.ts",
     "src/**/*.test.browser.ts",
-    "src/network/MockNetworkProvider.ts"
+    "src/network/MockNetworkProvider.ts",
+    "src/network/Connection.ts"
   ]
 }

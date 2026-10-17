@@ -68,8 +68,6 @@ import {
 
 export const placeholderCashAddr =
   "bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqfnhks603";
-export const placeholderTokenAddr =
-  "bitcoincash:zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqweyg7usz";
 
 interface WalletSubscription {
   subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>;

@@ -7,8 +7,5 @@ export const DUST_UTXO_THRESHOLD = 546n;
 // outputs and counting each whole script (BCHN's -datacarriersize default)
 export const MAX_OP_RETURN_BYTES = 223;
 
-// Current chained tx limit
-export const MEMPOOL_CHAIN_LIMIT = 50;
-
 // time in milliseconds to cache the usd exchange rate
 export const EXCHANGE_RATE_TTL = 250000;

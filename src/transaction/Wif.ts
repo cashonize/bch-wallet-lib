@@ -125,7 +125,7 @@ export async function buildP2pkhNonHdTransaction({
     throw new Error(tokenValidationResult);
   }
 
-  return { transaction: result.transaction, sourceOutputs: sourceOutputs };
+  return { transaction: result.transaction };
 }
 
 export function prepareInputs({

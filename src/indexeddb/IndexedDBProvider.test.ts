@@ -134,6 +134,17 @@ test("getNamedWalletId reads the mainnet database by default and returns undefin
   await expect(getNamedWalletId(`${name}-missing`)).resolves.toBeUndefined();
 });
 
+test("getNamedWalletId returns undefined for a row holding an empty id", async () => {
+  BaseWallet.StorageProvider = IndexedDBProvider;
+  const name = `named-empty-${Math.random()}`;
+  const db = new IndexedDBProvider("bchtest");
+  await db.init();
+  await db.addWallet(name, "");
+  await db.close();
+
+  await expect(getNamedWalletId(name, "bchtest")).resolves.toBeUndefined();
+});
+
 test("a named walletId may name only the database of its network", async () => {
   BaseWallet.StorageProvider = IndexedDBProvider;
   const name = `named-db-${Math.random()}`;

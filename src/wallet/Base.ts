@@ -1482,7 +1482,8 @@ export const _checkContextSafety = function (network: NetworkType) {
  * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
  *
  * @throws {Error} if no StorageProvider is configured
- * @returns the stored wallet id, or undefined if there is no wallet of that name
+ * @returns the stored wallet id, or undefined if there is no wallet of that name or its row
+ * holds an empty id
  */
 export async function getNamedWalletId(
   name: string,
@@ -1499,7 +1500,8 @@ export async function getNamedWalletId(
     await db.init();
     let savedWalletRecord = await db.getWallet(name);
     await db.close();
-    return savedWalletRecord?.wallet;
+    // an empty id names no wallet, as a missing row does
+    return savedWalletRecord?.wallet || undefined;
   } else {
     throw Error(
       "No database was available or configured to store the named wallet.",

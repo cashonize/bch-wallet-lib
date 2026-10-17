@@ -10,8 +10,14 @@ export class WebStorageCache implements CacheProvider {
     return;
   }
 
+  // Writes are best effort: localStorage holds about 5 MB per origin, and a full one (or one the
+  // browser blocks) must not fail the request whose result was being cached
   async setItem(key: string, value: string): Promise<void> {
-    localStorage.setItem(KEY_PREFIX + key, value);
+    try {
+      localStorage.setItem(KEY_PREFIX + key, value);
+    } catch {
+      // not cached
+    }
   }
 
   async getItem(key: string): Promise<string | null> {
@@ -27,8 +33,12 @@ export class WebStorageCache implements CacheProvider {
   }
 
   async setItems(entries: [string, string][]): Promise<void> {
-    for (const [key, value] of entries) {
-      localStorage.setItem(KEY_PREFIX + key, value);
+    try {
+      for (const [key, value] of entries) {
+        localStorage.setItem(KEY_PREFIX + key, value);
+      }
+    } catch {
+      // the rest would not fit either
     }
   }
 

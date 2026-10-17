@@ -456,7 +456,7 @@ export class WatchWallet extends BaseWallet {
   /**
    * getHistory gets transaction history of this wallet with most data decoded and ready to present to user
    * @note balance calculations are valid only if querying to the blockchain tip (`toHeight` === -1, `count` === -1)
-   * @note this method is heavy on network calls, if invoked in browser use of cache is advised, @see `Config.UseLocalStorageCache`
+   * @note this method is heavy on network calls, if invoked in browser use of cache is advised, @see `Config.UseIndexedDBCache`
    * @note this method tries to recreate the history tab view of Electron Cash wallet, however, it may not be 100% accurate if the tnransaction value changes are the same in the same block (ordering)
    *
    * @param unit optional, BCH or currency unit to present balance and balance changes. If unit is currency like USD or EUR, balances will be subject to possible rounding errors. Default 0

@@ -40,17 +40,15 @@ function mapToElectrumRawTransaction(
     locktime: transaction.locktime,
     version: transaction.version,
     size: txHex.length / 2,
-    vin: transaction.inputs.map(
-      (input): ElectrumRawTransactionVin => ({
-        scriptSig: {
-          asm: "",
-          hex: binToHex(input.unlockingBytecode),
-        },
-        sequence: input.sequenceNumber,
-        txid: binToHex(input.outpointTransactionHash),
-        vout: input.outpointIndex,
-      }),
-    ),
+    vin: transaction.inputs.map((input): ElectrumRawTransactionVin => ({
+      scriptSig: {
+        asm: "",
+        hex: binToHex(input.unlockingBytecode),
+      },
+      sequence: input.sequenceNumber,
+      txid: binToHex(input.outpointTransactionHash),
+      vout: input.outpointIndex,
+    })),
     vout: transaction.outputs.map(
       (output, index): ElectrumRawTransactionVout => ({
         n: index,

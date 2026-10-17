@@ -52,8 +52,10 @@ export interface ElectrumRawTransactionVin {
 export type ElectrumRawTransactionVinWithValues = ElectrumRawTransactionVin &
   ElectrumRawTransactionVout;
 
-export interface ElectrumRawTransactionWithInputValues
-  extends Omit<ElectrumRawTransaction, "vin"> {
+export interface ElectrumRawTransactionWithInputValues extends Omit<
+  ElectrumRawTransaction,
+  "vin"
+> {
   vin: ElectrumRawTransactionVinWithValues[];
 }
 

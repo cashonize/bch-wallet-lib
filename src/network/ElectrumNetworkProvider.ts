@@ -36,8 +36,7 @@ type CachedRawTransaction = ElectrumRawTransaction & { fetchHeight: number };
 
 export default class ElectrumNetworkProvider<
   S extends Schema = ElectrumCashSchema,
-> implements NetworkProvider
-{
+> implements NetworkProvider {
   public transport: Transport<S>;
   public subscriptions: number = 0;
   private currentHeight: number = 0;

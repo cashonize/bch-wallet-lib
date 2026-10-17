@@ -199,9 +199,7 @@ export class EncryptedStorageProvider implements StorageProvider {
     wrappedProvider: new (dbName: string) => StorageProvider,
     passphrase: string,
     options?: { iterations?: number },
-  ): new (
-    dbName: string,
-  ) => EncryptedStorageProvider {
+  ): new (dbName: string) => EncryptedStorageProvider {
     return class BoundEncryptedStorageProvider extends EncryptedStorageProvider {
       constructor(dbName: string) {
         super(new wrappedProvider(dbName), passphrase, options);

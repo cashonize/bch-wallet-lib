@@ -261,4 +261,44 @@ describe("Exchange rate tests", () => {
       delete globalThis.RATE;
     }
   });
+  test("a NaN, 0 or negative rate from the source is refused and not cached", async () => {
+    let answer: unknown = 400;
+    Config.GetExchangeRateFn = async () => answer as number;
+    delete globalThis.RATE;
+
+    try {
+      for (const bad of [NaN, 0, -1, Infinity, "400", undefined]) {
+        answer = bad;
+        await expect(ExchangeRate.getQuote("usd")).rejects.toThrow(
+          "no usable rate",
+        );
+        expect(globalThis.RATE?.usd).toBeUndefined();
+      }
+
+      // with a last known rate, staleOnError falls back to it
+      answer = 400;
+      await ExchangeRate.getQuote("usd");
+      globalThis.RATE.usd.ttl = Date.now() - 1;
+      answer = 0;
+      expect(
+        await ExchangeRate.getQuote("usd", { staleOnError: true }),
+      ).toMatchObject({ rate: 400, stale: true });
+      expect(globalThis.RATE.usd.rate).toBe(400);
+      await expect(ExchangeRate.getQuote("usd")).rejects.toThrow(
+        "no usable rate",
+      );
+
+      // nor is a 0 rate in the cache served
+      globalThis.RATE.usd = {
+        ...globalThis.RATE.usd,
+        rate: 0,
+        ttl: Date.now() + 100000,
+      };
+      answer = 500;
+      expect((await ExchangeRate.getQuote("usd")).rate).toBe(500);
+    } finally {
+      Config.GetExchangeRateFn = undefined;
+      delete globalThis.RATE;
+    }
+  });
 });

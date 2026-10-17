@@ -103,15 +103,16 @@ function currentSourceTag(): string {
   return `${processId}:${rateSourceChanges}`;
 }
 
+// a source answering NaN, 0 or a negative number (e.g. a missing field, a broken response) has no rate
+function isRate(rate: unknown): rate is number {
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0;
+}
+
 function isUsable(
   entry: ExchangeRateI | undefined,
   sourceTag: string,
 ): entry is ExchangeRateI {
-  if (
-    typeof entry?.rate !== "number" ||
-    !Number.isFinite(entry.rate) ||
-    typeof entry.ttl !== "number"
-  ) {
+  if (!entry || !isRate(entry.rate) || typeof entry.ttl !== "number") {
     return false;
   }
   return rateSourceChanges === 0 || entry.source === sourceTag;
@@ -132,6 +133,11 @@ async function getQuote(
   let freshRate: number;
   try {
     freshRate = await fetchRate(source, symbol);
+    if (!isRate(freshRate)) {
+      throw new Error(
+        `The exchange rate source returned no usable rate for '${symbol}': ${String(freshRate)}`,
+      );
+    }
   } catch (error) {
     if (options.staleOnError) {
       const cached = await cache.read(symbol).catch(() => undefined);

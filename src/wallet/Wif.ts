@@ -502,7 +502,7 @@ export class Wallet extends WatchWallet {
    * @param  {boolean} discardChange=false
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async encodeTransaction(
+  protected async encodeTransaction(
     requests:
       | SendRequest
       | TokenSendRequest

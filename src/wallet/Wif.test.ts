@@ -578,21 +578,21 @@ describe(`Watch only Wallets`, () => {
     },
   );
 
-  test("Should encode and submit a transaction", async () => {
+  test("Should build without broadcasting and submit a transaction", async () => {
     const aliceWif = `wif:regtest:${process.env.PRIVATE_WIF!}`;
     const aliceWallet = await RegTestWallet.fromId(aliceWif);
     const bobWallet = await RegTestWallet.newRandom();
 
-    const { encodedTransaction } = await aliceWallet.encodeTransaction([
-      {
-        cashaddr: bobWallet.cashaddr!,
-        value: 2000n,
-      },
-    ]);
-    expect(encodedTransaction.length).toBeGreaterThan(0);
+    const built = await aliceWallet.send(
+      { cashaddr: bobWallet.cashaddr!, value: 2000n },
+      { broadcast: false },
+    );
+    expect(await bobWallet.getBalance()).toBe(0n);
 
-    const txId = await aliceWallet.submitTransaction(encodedTransaction);
-    expect(txId.length).toBeGreaterThan(0);
+    const txId = await aliceWallet.submitTransaction(
+      hexToBin(built.transaction),
+    );
+    expect(txId).toBe(built.txId);
 
     expect(await bobWallet.getBalance()).toBe(2000n);
   });

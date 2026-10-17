@@ -140,6 +140,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - The tuple form of send requests (`SendRequestArray`): `[cashaddr, value]`, `["OP_RETURN", data]` and `["OP_RETURNB64", base64]` in a request array. `SendRequestType` keeps the object forms. Write `{ cashaddr, value }` and `OpReturnData.fromArray([data])` instead. The number form `[cashaddr, 1000]` threw a `TypeError` ("Cannot convert undefined to a BigInt").
 - `OpReturnData.parse(hex)` and `OpReturnData.from(data)`. `from(data)` becomes `fromArray([data])`; `parse(hex)` becomes `OpReturnData.parseBinary(hexToBin(hex)).map(binToUtf8)` (libauth), and keeping the chunks as bytes is usually what a reader of on-chain data wants. `OpReturnData.fromUint8Array` is no longer public either: build data with `fromArray`, or `new OpReturnData(script)` for a complete OP_RETURN script.
 - The `tokenBurns` send option, which said what a token operation may burn. `tokenGenesis`, `tokenMint` and `tokenBurn` pass it to the token check internally, as before; a `send` burns nothing unless `checkTokenQuantities: false` turns the check off. Nothing to change for a caller that did not set it.
+- `Wallet.encodeTransaction` and `HDWallet.encodeTransaction` are protected, as `BaseWallet.encodeTransaction` already was. They took a raw private key as a parameter. To build a signed transaction without broadcasting it, call `send(requests, { broadcast: false })` and read `transaction`; `submitTransaction(hexToBin(transaction))` broadcasts it later.
 
 ### Changed
 

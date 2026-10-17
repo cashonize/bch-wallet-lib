@@ -53,10 +53,7 @@ describe("Double-spend proof tests", () => {
       await provider2.connect();
 
       // Broadcast the first transaction on server 1
-      const txHash = await provider1.sendRawTransaction(
-        resp1.transaction!,
-        true,
-      );
+      const txHash = await provider1.sendRawTransaction(resp1.transaction!);
 
       // Subscribe to dsproof on server 1
       const dsproofs: DsproofData[] = [];
@@ -70,9 +67,7 @@ describe("Double-spend proof tests", () => {
       );
 
       // Broadcast the conflicting tx on server 2
-      await provider2
-        .sendRawTransaction(resp2.transaction!, false)
-        .catch(() => {});
+      await provider2.sendRawTransaction(resp2.transaction!).catch(() => {});
 
       await delay(5000);
       await cancel();
@@ -129,14 +124,12 @@ describe("Double-spend proof tests", () => {
       });
 
       // Broadcast first tx via alice's provider
-      await alice.submitTransaction(hexToBin(resp1.transaction!), true);
+      await alice.submitTransaction(hexToBin(resp1.transaction!));
 
       // Broadcast conflicting tx via a different server
       const provider2 = await createProvider("testnet", CHIPNET_SERVER_2);
       await provider2.connect();
-      await provider2
-        .sendRawTransaction(resp2.transaction!, false)
-        .catch(() => {});
+      await provider2.sendRawTransaction(resp2.transaction!).catch(() => {});
 
       await delay(5000);
       await cancelWatch();

@@ -591,7 +591,7 @@ describe(`Watch only Wallets`, () => {
     ]);
     expect(encodedTransaction.length).toBeGreaterThan(0);
 
-    const txId = await aliceWallet.submitTransaction(encodedTransaction, true);
+    const txId = await aliceWallet.submitTransaction(encodedTransaction);
     expect(txId.length).toBeGreaterThan(0);
 
     expect(await bobWallet.getBalance()).toBe(2000n);
@@ -640,24 +640,15 @@ describe(`Wallet subscriptions`, () => {
     await bobWallet.sendMax(aliceWallet.cashaddr!);
   });
 
-  test("Should await and skip transaction propagation", async () => {
+  test("Should await transaction propagation", async () => {
     const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bobWallet = await RegTestWallet.newRandom();
 
-    // awaitTransactionPropagation: true -> the balance is updated when the send returns
+    // the balance includes the send when it returns
     const balanceBefore = await aliceWallet.getBalance();
-    await aliceWallet.send([{ cashaddr: bobWallet.cashaddr!, value: 1000n }], {
-      awaitTransactionPropagation: true,
-    });
+    await aliceWallet.send([{ cashaddr: bobWallet.cashaddr!, value: 1000n }]);
     expect(await aliceWallet.getBalance()).toBeLessThan(balanceBefore);
-
-    // awaitTransactionPropagation: false -> send completes without waiting
-    // for the status notification round-trip; we only verify it succeeds.
-    const resp2 = await aliceWallet.send(
-      [{ cashaddr: bobWallet.cashaddr!, value: 1000n }],
-      { awaitTransactionPropagation: false },
-    );
-    expect(resp2.txId).toBeDefined();
+    expect(await bobWallet.getBalance()).toBe(1000n);
   });
 
   test.skipIf(!liveTests)(

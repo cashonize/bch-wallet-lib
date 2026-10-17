@@ -103,7 +103,7 @@ describe("a subscription that cannot be made", () => {
 
   test("rejects sendRawTransaction awaiting propagation", async () => {
     refuse.transaction = true;
-    await expect(provider.sendRawTransaction("00", true)).rejects.toThrow(
+    await expect(provider.sendRawTransaction("00")).rejects.toThrow(
       "subscription refused",
     );
   }, 5000);

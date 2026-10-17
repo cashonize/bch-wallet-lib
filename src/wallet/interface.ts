@@ -47,7 +47,6 @@ export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
   /** coins no input of the spend may use, e.g. reserved ones; ids not in the wallet are ignored, malformed ones throw */
   excludeUtxoIds?: string[] | Utxo[];
-  awaitTransactionPropagation?: boolean;
   checkTokenQuantities?: boolean; // true
   tokenOperation?: "send" | "genesis" | "mint" | "burn"; // undefined. internal use only
   tokenBurns?: TokenBurnAllowance; // undefined. internal use only: what a token operation may burn

@@ -350,23 +350,13 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Broadcast a raw hex transaction.
+   * Broadcast a raw hex transaction and wait until the server reports it.
    * @param txHex The raw transaction hex to be broadcast.
-   * @param awaitPropagation Wait for transaction to be registered in the bitcoind or indexer. If set to false, function returns computed transaction hash immediately.
    * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
    * @returns The transaction ID (hash) corresponding to the broadcast transaction.
    */
-  async sendRawTransaction(
-    txHex: string,
-    awaitPropagation: boolean = true,
-  ): Promise<string> {
+  async sendRawTransaction(txHex: string): Promise<string> {
     const txHash = await getTransactionHash(txHex);
-    if (!awaitPropagation) {
-      this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-        () => {},
-      );
-      return txHash;
-    }
     await waitOnWatch<void>(async (done, { onError }) => {
       const cancel = await this.subscribeToTransaction(txHash, (data) => {
         if (data && data[0] === txHash && data[1] !== null) done();

@@ -1,6 +1,7 @@
 import { Config } from "../config.js";
 import { EXCHANGE_RATE_TTL } from "../constant.js";
 import ExchangeRateProvider from "../db/ExchangeRateProvider.js";
+import { ExchangeRateI } from "../db/interface.js";
 import {
   getRuntimePlatform,
   RuntimePlatform,
@@ -29,59 +30,18 @@ export class ExchangeRate {
   }
 
   static async get(symbol: string, useCache = true) {
-    const platform = getRuntimePlatform();
-    if (platform === RuntimePlatform.browser) {
-      try {
-        return await this.getRateFromLocalStorage(symbol, useCache);
-      } catch {
-        return await this.getRateFromGlobalScope(symbol, useCache);
-      }
-    } else {
-      return await this.getRateFromGlobalScope(symbol, useCache);
-    }
+    return await getRate(platformCache(), symbol, useCache);
   }
 
   static async getRateFromLocalStorage(
     symbol: string,
     useCache = true,
   ): Promise<number> {
-    if (!useCache) {
-      return await getRateFromExchange(symbol);
-    }
-
-    let cache = new ExchangeRateProvider();
-    let cacheRate = await cache.getRate(symbol);
-    if (cacheRate) {
-      // if the cache is still good, return it
-      if (cacheRate.ttl > Date.now()) {
-        return cacheRate.rate;
-      }
-      // else fall through
-    }
-    let freshRate = await getRateFromExchange(symbol);
-    // a rate that cannot be cached (e.g. storage full) is still returned
-    cache.setRate(symbol, freshRate, getTtl()).catch(() => {});
-    return freshRate;
+    return await getRate(localStorageCache, symbol, useCache);
   }
 
   static async getRateFromGlobalScope(symbol, useCache = true) {
-    if (!useCache) {
-      return await getRateFromExchange(symbol);
-    }
-
-    if (globalThis.RATE) {
-      let rateObject = globalThis.RATE;
-      if (symbol in rateObject) {
-        let cachedRate = rateObject[symbol] as ExchangeRate;
-        // If the cache is still good return ie
-        if (cachedRate.ttl > Date.now()) {
-          return cachedRate.rate;
-        }
-      }
-    }
-    let freshRate = await getRateFromExchange(symbol);
-    this.cacheRateInGlobalScope(symbol, freshRate);
-    return freshRate;
+    return await getRate(globalScopeCache, symbol, useCache);
   }
 
   static cacheRateInGlobalScope(symbol, rate) {
@@ -90,8 +50,110 @@ export class ExchangeRate {
       symbol: symbol,
       rate: rate,
       ttl: getTtl(),
+      source: currentSourceTag(),
     };
   }
+}
+
+interface RateCache {
+  read(symbol: string): Promise<ExchangeRateI | undefined>;
+  write(entry: ExchangeRateI): Promise<void>;
+}
+
+const localStorageCache: RateCache = {
+  read: (symbol) => new ExchangeRateProvider().getRate(symbol),
+  write: async (entry) => {
+    await new ExchangeRateProvider().setRate(entry);
+  },
+};
+
+const globalScopeCache: RateCache = {
+  read: async (symbol) => globalThis.RATE?.[symbol],
+  write: async (entry) => {
+    globalThis.RATE ??= {};
+    globalThis.RATE[entry.symbol] = entry;
+  },
+};
+
+// a browser whose localStorage throws (e.g. blocked site data) caches in memory
+const browserCache: RateCache = {
+  read: async (symbol) => {
+    try {
+      return await localStorageCache.read(symbol);
+    } catch {
+      return await globalScopeCache.read(symbol);
+    }
+  },
+  write: async (entry) => {
+    try {
+      await localStorageCache.write(entry);
+    } catch {
+      await globalScopeCache.write(entry);
+    }
+  },
+};
+
+function platformCache(): RateCache {
+  if (getRuntimePlatform() === RuntimePlatform.browser) {
+    return browserCache;
+  }
+  return globalScopeCache;
+}
+
+// Cached rates are tagged with the rate source they came from. Until
+// Config.GetExchangeRateFn changes in this process, every cached rate counts
+// (the persisted ones were written by an earlier run, whose source is unknown);
+// after a change, only rates fetched from the current source in this process.
+const processId = Math.random().toString(36).slice(2);
+const UNSEEN = Symbol("unseen");
+let rateSource: typeof Config.GetExchangeRateFn | typeof UNSEEN = UNSEEN;
+let rateSourceChanges = 0;
+
+function currentSourceTag(): string {
+  const current = Config.GetExchangeRateFn;
+  if (rateSource !== UNSEEN && rateSource !== current) {
+    rateSourceChanges++;
+  }
+  rateSource = current;
+  return `${processId}:${rateSourceChanges}`;
+}
+
+function isUsable(
+  entry: ExchangeRateI | undefined,
+  sourceTag: string,
+): entry is ExchangeRateI {
+  if (
+    typeof entry?.rate !== "number" ||
+    !Number.isFinite(entry.rate) ||
+    typeof entry.ttl !== "number"
+  ) {
+    return false;
+  }
+  return rateSourceChanges === 0 || entry.source === sourceTag;
+}
+
+async function getRate(
+  cache: RateCache,
+  symbol: string,
+  useCache: boolean,
+): Promise<number> {
+  const sourceTag = currentSourceTag();
+  const source = Config.GetExchangeRateFn;
+  if (useCache) {
+    const cached = await cache.read(symbol);
+    if (isUsable(cached, sourceTag) && cached.ttl > Date.now()) {
+      return cached.rate;
+    }
+  }
+
+  const freshRate = await fetchRate(source, symbol);
+  // a rate of a source switched away from while it was fetched is not cached
+  if (useCache && currentSourceTag() === sourceTag) {
+    const entry = { symbol, rate: freshRate, ttl: getTtl(), source: sourceTag };
+    // a rate that cannot be cached (e.g. storage full) is still returned
+    await cache.write(entry).catch(() => {});
+  }
+  return freshRate;
 }
 
 export function getTtl() {
@@ -100,8 +162,15 @@ export function getTtl() {
 
 // Attempt to get the usd rate from some web app
 export async function getRateFromExchange(symbol: string): Promise<number> {
-  if (Config.GetExchangeRateFn) {
-    return await Config.GetExchangeRateFn(symbol);
+  return await fetchRate(Config.GetExchangeRateFn, symbol);
+}
+
+async function fetchRate(
+  source: typeof Config.GetExchangeRateFn,
+  symbol: string,
+): Promise<number> {
+  if (source) {
+    return await source(symbol);
   }
 
   if (symbol.length > 0) {

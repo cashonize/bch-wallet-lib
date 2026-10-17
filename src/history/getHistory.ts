@@ -17,6 +17,21 @@ import { ExchangeRate } from "../rate/ExchangeRate.js";
 import { sanitizeUnit } from "../util/sanitizeUnit.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
 
+// P2S, P2PK and bare multisig have no CashAddress; they get a placeholder like OP_RETURN outputs do
+const historyAddress = (
+  lockingBytecode: Uint8Array,
+  prefix: CashAddressNetworkPrefix,
+): string => {
+  const result = lockingBytecodeToCashAddress({
+    bytecode: lockingBytecode,
+    prefix,
+  });
+  if (typeof result === "string") {
+    return `SCRIPT: ${binToHex(lockingBytecode)}`;
+  }
+  return result.address;
+};
+
 type Transaction = TransactionCommon & {
   size: number;
   blockHeight: number;
@@ -209,12 +224,7 @@ export const getHistory = async ({
       const cached = addressCache[prevoutOutput.lockingBytecode as any];
       let address: string;
       if (!cached) {
-        address = assertSuccess(
-          lockingBytecodeToCashAddress({
-            bytecode: prevoutOutput.lockingBytecode,
-            prefix: prefix,
-          }),
-        ).address;
+        address = historyAddress(prevoutOutput.lockingBytecode, prefix);
         addressCache[prevoutOutput.lockingBytecode as any] = address;
       } else {
         address = cached;
@@ -237,6 +247,9 @@ export const getHistory = async ({
                 : undefined,
             }
           : undefined,
+        outpointTransactionHash: getOutpointHash(input.outpointTransactionHash),
+        outpointIndex: input.outpointIndex,
+        lockingBytecode: binToHex(prevoutOutput.lockingBytecode),
       };
     });
 
@@ -247,12 +260,7 @@ export const getHistory = async ({
         if (output.lockingBytecode[0] === Opcodes.OP_RETURN) {
           address = `OP_RETURN: ${binToHex(output.lockingBytecode)}`;
         } else {
-          address = assertSuccess(
-            lockingBytecodeToCashAddress({
-              bytecode: output.lockingBytecode,
-              prefix: prefix,
-            }),
-          ).address;
+          address = historyAddress(output.lockingBytecode, prefix);
           addressCache[output.lockingBytecode as any] = address;
         }
       } else {
@@ -276,6 +284,7 @@ export const getHistory = async ({
                 : undefined,
             }
           : undefined,
+        lockingBytecode: binToHex(output.lockingBytecode),
       };
     });
 

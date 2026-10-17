@@ -1,3 +1,11 @@
+import {
+  binToHex,
+  cashAddressToLockingBytecode,
+  encodeTransaction,
+  flattenBinArray,
+  hexToBin,
+  Opcodes,
+} from "@bitauth/libauth";
 import { mine } from "../mine/index.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { toBch } from "../util/index.js";
@@ -297,4 +305,117 @@ test("Should handle input and fee from many utxos", async () => {
       ),
     ).toBe(true);
   }
+});
+
+test("Should report outpoints and locking bytecode, and give scripts without an address a placeholder", async () => {
+  const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+  const bob = await RegTestWallet.newRandom();
+  await miner.send({ cashaddr: bob.cashaddr!, value: 10000n });
+  const [funding] = await bob.getUtxos();
+
+  const bobLockingBytecode = (() => {
+    const result = cashAddressToLockingBytecode(bob.cashaddr!);
+    if (typeof result === "string") throw new Error(result);
+    return result.bytecode;
+  })();
+  // P2S, anyone can spend with an empty unlocking bytecode
+  const p2s = Uint8Array.from([Opcodes.OP_1]);
+  const p2pk = flattenBinArray([
+    Uint8Array.from([33]),
+    bob.publicKeyCompressed!,
+    Uint8Array.from([Opcodes.OP_CHECKSIG]),
+  ]);
+  const bareMultisig = flattenBinArray([
+    Uint8Array.from([Opcodes.OP_1, 33]),
+    bob.publicKeyCompressed!,
+    Uint8Array.from([Opcodes.OP_1, Opcodes.OP_CHECKMULTISIG]),
+  ]);
+
+  const unsigned = encodeTransaction({
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: hexToBin(funding.txid),
+        outpointIndex: funding.vout,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: Uint8Array.from([]),
+      },
+    ],
+    outputs: [
+      { lockingBytecode: p2s, valueSatoshis: 2000n },
+      { lockingBytecode: p2pk, valueSatoshis: 2000n },
+      { lockingBytecode: bareMultisig, valueSatoshis: 2000n },
+      { lockingBytecode: bobLockingBytecode, valueSatoshis: 3000n },
+    ],
+  });
+  const signed = await bob.signUnsignedTransaction(unsigned, [
+    {
+      outpointTransactionHash: hexToBin(funding.txid),
+      outpointIndex: funding.vout,
+      sequenceNumber: 0xffffffff,
+      unlockingBytecode: Uint8Array.from([]),
+      lockingBytecode: bobLockingBytecode,
+      valueSatoshis: funding.satoshis,
+    },
+  ]);
+  const scriptsTxId = await bob.submitTransaction(signed);
+
+  // spend the P2S output back to bob, so a history input has no address either
+  const spendTxId = await bob.submitTransaction(
+    encodeTransaction({
+      version: 2,
+      locktime: 0,
+      inputs: [
+        {
+          outpointTransactionHash: hexToBin(scriptsTxId),
+          outpointIndex: 0,
+          sequenceNumber: 0xffffffff,
+          unlockingBytecode: Uint8Array.from([]),
+        },
+      ],
+      outputs: [{ lockingBytecode: bobLockingBytecode, valueSatoshis: 1800n }],
+    }),
+  );
+  await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
+
+  const history = await bob.getHistory();
+  const scriptsTx = history.find((tx) => tx.hash === scriptsTxId)!;
+  const spendTx = history.find((tx) => tx.hash === spendTxId)!;
+
+  expect(scriptsTx.inputs).toEqual([
+    expect.objectContaining({
+      address: bob.cashaddr,
+      outpointTransactionHash: funding.txid,
+      outpointIndex: funding.vout,
+      lockingBytecode: binToHex(bobLockingBytecode),
+    }),
+  ]);
+  expect(
+    scriptsTx.outputs.map(({ address, lockingBytecode }) => ({
+      address,
+      lockingBytecode,
+    })),
+  ).toEqual([
+    { address: `SCRIPT: ${binToHex(p2s)}`, lockingBytecode: binToHex(p2s) },
+    { address: `SCRIPT: ${binToHex(p2pk)}`, lockingBytecode: binToHex(p2pk) },
+    {
+      address: `SCRIPT: ${binToHex(bareMultisig)}`,
+      lockingBytecode: binToHex(bareMultisig),
+    },
+    { address: bob.cashaddr, lockingBytecode: binToHex(bobLockingBytecode) },
+  ]);
+  expect(scriptsTx.valueChange).toBe(3000 - 10000);
+
+  expect(spendTx.inputs).toEqual([
+    expect.objectContaining({
+      address: `SCRIPT: ${binToHex(p2s)}`,
+      value: 2000,
+      outpointTransactionHash: scriptsTxId,
+      outpointIndex: 0,
+      lockingBytecode: binToHex(p2s),
+    }),
+  ]);
+  expect(spendTx.valueChange).toBe(1800);
+  expect(spendTx.fee).toBe(200);
 });

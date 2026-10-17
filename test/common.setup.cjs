@@ -1,6 +1,6 @@
 // test/node.setup.js
-require("dotenv").config({ path: ".env.regtest" });
-require("dotenv").config({ path: ".env.testnet" });
+require("dotenv").config({ path: ".env.regtest", quiet: true });
+require("dotenv").config({ path: ".env.testnet", quiet: true });
 const inspect = require("util").inspect;
 inspect.defaultOptions.depth = 10;
 inspect.defaultOptions.maxArrayLength = 1000;
@@ -46,7 +46,7 @@ module.exports = async function (cwd) {
   }
 
   // ping bchd as a readiness signal, give up and run anyway after 10s
-  for (let i = 0; (await pingBchn()).length > 0 && i < 5; i++) {
+  for (let i = 0; pingBchn().length > 0 && i < 5; i++) {
     console.log("Waiting for bchn node");
     await delay(2000);
   }

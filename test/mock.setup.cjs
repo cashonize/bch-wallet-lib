@@ -4,6 +4,6 @@
  * The mock provider is installed by initProviders() from test/providers.ts.
  */
 if (process.env.USE_MOCK_PROVIDER) {
-  require("dotenv").config({ path: ".env.regtest" });
-  require("dotenv").config({ path: ".env.testnet" });
+  require("dotenv").config({ path: ".env.regtest", quiet: true });
+  require("dotenv").config({ path: ".env.testnet", quiet: true });
 }

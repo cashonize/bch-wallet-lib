@@ -6,9 +6,9 @@ import { defineConfig } from "vitest/config";
 const root = path.resolve(import.meta.dirname, "..");
 
 // Load env vars before define so they're available at config time
-dotenv.config({ path: path.resolve(root, ".env.regtest") });
+dotenv.config({ path: path.resolve(root, ".env.regtest"), quiet: true });
 try {
-  dotenv.config({ path: path.resolve(root, ".env.testnet") });
+  dotenv.config({ path: path.resolve(root, ".env.testnet"), quiet: true });
 } catch {}
 
 export default defineConfig({

@@ -166,7 +166,6 @@ describe(`Test cashtokens`, () => {
     expect(await getTokenBalance(alice, category)).toBe(275n);
     expect(await getTokenBalance(bob, category)).toBe(25n);
     expect(await getNftTokenBalance(bob, category)).toBe(0);
-    expect(await getNftTokenBalance(bob, category)).toBe(0);
 
     await alice.send([
       new TokenSendRequest({
@@ -582,10 +581,8 @@ describe(`Test cashtokens`, () => {
       binToHex(utf8ToBin("burn")),
     );
     expect(await getTokenBalance(alice, category)).toBe(3n);
-    expect(await getTokenBalance(alice, category)).toBe(3n);
     const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(category).toEqual(response.categories![0]);
 
@@ -618,11 +615,9 @@ describe(`Test cashtokens`, () => {
       "burn",
     );
     expect(await getTokenBalance(alice, category)).toBe(0n);
-    expect(await getTokenBalance(alice, category)).toBe(0n);
     const nftTokenUtxos = await getTokenUtxos(alice, category);
     expect(nftTokenUtxos.length).toBe(0);
     expect(category).toEqual(nftResponse.categories![0]);
-    expect(await getNftTokenBalance(alice, category)).toBe(0);
     expect(await getNftTokenBalance(alice, category)).toBe(0);
   });
 

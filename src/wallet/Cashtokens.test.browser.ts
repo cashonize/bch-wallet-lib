@@ -353,10 +353,8 @@ describe(`Cashtokens should function in the browser`, () => {
       binToHex(utf8ToBin("burn")),
     );
     expect(await getTokenBalance(alice, category)).toBe(3n);
-    expect(await getTokenBalance(alice, category)).toBe(3n);
     const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(category).toEqual(response.categories![0]);
 
@@ -389,12 +387,11 @@ describe(`Cashtokens should function in the browser`, () => {
       "burn",
     );
     expect(await getTokenBalance(alice, category)).toBe(0n);
-    expect(await getTokenBalance(alice, category)).toBe(0n);
     const nftTokenUtxos = await getTokenUtxos(alice, category);
     expect(nftTokenUtxos.length).toBe(0);
     expect(category).toEqual(nftResponse.categories![0]);
     expect(await getNftTokenBalance(alice, category)).toBe(0);
-    expect(await getNftTokenBalance(alice, category)).toBe(0n);
+    expect(await getNftTokenBalance(alice, category)).toBe(0);
   });
 
   test("Test cashtoken satoshi values and fee calculations", async () => {

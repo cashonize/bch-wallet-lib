@@ -28,9 +28,9 @@ import {
   selectFungibleTokenUtxos,
 } from "../transaction/Wif.js";
 import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
+import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { checkUtxos } from "../util/checkUtxos.js";
 import {
-  asSendRequestObject,
   getRuntimePlatform,
   sumTokenAmounts,
   sumUtxoValue,

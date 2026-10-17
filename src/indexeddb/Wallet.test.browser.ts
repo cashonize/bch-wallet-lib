@@ -8,9 +8,9 @@ import {
   SignedMessage,
   TestNetWallet,
   Wallet,
-  WalletTypeEnum,
   walletFromId,
 } from "../index.js";
+import { WalletTypeEnum } from "../wallet/enum.js";
 import { IndexedDBProvider } from "./index.js";
 
 beforeAll(async () => {

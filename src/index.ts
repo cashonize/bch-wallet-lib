@@ -56,7 +56,6 @@ export {
 } from "./wallet/Base.js";
 // wallet utilities, models, interfaces - barrel re-export is fine (small items)
 export * from "./wallet/createWallet.js";
-export { WalletTypeEnum } from "./wallet/enum.js";
 export {
   InsufficientFundsError,
   InvalidRequestError,
@@ -74,7 +73,18 @@ export {
 } from "./wallet/HDWallet.js";
 export type { HDWalletOptions } from "./wallet/HDWallet.js";
 export * from "./wallet/interface.js";
-export * from "./wallet/model.js";
+export {
+  OpReturnData,
+  TokenBurnRequest,
+  TokenGenesisRequest,
+  TokenMintRequest,
+  TokenSendRequest,
+} from "./wallet/model.js";
+export type {
+  SendRequest,
+  SendRequestType,
+  SendResponse,
+} from "./wallet/model.js";
 // transaction utilities
 export {
   decodeTransaction,

@@ -133,3 +133,27 @@ test("the entry exports the network, history and rate surface Cashonize uses and
     expect(entry.Config, name).not.toHaveProperty(name);
   }
 });
+
+test("the entry keeps the spend models' internals off its API", () => {
+  for (const name of [
+    "SendRequest",
+    "SendResponse",
+    "asSendRequestObject",
+    "fromUtxoId",
+    "toUtxoId",
+    "checkTokenCategory",
+    "checkTokenCommitment",
+    "toTokenAmount",
+    "checkTokenOutput",
+    "checkGenesisRequest",
+    "checkMintRequest",
+    "checkBurnRequest",
+    "opReturnFromBytes",
+    "FeePaidByEnum",
+    "WalletTypeEnum",
+  ]) {
+    expect(entry).not.toHaveProperty(name);
+  }
+  expect(entry.OpReturnData).toBeDefined();
+  expect(entry.TokenSendRequest).toBeDefined();
+});

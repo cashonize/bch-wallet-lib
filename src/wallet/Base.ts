@@ -62,6 +62,8 @@ export const placeholderTokenAddr =
 interface WalletSubscription {
   subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>;
   cancel: CancelFn;
+  // the provider `cancel` belongs to
+  provider: ElectrumNetworkProvider;
 }
 
 // a provider's cancel may be reached twice when a subscription is cancelled while it moves
@@ -433,12 +435,14 @@ export class BaseWallet implements WalletI {
     let provider = this.provider;
     const subscription = {
       subscribe,
+      provider,
       cancel: once(await subscribe(provider)),
     };
     // setProvider ran while subscribing
     while (provider !== this.provider) {
       await subscription.cancel();
       provider = this.provider;
+      subscription.provider = provider;
       subscription.cancel = once(await subscribe(provider));
     }
     this.subscriptions.add(subscription);
@@ -452,7 +456,9 @@ export class BaseWallet implements WalletI {
   /**
    * Switch the wallet to another electrum provider of the same network: its subscriptions (an
    * HD wallet's address discovery included) are made again on the new provider and ended on
-   * the old one. The old provider is left connected, as other wallets may still use it.
+   * the old one, and deliver the new server's current state as they start. The old provider is
+   * left connected, as other wallets may still use it. If the new provider cannot connect or a
+   * subscription cannot be made there, the wallet stays on the old provider and this rejects.
    */
   public async setProvider(provider: ElectrumNetworkProvider): Promise<void> {
     if ((provider.network as string) !== this.network) {
@@ -468,18 +474,41 @@ export class BaseWallet implements WalletI {
   }
 
   private async moveSubscriptions(provider: ElectrumNetworkProvider) {
-    if (provider === this.provider) return;
+    // an unreachable server rejects here, before anything moved
+    await provider.connect();
+    const previous = this._provider;
     this._provider = provider;
-    await Promise.all(
-      [...this.subscriptions].map(async (subscription) => {
-        await subscription.cancel();
-        subscription.cancel = once(await subscription.subscribe(provider));
+    try {
+      await this.settleSubscriptions();
+    } catch (error) {
+      this._provider = previous;
+      // what did move is left on the new provider if this fails, and a later switch moves it
+      await this.settleSubscriptions().catch(() => {});
+      throw error;
+    }
+  }
+
+  // Make every subscription live on the current provider, starting the new one before ending the old
+  private async settleSubscriptions() {
+    const provider = this._provider;
+    const stale = [...this.subscriptions].filter(
+      (subscription) => subscription.provider !== provider,
+    );
+    const results = await Promise.allSettled(
+      stale.map(async (subscription) => {
+        const cancel = once(await subscription.subscribe(provider));
+        const cancelPrevious = subscription.cancel;
+        subscription.cancel = cancel;
+        subscription.provider = provider;
+        await cancelPrevious();
         // cancelled while moving
         if (!this.subscriptions.has(subscription)) {
-          await subscription.cancel();
+          await cancel();
         }
       }),
     );
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure) throw failure.reason;
   }
 
   /**

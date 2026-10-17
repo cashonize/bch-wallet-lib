@@ -90,6 +90,57 @@ describe("setProvider", () => {
     expect(newProvider.subscriptions).toBe(0);
   });
 
+  test("stays on the old provider when the new one cannot connect", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    const balances: bigint[] = [];
+    await wallet.watchBalance((balance) => balances.push(balance));
+    const before = oldProvider.subscriptions;
+
+    const dead = await createProvider(Network.REGTEST, "ws://127.0.0.1:1", {
+      connectTimeout: 300,
+    });
+    await expect(wallet.setProvider(dead)).rejects.toThrow();
+    expect(wallet.provider).toBe(oldProvider);
+    expect(oldProvider.subscriptions).toBe(before);
+    // a retry tries again rather than taking the dead provider as already switched to
+    await expect(wallet.setProvider(dead)).rejects.toThrow();
+
+    await fund(oldProvider, wallet.cashaddr, 5_000n);
+    await delay(200);
+    expect(balances.at(-1)).toBe(5_000n);
+
+    await wallet.setProvider(newProvider);
+    expect(oldProvider.subscriptions).toBe(before - 1);
+    expect(newProvider.subscriptions).toBe(1);
+    await wallet.stop();
+  });
+
+  test("moves an HD wallet back when a subscription fails on the new provider", async () => {
+    const wallet = await RegTestHDWallet.newRandom();
+    await wallet.watchPromise;
+    const subscribed = oldProvider.subscriptions;
+
+    let calls = 0;
+    const flaky = new MockNetworkProvider();
+    await flaky.ready();
+    const subscribeToAddress = flaky.subscribeToAddress.bind(flaky);
+    flaky.subscribeToAddress = async (...args) => {
+      if (++calls === 5) throw new Error("subscription refused");
+      return subscribeToAddress(...args);
+    };
+    await expect(wallet.setProvider(flaky)).rejects.toThrow(
+      "subscription refused",
+    );
+    expect(wallet.provider).toBe(oldProvider);
+    expect(oldProvider.subscriptions).toBe(subscribed);
+    expect(flaky.subscriptions).toBe(0);
+
+    await wallet.setProvider(newProvider);
+    expect(oldProvider.subscriptions).toBe(0);
+    expect(newProvider.subscriptions).toBe(subscribed);
+    await wallet.stop();
+  });
+
   test("refuses a provider of another network", async () => {
     const wallet = await RegTestWallet.newRandom();
     const mainnet = await createProvider(Network.MAINNET, "wss://127.0.0.1:1");

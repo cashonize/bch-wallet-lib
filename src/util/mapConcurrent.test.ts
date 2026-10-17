@@ -33,11 +33,32 @@ test("rejects with the first error and starts no call after it", async () => {
   expect(started).toEqual([0, 1, 2]);
 });
 
+test("Infinity starts every call at once", async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const items = Array.from({ length: 25 }, (_, i) => i);
+  const results = await mapConcurrent(items, Infinity, async (item) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await tick();
+    inFlight--;
+    return item;
+  });
+  expect(results).toEqual(items);
+  expect(maxInFlight).toBe(25);
+});
+
 test("refuses a concurrency below 1 or not an integer", async () => {
   await expect(mapConcurrent([1], 0, async (x) => x)).rejects.toThrow(
     RangeError,
   );
   await expect(mapConcurrent([1], 1.5, async (x) => x)).rejects.toThrow(
+    RangeError,
+  );
+  await expect(mapConcurrent([1], NaN, async (x) => x)).rejects.toThrow(
+    RangeError,
+  );
+  await expect(mapConcurrent([1], -Infinity, async (x) => x)).rejects.toThrow(
     RangeError,
   );
   expect(await mapConcurrent([], 3, async (x) => x)).toEqual([]);

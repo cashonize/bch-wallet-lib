@@ -24,7 +24,7 @@ import type { Transport } from "./Transport.js";
 
 /** Options of the provider calls that fan out over a list. */
 export interface ConcurrencyOptions {
-  /** Requests in flight at most for this call. Default 10. */
+  /** Requests in flight at most for this call, a positive integer or `Infinity` (no limit). Default 10. */
   concurrency?: number;
 }
 

@@ -111,7 +111,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 | `nftMintForm.vue` `isHex`; genesis amount range checks                                                              | `InvalidRequestError` for bad hex, odd length, >128-byte commitments and amounts outside 0..2^63−1                                                                                      |
 | Lowercasing and try/catch around `SignedMessage.verify`; libauth `decodeTransaction` instead of the library's       | `verify` compares decoded addresses and returns `valid: false`; `decodeTransaction` decodes every output and takes a provider                                                           |
 | `spendAuthUtxo`'s narrowing as the only guard against a burn                                                        | `TokenBurnError` refuses a built transaction that burns tokens (the narrowing stays as defense in depth)                                                                                |
-| Comments about `UseLocalStorageCache` and `DefaultCurrency` being unsafe                                            | mainnet-js#261, the rate fix (#262)                                                                                                                                                     |
+| Comments about `UseLocalStorageCache` and `DefaultCurrency` being unsafe                                            | `UseLocalStorageCache` is removed; the rate fix (#262)                                                                                                                                  |
 
 ## 5. API breaks Cashonize will hit
 

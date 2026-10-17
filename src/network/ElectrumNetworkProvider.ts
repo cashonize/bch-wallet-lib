@@ -2,7 +2,6 @@ import { binToBase64, utf8ToBin } from "@bitauth/libauth";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { CacheProvider } from "../cache/interface.js";
 import { MemoryCache } from "../cache/MemoryCache.js";
-import { WebStorageCache } from "../cache/WebStorageCache.js";
 import { Config } from "../config.js";
 import {
   DsproofData,
@@ -47,25 +46,13 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
   private _cache: CacheProvider | undefined;
 
   get cache(): CacheProvider | undefined {
-    if (
-      !Config.UseMemoryCache &&
-      !Config.UseLocalStorageCache &&
-      !Config.UseIndexedDBCache
-    ) {
+    if (!Config.UseMemoryCache && !Config.UseIndexedDBCache) {
       this._cache = undefined;
       return this._cache;
     }
 
     if (Config.UseMemoryCache && !(this._cache instanceof MemoryCache)) {
       this._cache = new MemoryCache();
-      return this._cache;
-    }
-
-    if (
-      Config.UseLocalStorageCache &&
-      !(this._cache instanceof WebStorageCache)
-    ) {
-      this._cache = new WebStorageCache();
       return this._cache;
     }
 

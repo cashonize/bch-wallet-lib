@@ -1,7 +1,6 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   BaseWallet,
-  Config,
   convert,
   createWallet,
   createWalletResponse,
@@ -13,7 +12,6 @@ import {
   walletFromId,
 } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
-import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -216,72 +214,4 @@ describe("Wallet should function in the browser", () => {
     await new Promise((resolve) => setTimeout(resolve, 5000));
     expect(bobBalanceWatchResult).toBe(true);
   });
-
-  test("Should use localStorage cache for transactions", async () => {
-    const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const txDecoded = await aliceWallet.getLastTransaction();
-    expect(txDecoded === null).toBe(false);
-    const txHash = txDecoded!.hash;
-    expect(
-      localStorage.getItem(
-        `bch-wallet-lib:tx-${aliceWallet.provider!.network}-${txHash}`,
-      ),
-    ).toBe(null);
-    Config.UseLocalStorageCache = true;
-    await aliceWallet.provider!.getRawTransaction(txHash);
-    await aliceWallet.provider!.getRawTransaction(txHash, true);
-
-    expect(
-      localStorage.getItem(
-        `bch-wallet-lib:txraw-${aliceWallet.provider!.network}-${txHash}`,
-      ) === null,
-    ).toBe(false);
-    expect(
-      typeof localStorage.getItem(
-        `bch-wallet-lib:txraw-${aliceWallet.provider!.network}-${txHash}`,
-      ) === "string",
-    ).toBe(true);
-    expect(typeof (await aliceWallet.provider!.getRawTransaction(txHash))).toBe(
-      "string",
-    );
-
-    expect(
-      localStorage.getItem(
-        `bch-wallet-lib:tx-${aliceWallet.provider!.network}-${txHash}`,
-      ) === null,
-    ).toBe(false);
-    expect(
-      typeof (await aliceWallet.provider!.getRawTransaction(txHash, true)),
-    ).toBe("object");
-
-    Config.UseLocalStorageCache = false;
-  });
-
-  test.skipIf(!liveTests)(
-    "Should use localStorage cache for block headers",
-    async () => {
-      const aliceWallet = await Wallet.newRandom();
-      const height = 854724;
-      await aliceWallet.provider!.getHeader(854724);
-      expect(
-        localStorage.getItem(
-          `bch-wallet-lib:header-${aliceWallet.provider!.network}-${height}-${false}`,
-        ),
-      ).toBe(null);
-      Config.UseLocalStorageCache = true;
-      await aliceWallet.provider!.getHeader(854724);
-      await aliceWallet.provider!.getHeader(854724, true);
-
-      expect(
-        localStorage.getItem(
-          `bch-wallet-lib:header-${aliceWallet.provider!.network}-${height}-${false}`,
-        ) === null,
-      ).toBe(false);
-      expect(typeof (await aliceWallet.provider!.getHeader(854724))).toBe(
-        "object",
-      );
-
-      Config.UseLocalStorageCache = false;
-    },
-  );
 });

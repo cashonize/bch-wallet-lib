@@ -5,8 +5,6 @@ export class Config {
   static DefaultIpfsGateway = "https://dweb.link/ipfs/";
   // default currency for balance and rate conversions
   static DefaultCurrency = "usd";
-  // caches the raw transactions in browser's local storage instead of memory
-  static UseLocalStorageCache = false;
   // caches the raw transactions in browser's indexedDB instead of memory
   static UseIndexedDBCache = false;
   // caches the raw transactions in browser's memory

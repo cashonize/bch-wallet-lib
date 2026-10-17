@@ -111,7 +111,13 @@ export function checkMintRequest(request: TokenMintRequest): void {
 export function checkBurnRequest(request: TokenBurnRequest): void {
   checkTokenCategory(request.category);
   checkTokenCommitment(request.nft);
-  toTokenAmount(request.amount);
+  const amount = toTokenAmount(request.amount);
+  if (amount === 0n && !hasNft(request.nft)) {
+    throw new InvalidRequestError(
+      "A burn request needs a positive fungible amount or an NFT",
+      { field: "nft", value: request.nft },
+    );
+  }
 }
 
 export type SendRequestType =

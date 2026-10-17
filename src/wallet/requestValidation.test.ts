@@ -129,6 +129,13 @@ describe("request constructors", () => {
     invalid(() => new TokenGenesisRequest({}), "nft", undefined);
     invalid(() => new TokenGenesisRequest({ amount: 0n }), "nft", undefined);
     invalid(() => new TokenMintRequest({ category }), "nft", undefined);
+    // a burn of nothing
+    invalid(() => new TokenBurnRequest({ category }), "nft", undefined);
+    invalid(
+      () => new TokenBurnRequest({ category, amount: 0n }),
+      "nft",
+      undefined,
+    );
     // an NFT alone, or fungible tokens alone, are both outputs
     expect(
       new TokenSendRequest({
@@ -185,6 +192,11 @@ describe("token operations validate plain request objects before reading any coi
           nft: { capability: none, commitment: "ab".repeat(129) },
         }),
       "nft.commitment",
+    ],
+    [
+      "burn of neither fungible tokens nor an NFT",
+      (w: RegTestWallet) => w.tokenBurn({ category }),
+      "nft",
     ],
     [
       "burn above 2^63-1",

@@ -1,3 +1,4 @@
+import { indexedDbError } from "../util/indexedDbError.js";
 import { CacheProvider } from "./interface.js";
 
 // super thin wrapper around indexedDB, compatible with localStorage API
@@ -39,7 +40,7 @@ export class IndexedDbCache implements CacheProvider {
     this.db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = db;
 
-      request.onerror = reject;
+      request.onerror = () => reject(indexedDbError(request));
 
       request.onsuccess = ({ target }: Event) => {
         const database = this.getDatabaseObjectFromTarget(target);
@@ -70,7 +71,7 @@ export class IndexedDbCache implements CacheProvider {
     return new Promise((resolve, reject) => {
       const request = objectStore.put(value, key);
 
-      request.onerror = reject;
+      request.onerror = () => reject(indexedDbError(request));
       request.onsuccess = () => resolve();
     });
   }
@@ -86,7 +87,7 @@ export class IndexedDbCache implements CacheProvider {
     return new Promise((resolve, reject) => {
       const request = objectStore.get(key);
 
-      request.onerror = reject;
+      request.onerror = () => reject(indexedDbError(request));
       request.onsuccess = () => resolve(request.result ?? null);
     });
   }
@@ -102,7 +103,7 @@ export class IndexedDbCache implements CacheProvider {
     return new Promise((resolve, reject) => {
       const request = objectStore.delete(key);
 
-      request.onerror = reject;
+      request.onerror = () => reject(indexedDbError(request));
       request.onsuccess = () => resolve();
     });
   }
@@ -122,7 +123,7 @@ export class IndexedDbCache implements CacheProvider {
     }));
 
     return new Promise((resolve, reject) => {
-      transaction.onerror = reject;
+      transaction.onabort = () => reject(indexedDbError(transaction));
       transaction.oncomplete = () => {
         for (const { key, request } of requests) {
           results.set(key, request.result ?? null);
@@ -147,7 +148,7 @@ export class IndexedDbCache implements CacheProvider {
     }
 
     return new Promise((resolve, reject) => {
-      transaction.onerror = reject;
+      transaction.onabort = () => reject(indexedDbError(transaction));
       transaction.oncomplete = () => resolve();
     });
   }
@@ -163,7 +164,7 @@ export class IndexedDbCache implements CacheProvider {
     return new Promise((resolve, reject) => {
       const request = objectStore.getAllKeys();
 
-      request.onerror = reject;
+      request.onerror = () => reject(indexedDbError(request));
       // this class only writes string keys, anything else is not its to interpret
       request.onsuccess = () =>
         resolve(

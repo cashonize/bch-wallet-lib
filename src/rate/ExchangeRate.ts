@@ -85,15 +85,12 @@ export class ExchangeRate {
   }
 
   static cacheRateInGlobalScope(symbol, rate) {
-    if (!globalThis.RATE) {
-      globalThis.RATE = {};
-    } else {
-      globalThis.RATE[symbol] = {
-        symbol: symbol,
-        rate: rate,
-        ttl: getTtl(),
-      };
-    }
+    globalThis.RATE ??= {};
+    globalThis.RATE[symbol] = {
+      symbol: symbol,
+      rate: rate,
+      ttl: getTtl(),
+    };
   }
 }
 

@@ -1,6 +1,7 @@
 import { setupFetchMock } from "#test/fetch.js";
 import { Config } from "../config.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { convert } from "../util/convert.js";
 import { ExchangeRate } from "./ExchangeRate.js";
 
 beforeAll(async () => {
@@ -47,5 +48,23 @@ describe("Exchange rate tests", () => {
     );
 
     Config.GetExchangeRateFn = undefined;
+  });
+
+  test("Cache the first fetched rate", async () => {
+    let fetches = 0;
+    Config.GetExchangeRateFn = async (): Promise<number> => {
+      fetches++;
+      return 400;
+    };
+    delete globalThis.RATE;
+
+    try {
+      expect(await convert(1, "bch", "usd")).toBe(400);
+      expect(await convert(1, "bch", "usd")).toBe(400);
+      expect(fetches).toBe(1);
+    } finally {
+      Config.GetExchangeRateFn = undefined;
+      delete globalThis.RATE;
+    }
   });
 });

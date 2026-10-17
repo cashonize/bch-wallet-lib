@@ -725,24 +725,10 @@ export class HDWallet extends BaseWallet {
     }, options);
   }
 
-  /// Branch indices to scan. Defaults to every tracked branch. Throws on
-  /// empty array or branches the wallet does not track.
-  private resolveBranches(branches?: number[]): number[] {
-    if (branches === undefined) return [...this.branches];
-    if (branches.length === 0) {
-      throw new Error("HDWallet: `branches` filter must not be empty");
-    }
-    for (const branch of branches) {
-      this.requireBranch(branch);
-    }
-    return branches;
-  }
-
-  /// Collect cached UTXOs from the given branches (default: all tracked).
-  private collectUtxosFromBranches(branches?: number[]): Utxo[] {
-    const list = this.resolveBranches(branches);
+  /// Collect the cached UTXOs of every tracked branch.
+  private collectUtxosFromBranches(): Utxo[] {
     const out: Utxo[] = [];
-    for (const branch of list) {
+    for (const branch of this.branches) {
       for (const arr of this.utxos.get(branch) ?? []) {
         out.push(...arr);
       }
@@ -1111,7 +1097,6 @@ export class HDWallet extends BaseWallet {
   } = {}): Promise<TransactionHistoryItem[]> {
     const rawHistory = await this.getRawHistory();
     const addresses = this.getUsedAddresses();
-    // all of them, as getBalance: the dust filter of getUtxos would change the balance
     const utxos = this.collectUtxosFromBranches();
 
     return getHistory({

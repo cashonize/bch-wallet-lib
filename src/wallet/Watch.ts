@@ -505,7 +505,6 @@ export class WatchWallet extends BaseWallet {
       addresses: [this.cashaddr],
       provider: this.provider,
       count,
-      // all of them, as getBalance: the dust filter of getUtxos would change the balance
       utxos: this.utxos,
       concurrency,
     });

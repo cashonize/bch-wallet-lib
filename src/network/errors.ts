@@ -1,14 +1,26 @@
+// BCHN's answers for a transaction its mempool or chain already holds
+const ALREADY_KNOWN_REASONS = [
+  "txn-already-known",
+  "txn-already-in-mempool",
+  "transaction already in block chain",
+];
+
 /**
- * Thrown when the server refuses to broadcast a transaction. `reason` is the node's reject reason
+ * Thrown when the server answers a broadcast with an error. `reason` is the node's reject reason
  * (BCHN's, e.g. "txn-mempool-conflict", "Missing inputs", "dust"), `code` BCHN's reject code when
  * the server passes one on (18 for "txn-mempool-conflict"), `txid` the refused transaction's id and
  * `cause` the server's error. The message is the server's own. A broadcast that times out is an
  * `ElectrumTimeoutError` instead, as the transaction may have reached the node all the same.
+ *
+ * `alreadyKnown` is set when the node's answer is that it already holds the transaction, in its
+ * mempool or in a block: that is no refusal, an earlier broadcast of it went through, and a caller
+ * treating it as a failed payment would have the user pay again.
  */
 export class BroadcastRejectedError extends Error {
   readonly reason: string;
   readonly code?: number;
   readonly txid?: string;
+  readonly alreadyKnown: boolean;
 
   constructor(
     message: string,
@@ -24,6 +36,7 @@ export class BroadcastRejectedError extends Error {
     this.reason = reason;
     this.code = code;
     this.txid = txid;
+    this.alreadyKnown = ALREADY_KNOWN_REASONS.includes(reason);
   }
 }
 

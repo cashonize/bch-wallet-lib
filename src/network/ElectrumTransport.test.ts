@@ -542,7 +542,30 @@ describe("a broadcast through the provider", () => {
     expect(rejected.txid).toBe(await getTransactionHash(txHex));
     expect(rejected.cause).toBeInstanceOf(Error);
     expect((rejected.cause as Error).cause).toEqual({ code: 1, message });
+    expect(rejected.alreadyKnown).toBe(false);
   });
+
+  test.each([
+    "txn-already-known (code 18)",
+    "txn-already-in-mempool (code 18)",
+    "transaction already in block chain",
+  ])(
+    "an answer that the node holds the transaction, %s, is alreadyKnown",
+    async (answer) => {
+      const fake = new FakeServer();
+      const message = `the transaction was rejected by network rules.\n\n${answer}\n`;
+      fake.handlers.set("blockchain.transaction.broadcast", () => ({
+        error: { code: 1, message },
+      }));
+
+      const error = await provider(fake)
+        .sendRawTransaction(txHex)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BroadcastRejectedError);
+      expect((error as BroadcastRejectedError).alreadyKnown).toBe(true);
+    },
+  );
 
   test("a timed out broadcast stays an ElectrumTimeoutError", async () => {
     const fake = new FakeServer();

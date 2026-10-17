@@ -150,6 +150,7 @@ describe("a refused broadcast is a BroadcastRejectedError", () => {
     expect(rejected.reason).toBe("txn-mempool-conflict");
     expect(rejected.code).toBe(18);
     expect(rejected.txid).toBe(second.txId);
+    expect(rejected.alreadyKnown).toBe(false);
     expect(rejected.message).toBe(
       "the transaction was rejected by network rules.\n\ntxn-mempool-conflict (code 18)\n",
     );

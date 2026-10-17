@@ -14,6 +14,7 @@ import { RegTestWallet, RegTestWifWallet } from "../wallet/Wif.js";
 import { IndexedDbCache } from "./IndexedDbCache.js";
 import { CacheProvider } from "./interface.js";
 import {
+  HDWalletCache,
   pruneWalletCaches,
   purgeWalletCache,
   walletCacheIdFromWalletId,
@@ -33,6 +34,23 @@ afterAll(async () => {
 function cacheIdOf(wallet: BaseWallet): string {
   return (wallet.walletCache as unknown as { walletId: string }).walletId;
 }
+
+// an HD wallet whose discovery has settled and whose cache writes come 20 ms after a change
+async function quickWritingWallet(walletId?: string): Promise<RegTestHDWallet> {
+  let wallet: RegTestHDWallet;
+  if (walletId) {
+    wallet = await RegTestHDWallet.fromId(walletId);
+  } else {
+    wallet = await RegTestHDWallet.newRandom();
+  }
+  await wallet.getBalance();
+  (wallet.walletCache as unknown as HDWalletCache).writeTimeout = 20;
+  return wallet;
+}
+
+// longer than a debounced cache write takes to land
+const afterDebouncedWrites = () =>
+  new Promise((resolve) => setTimeout(resolve, 200));
 
 // runs fn with the wallet caches in IndexedDB, as Cashonize keeps them, or in a fresh localStorage
 async function withCacheBackend(
@@ -227,6 +245,93 @@ describe.each(["indexeddb", "localstorage"] as const)(
           ).toBeNull();
         } finally {
           removeItem.mockRestore();
+          BaseWallet.StorageProvider = prevProvider;
+        }
+      }));
+
+    test("stop writes the cache's pending write, and a purge after it leaves no record", () =>
+      withCacheBackend(backend, async (storage) => {
+        const wallet = await quickWritingWallet();
+        const key = `walletCache-${cacheIdOf(wallet)}`;
+        wallet.getDepositAddress(500); // a new entry, a write in 20 ms
+        await wallet.stop();
+        expect(await storage.getItem(key)).toContain(
+          wallet.getDepositAddress(500),
+        );
+
+        await purgeWalletCache(wallet.toDbString());
+        expect(await storage.getItem(key)).toBeNull();
+
+        // the stopped wallet is still read, which writes nothing
+        wallet.getDepositAddress(501);
+        await afterDebouncedWrites();
+        expect(await storage.getItem(key)).toBeNull();
+      }));
+
+    test("a purge while a write is pending leaves no record", () =>
+      withCacheBackend(backend, async (storage) => {
+        const wallet = await quickWritingWallet();
+        const key = `walletCache-${cacheIdOf(wallet)}`;
+        try {
+          await wallet.walletCache.persist(true);
+          wallet.getDepositAddress(500); // a new entry, a write in 20 ms
+
+          await purgeWalletCache(wallet.toDbString());
+          await afterDebouncedWrites();
+
+          expect(await storage.getItem(key)).toBeNull();
+        } finally {
+          await wallet.stop();
+        }
+        expect(await storage.getItem(key)).toBeNull();
+      }));
+
+    test("a purge while a write is in flight leaves no record", () =>
+      withCacheBackend(backend, async (storage) => {
+        const wallet = await quickWritingWallet();
+        const key = `walletCache-${cacheIdOf(wallet)}`;
+        try {
+          const write = wallet.walletCache.persist(true);
+          await purgeWalletCache(wallet.toDbString());
+          await write;
+
+          expect(await storage.getItem(key)).toBeNull();
+        } finally {
+          await wallet.stop();
+        }
+      }));
+
+    test("a running wallet writes no record after deleteNamedWallet, and one made later does", () =>
+      withCacheBackend(backend, async (storage) => {
+        const prevProvider = BaseWallet.StorageProvider;
+        BaseWallet.StorageProvider = IndexedDBProvider;
+        const dbName = `delete-running-${Math.random()}`;
+        const running = await RegTestHDWallet.named("hd", dbName);
+        const walletId = running.toDbString();
+        const key = `walletCache-${cacheIdOf(running)}`;
+        let reopened: RegTestHDWallet | undefined;
+        try {
+          await running.getBalance();
+          (running.walletCache as unknown as HDWalletCache).writeTimeout = 20;
+          await running.walletCache.persist(true);
+
+          await deleteNamedWallet("hd", dbName);
+          expect(await storage.getItem(key)).toBeNull();
+
+          // the running wallet still derives and caches new addresses, in memory only
+          running.getDepositAddress(500);
+          await running.walletCache.persist(true);
+          await afterDebouncedWrites();
+          expect(await storage.getItem(key)).toBeNull();
+
+          // the same keys imported again are a wallet of their own, which caches as usual
+          reopened = await quickWritingWallet(walletId);
+          await reopened.walletCache.persist(true);
+          expect(await storage.getItem(key)).toContain("privateKey");
+        } finally {
+          await running.stop();
+          await reopened?.stop();
+          await purgeWalletCache(walletId);
           BaseWallet.StorageProvider = prevProvider;
         }
       }));

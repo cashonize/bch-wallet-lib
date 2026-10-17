@@ -1820,9 +1820,8 @@ export async function getNamedWalletId(
  * deleteNamedWallet - delete a named wallet from the database, and its cache record with it
  *
  * `StorageProvider.deleteWallet` removes only the row; the wallet's cache record (its derived
- * private keys and history, see {@link purgeWalletCache}) is removed here too, before the row.
- * Stop the wallet first if it is loaded, or it writes its cache record again. No-op for a missing
- * name.
+ * private keys and history, see {@link purgeWalletCache}) is removed here too, before the row,
+ * and a loaded wallet of that id no longer writes it. No-op for a missing name.
  *
  * @param name   user friendly wallet alias
  * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default

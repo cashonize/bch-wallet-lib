@@ -333,6 +333,8 @@ export class HDWallet extends BaseWallet {
       this.watchCancels.set(branch, []);
     }
     this.walletWatchCallbacks = [];
+    // no write of the cache is left for later; one that fails is a cache entry lost, not an error
+    await this.walletCache.flush().catch(() => {});
   }
 
   /// Scan more addresses for activity beyond the current gap limit, extending the watched range as needed

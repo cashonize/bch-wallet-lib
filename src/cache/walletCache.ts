@@ -68,6 +68,8 @@ export interface WalletCache {
 export interface WalletCacheI extends WalletCache {
   init(): Promise<void>;
   persist(immediate?: boolean): Promise<void>;
+  /// Writes now what a debounced persist() has yet to write, if anything
+  flush(): Promise<void>;
   get(address: string): WalletCacheEntry | undefined;
   /**
    * Conventional (branch × addressIndex) lookup using the standard
@@ -98,6 +100,9 @@ function getStorage(): CacheProvider | undefined {
 }
 
 const CACHE_KEY_PREFIX = "walletCache-";
+
+// Per cache id, bumped by each purge: an HDWalletCache made before a purge of its id writes no more
+const purgeCounts = new Map<string, number>();
 
 /// The id an HD wallet's cache record is keyed by: a hash of what the wallet derives its addresses
 /// from (its seed and derivation path, or its extended key) and its network
@@ -139,15 +144,20 @@ export function walletCacheIdFromWalletId(
 /**
  * Removes the cache record of an HD wallet (its derived addresses with their private keys, status,
  * utxos and history) from the cache storage that `Config` selects; a single-address wallet has
- * none. Use it when deleting a wallet, which {@link deleteNamedWallet} does. A wallet still running
- * writes its record again.
+ * none. Use it when deleting a wallet, which {@link deleteNamedWallet} does. Wallets of that id made
+ * before the call, running or stopped, write the record no more: from then on they keep their cache
+ * in memory only.
  *
  * @param walletId the wallet's stored id, as `toDbString()` returns it and a database row holds it
  */
 export async function purgeWalletCache(walletId: string): Promise<void> {
   const cacheId = walletCacheIdFromWalletId(walletId);
+  if (cacheId === undefined) return;
+  purgeCounts.set(cacheId, (purgeCounts.get(cacheId) ?? 0) + 1);
+  // a write already started lands before the removal: localStorage writes at once, and IndexedDB
+  // runs a store's readwrite transactions in the order they were made
   const storage = getStorage();
-  if (cacheId === undefined || !storage) return;
+  if (!storage) return;
   await storage.init();
   try {
     await storage.removeItem(CACHE_KEY_PREFIX + cacheId);
@@ -209,6 +219,8 @@ export class SingleAddressWalletCache implements WalletCacheI {
 
   public async persist() {}
 
+  public async flush() {}
+
   public get(address: string) {
     return address === this.entry.address ? this.entry : undefined;
   }
@@ -250,9 +262,11 @@ export class HDWalletCache implements WalletCacheI {
   // address -> relative path of the entries in memoryCache
   private memoryPaths: Record<string, string> = {};
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  // purges of walletId before this cache was made; a later one stops its writes
+  private readonly purgeCount: number;
 
   constructor(
-    public walletId: string,
+    public readonly walletId: string,
     public hdNode: HdPublicNodeValid | HdPrivateNodeValid,
     public networkPrefix: string,
     public writeTimeout: number = 2000,
@@ -260,6 +274,7 @@ export class HDWalletCache implements WalletCacheI {
     if (!this.hdNode) {
       throw new Error("HDNode is undefined");
     }
+    this.purgeCount = purgeCounts.get(walletId) ?? 0;
   }
 
   public async init() {
@@ -288,24 +303,32 @@ export class HDWalletCache implements WalletCacheI {
 
   public async persist(immediate = false) {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
-    const write = () =>
-      this._storage?.setItem(
-        CACHE_KEY_PREFIX + this.walletId,
-        stringify({
-          walletCache: this.walletCache,
-          indexCache: this.indexCache,
-        }),
-      );
     if (immediate) {
       this.debounceTimer = undefined;
-      await write();
+      await this.write();
     } else {
       this.debounceTimer = setTimeout(() => {
         this.debounceTimer = undefined;
         // a failed write is redone by the next one, which writes the whole cache
-        write()?.catch(() => {});
+        this.write().catch(() => {});
       }, this.writeTimeout);
     }
+  }
+
+  public async flush() {
+    if (this.debounceTimer) await this.persist(true);
+  }
+
+  private write(): Promise<void> {
+    const purged = (purgeCounts.get(this.walletId) ?? 0) !== this.purgeCount;
+    if (!this._storage || purged) return Promise.resolve();
+    return this._storage.setItem(
+      CACHE_KEY_PREFIX + this.walletId,
+      stringify({
+        walletCache: this.walletCache,
+        indexCache: this.indexCache,
+      }),
+    );
   }
 
   private derive(

@@ -2090,3 +2090,93 @@ describe("token change", () => {
     ]);
   });
 });
+
+describe("NFT requests by capability", () => {
+  // a category with two mutable NFTs and its minting NFT
+  const twoMutable = async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+    const genesis = await bob.tokenGenesis({
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    const category = genesis.categories![0];
+    await bob.tokenMint([
+      new TokenMintRequest({
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "01" },
+      }),
+      new TokenMintRequest({
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "02" },
+      }),
+    ]);
+    return { bob, category };
+  };
+
+  test("two mutable NFTs sent with new commitments spend a mutable NFT each", async () => {
+    const { bob, category } = await twoMutable();
+    const carol = await RegTestWallet.newRandom();
+    const mutableCoins = (await bob.getTokenUtxos(category))
+      .filter((utxo) => utxo.token!.nft?.capability === NFTCapability.mutable)
+      .map((utxo) => `${utxo.txid}:${utxo.vout}`);
+    expect(mutableCoins).toHaveLength(2);
+
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "aa" },
+      }),
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "bb" },
+      }),
+    ]);
+
+    expect(inputOutpoints(response.transaction)).toEqual(
+      expect.arrayContaining(mutableCoins),
+    );
+    const outputs = decodeOutputs(response.transaction);
+    expect(outputs.filter((output) => output.token)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.mutable, commitment: "aa" },
+        },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.mutable, commitment: "bb" },
+        },
+      },
+    ]);
+    expect(await bob.getNftTokenBalance(category)).toBe(1);
+  });
+
+  test("more mutable NFT requests than mutable NFTs throw before anything is built", async () => {
+    const { bob, category } = await twoMutable();
+    const carol = await RegTestWallet.newRandom();
+    const request = (commitment: string) =>
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment },
+      });
+
+    const error = await bob
+      .send([request("aa"), request("bb"), request("cc")])
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(InsufficientFundsError);
+    expect((error as InsufficientFundsError).category).toBe(category);
+  });
+});

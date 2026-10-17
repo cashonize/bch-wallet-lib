@@ -416,32 +416,38 @@ export async function getSuitableUtxos(
         request.nft?.capability === NFTCapability.minting ||
         request.nft?.capability === NFTCapability.mutable
       ) {
-        // Check already-selected suitable utxos first
-        const alreadyHas = suitableUtxos.some(
-          (val) =>
-            val.token?.category === request.category &&
-            val.token?.nft?.capability === request.nft?.capability,
-        );
-        if (alreadyHas) continue;
+        // The request changes a coin of its capability, which it claims as an NFT request
+        // claims its exact match: two requests never change the same coin
+        const matchCapability = (val: Utxo) =>
+          val.token?.category === request.category &&
+          val.token?.nft?.capability === request.nft?.capability;
 
+        // Check already-selected suitable utxos first
         let foundCapability = false;
+        for (const val of suitableUtxos) {
+          if (!matchCapability(val)) continue;
+          const key = utxoKey(val);
+          if (claimedUtxos.has(key)) continue;
+          claimedUtxos.set(key, 1);
+          foundCapability = true;
+          break;
+        }
+        if (foundCapability) continue;
+
         for (let i = 0; i < inputs.length; i++) {
           if (usedIndices.has(i)) continue;
           const val = inputs[i];
-          if (
-            val.token?.category === request.category &&
-            val.token?.nft?.capability === request.nft?.capability
-          ) {
-            const key = utxoKey(val);
-            if (selectedSet.has(key)) continue;
+          if (!matchCapability(val)) continue;
+          const key = utxoKey(val);
+          if (selectedSet.has(key)) continue;
 
-            selectedSet.add(key);
-            suitableUtxos.push(val);
-            usedIndices.add(i);
-            amountAvailable += BigInt(val.satoshis);
-            foundCapability = true;
-            break;
-          }
+          selectedSet.add(key);
+          suitableUtxos.push(val);
+          usedIndices.add(i);
+          amountAvailable += BigInt(val.satoshis);
+          claimedUtxos.set(key, 1);
+          foundCapability = true;
+          break;
         }
         if (foundCapability) continue;
       }

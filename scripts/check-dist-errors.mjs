@@ -11,6 +11,7 @@ import {
   InsufficientFundsError,
   NetworkType,
   setGlobalProvider,
+  WatchOnlyError,
 } from "bch-wallet-lib";
 // off the entry, as the regtest classes are test infrastructure; the same built modules
 import { RegTestWallet } from "../dist/wallet/Wif.js";
@@ -48,6 +49,15 @@ const shortfall = await caught(
 if (!(shortfall instanceof InsufficientFundsError)) {
   problems.push(`a shortfall threw ${shortfall}`);
 }
+
+const watching = await RegTestWallet.fromId(`watch:regtest:${wallet.cashaddr}`);
+const unsigned = await caught(
+  watching.send({ cashaddr: wallet.cashaddr, value: 1_000n }),
+);
+if (!(unsigned instanceof WatchOnlyError)) {
+  problems.push(`a watch-only send threw ${unsigned}`);
+}
+await watching.stop();
 
 // two spends of the one coin: the second is refused as a mempool conflict
 const first = await wallet.send(

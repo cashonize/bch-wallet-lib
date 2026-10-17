@@ -66,6 +66,7 @@ export {
   InvalidWalletIdError,
   InvalidWifError,
   TokenBurnError,
+  WatchOnlyError,
   UtxoNotAvailableError,
 } from "./wallet/errors.js";
 export {

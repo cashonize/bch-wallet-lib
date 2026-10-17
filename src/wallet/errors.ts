@@ -159,3 +159,14 @@ export class InvalidWifError extends Error {
     this.network = network;
   }
 }
+
+/**
+ * Thrown before a transaction is built when a wallet without its private keys (a `watch:`
+ * wallet, or an HD wallet from an xpub) is asked to spend: `send`, `sendMax` or a token operation.
+ */
+export class WatchOnlyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WatchOnlyError";
+  }
+}

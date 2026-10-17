@@ -362,6 +362,10 @@ export class Wallet extends WatchWallet {
     return this.sendMaxRaw(cashaddr, options, this.privateKey);
   }
 
+  protected override canSign(): boolean {
+    return this.privateKey !== undefined && this.privateKey.length > 0;
+  }
+
   /**
    * encodeTransaction Encode and sign a transaction given a list of sendRequests, options and estimate fees.
    * @param  {SendRequest[]} sendRequests SendRequests
@@ -380,10 +384,6 @@ export class Wallet extends WatchWallet {
     tokenBurns?: TokenBurnAllowance,
   ) {
     privateKey = privateKey ?? this.privateKey;
-
-    if (!privateKey) {
-      throw new Error(`Missing private key`);
-    }
 
     return super.encodeTransaction(
       requests,

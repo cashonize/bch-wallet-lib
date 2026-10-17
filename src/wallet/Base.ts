@@ -45,6 +45,7 @@ import {
   InvalidRequestError,
   InvalidWalletIdError,
   UtxoNotAvailableError,
+  WatchOnlyError,
 } from "./errors.js";
 import {
   CancelFn,
@@ -820,6 +821,7 @@ export class BaseWallet {
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
   ): Promise<SendResponse> {
+    if (!privateKey) this.assertCanSign();
     const {
       value: maxSpendableAmount,
       fee,
@@ -900,6 +902,21 @@ export class BaseWallet {
     return this._send(encodedTransaction, categories, options);
   }
 
+  /** Whether the wallet holds the keys to sign its own coins' inputs. */
+  protected canSign(): boolean {
+    return false;
+  }
+
+  // Every spend asks first, so that a watch-only wallet is refused before it reads or builds
+  // anything; the placeholder key the builder falls back on only sizes fee estimates
+  private assertCanSign(): void {
+    if (!this.canSign()) {
+      throw new WatchOnlyError(
+        "A watch-only wallet cannot sign: it holds no private key",
+      );
+    }
+  }
+
   /**
    * encodeTransaction Encode and sign a transaction given a list of sendRequests, options and estimate fees.
    * @param  {SendRequest[]} sendRequests SendRequests
@@ -917,6 +934,7 @@ export class BaseWallet {
     privateKey?: Uint8Array,
     tokenBurns?: TokenBurnAllowance,
   ) {
+    if (!privateKey) this.assertCanSign();
     let sendRequests = asSendRequestObject(requests);
 
     let checkTokenQuantities: boolean = true;
@@ -1184,6 +1202,7 @@ export class BaseWallet {
     sendRequests: SendRequestType | SendRequestType[] = [],
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
     if (!Array.isArray(genesisRequests)) {
       genesisRequests = [genesisRequests];
     }
@@ -1254,6 +1273,7 @@ export class BaseWallet {
     mintRequests: TokenMintRequest | Array<TokenMintRequest>,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
     if (!Array.isArray(mintRequests)) {
       mintRequests = [mintRequests];
     }
@@ -1352,6 +1372,7 @@ export class BaseWallet {
     message?: string,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
     if (!Array.isArray(burnRequests)) {
       burnRequests = [burnRequests];
     }

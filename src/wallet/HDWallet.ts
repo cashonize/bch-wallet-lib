@@ -1,4 +1,3 @@
-import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import {
   assertSuccess,
   CashAddressNetworkPrefix,
@@ -36,12 +35,7 @@ import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
 import { InvalidWalletIdError } from "./errors.js";
-import {
-  CancelFn,
-  SendRequestOptionsI,
-  WalletFactoryOptions,
-} from "./interface.js";
-import { OpReturnData, SendRequest, TokenSendRequest } from "./model.js";
+import { CancelFn, WalletFactoryOptions } from "./interface.js";
 import { networkPrefixError, walletTypeError } from "../util/walletIdError.js";
 
 export const GAP_SIZE = 20;
@@ -850,34 +844,8 @@ export class HDWallet extends BaseWallet {
     });
   }
 
-  /**
-   * encodeTransaction Encode and sign a transaction given a list of sendRequests, options and estimate fees.
-   * @param  {SendRequest[]} sendRequests SendRequests
-   * @param  {boolean} discardChange=false
-   * @param  {SendRequestOptionsI} options Options of the send requests
-   */
-  protected async encodeTransaction(
-    requests:
-      | SendRequest
-      | TokenSendRequest
-      | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>,
-    discardChange: boolean = false,
-    options?: SendRequestOptionsI,
-    privateKey?: Uint8Array,
-    tokenBurns?: TokenBurnAllowance,
-  ) {
-    if (!this.xPriv && !privateKey) {
-      throw new Error(`Missing private key`);
-    }
-
-    return super.encodeTransaction(
-      requests,
-      discardChange,
-      options,
-      privateKey,
-      tokenBurns,
-    );
+  protected override canSign(): boolean {
+    return Boolean(this.xPriv);
   }
 
   //#region Serialization

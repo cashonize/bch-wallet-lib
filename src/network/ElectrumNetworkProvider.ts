@@ -13,6 +13,7 @@ import {
   Utxo,
 } from "../interface.js";
 import { decodeHeader } from "../util/header.js";
+import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { getTransactionHash } from "../util/transaction.js";
 import { CancelFn } from "../wallet/interface.js";
 import {
@@ -21,7 +22,10 @@ import {
   ElectrumRawTransactionWithInputValues,
   ElectrumUtxo,
 } from "./interface.js";
-import { default as NetworkProvider } from "./NetworkProvider.js";
+import {
+  ConcurrencyOptions,
+  default as NetworkProvider,
+} from "./NetworkProvider.js";
 import type { Transport } from "./Transport.js";
 
 /** Internal type for cached verbose transactions. fetchHeight is stripped before returning. */
@@ -130,7 +134,10 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return verbose ? decodeHeader(result) : result;
   }
 
-  async getRawTransactions(hashes: string[]): Promise<Map<string, string>> {
+  async getRawTransactions(
+    hashes: string[],
+    options: ConcurrencyOptions = {},
+  ): Promise<Map<string, string>> {
     if (hashes.length === 0) return new Map();
 
     const results = new Map<string, string>();
@@ -153,14 +160,16 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     }
 
     if (misses.length > 0) {
-      const fetched = await Promise.all(
-        misses.map(async (hash) => {
+      const fetched = await mapConcurrent(
+        misses,
+        options.concurrency ?? DEFAULT_CONCURRENCY,
+        async (hash) => {
           const tx = await this.performRequest<string>(
             "blockchain.transaction.get",
             [hash, false],
           );
           return [hash, tx] as [string, string];
-        }),
+        },
       );
 
       // batch cache write
@@ -180,7 +189,10 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return results;
   }
 
-  async getHeaders(heights: number[]): Promise<Map<number, HeaderI>> {
+  async getHeaders(
+    heights: number[],
+    options: ConcurrencyOptions = {},
+  ): Promise<Map<number, HeaderI>> {
     if (heights.length === 0) return new Map();
 
     const results = new Map<number, HeaderI>();
@@ -205,14 +217,16 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     }
 
     if (misses.length > 0) {
-      const fetched = await Promise.all(
-        misses.map(async (height) => {
+      const fetched = await mapConcurrent(
+        misses,
+        options.concurrency ?? DEFAULT_CONCURRENCY,
+        async (height) => {
           const result = await this.performRequest<HexHeaderI>(
             "blockchain.header.get",
             [height],
           );
           return [height, result] as [number, HexHeaderI];
-        }),
+        },
       );
 
       // batch cache write

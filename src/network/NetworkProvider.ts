@@ -5,6 +5,12 @@ import {
   ElectrumRawTransactionWithInputValues,
 } from "./interface.js";
 
+/** Options of the provider calls that fan out over a list. */
+export interface ConcurrencyOptions {
+  /** Requests in flight at most for this call. Default 10. */
+  concurrency?: number;
+}
+
 export default interface NetworkProvider {
   /**
    * Variable indicating the network that this provider connects to.
@@ -75,16 +81,24 @@ export default interface NetworkProvider {
   /**
    * Batch retrieve raw transactions by their hashes.
    * @param hashes Array of transaction hashes.
+   * @param options.concurrency Requests in flight at most for the cache misses. Default 10.
    * @returns Map from hash to hex transaction string.
    */
-  getRawTransactions(hashes: string[]): Promise<Map<string, string>>;
+  getRawTransactions(
+    hashes: string[],
+    options?: ConcurrencyOptions,
+  ): Promise<Map<string, string>>;
 
   /**
    * Batch retrieve block headers by their heights.
    * @param heights Array of block heights.
+   * @param options.concurrency Requests in flight at most for the cache misses. Default 10.
    * @returns Map from height to decoded header.
    */
-  getHeaders(heights: number[]): Promise<Map<number, HeaderI>>;
+  getHeaders(
+    heights: number[],
+    options?: ConcurrencyOptions,
+  ): Promise<Map<number, HeaderI>>;
 
   /**
    * Retrieve a verbose coin-specific response transaction details for a given transaction ID.

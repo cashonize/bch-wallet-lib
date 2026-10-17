@@ -34,7 +34,7 @@ import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { CancelFn, SendRequestOptionsI, WatchOptions } from "./interface.js";
+import { CancelFn, SendRequestOptionsI } from "./interface.js";
 import { OpReturnData, SendRequest, TokenSendRequest } from "./model.js";
 import { networkPrefixError } from "../util/networkPrefixError.js";
 
@@ -569,21 +569,19 @@ export class HDWallet extends BaseWallet {
    * Watch wallet for any activity (status changes on any address)
    * This is the foundation for watchWalletBalance and watchWalletTransactions
    * @param callback - Called when any address in the wallet has a status change; its errors go to
-   * `options.onError`
+   * console.error
    * @param options - `debounce` (ms, default 100), or the debounce alone as a number
    * @returns Cancel function to stop watching
    */
   public override async watchStatus(
     callback: (status: string | null, address: string) => unknown,
-    options: (WatchOptions & { debounce?: number }) | number = {},
+    options: { debounce?: number } | number = {},
   ): Promise<CancelFn> {
     let debounce = 100;
-    let onError: WatchOptions["onError"];
     if (typeof options === "number") {
       debounce = options;
     } else {
       debounce = options.debounce ?? debounce;
-      onError = options.onError;
     }
     await this.discovered();
 
@@ -598,7 +596,7 @@ export class HDWallet extends BaseWallet {
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
         // the Base watchers read in their callback, which rejects while discovery is failed
-        runCallback(() => callback(pendingStatus, pendingAddress), onError);
+        runCallback(() => callback(pendingStatus, pendingAddress));
       }, debounce);
     };
 
@@ -683,7 +681,6 @@ export class HDWallet extends BaseWallet {
    */
   public override async watchTransactionHashes(
     callback: (txHash: string) => unknown,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     // Seeded before subscribing so the history at setup is not reported as new
     const existing = await this.getRawHistory();
@@ -703,9 +700,9 @@ export class HDWallet extends BaseWallet {
 
       // each on its own, so that one failing does not keep the others from being reported
       for (const txHash of newTxHashes) {
-        runCallback(() => callback(txHash), options.onError);
+        runCallback(() => callback(txHash));
       }
-    }, options);
+    });
   }
 
   /// Collect the cached UTXOs of every tracked branch.

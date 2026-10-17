@@ -34,7 +34,7 @@ import {
   InvalidRequestError,
   UtxoNotAvailableError,
 } from "./errors.js";
-import { CancelFn, SendRequestOptionsI, WatchOptions } from "./interface.js";
+import { CancelFn, SendRequestOptionsI } from "./interface.js";
 import {
   fromUtxoId,
   OpReturnData,
@@ -506,19 +506,15 @@ export class BaseWallet {
   /**
    * Watch wallet for any activity (status changes)
    * This is the foundation for watchWalletBalance and watchWalletTransactions
-   * @param callback - Called when  the wallet has a status change; its errors go to `options.onError`
+   * @param callback - Called when  the wallet has a status change; its errors go to console.error
    * @returns Cancel function to stop watching
    */
   public async watchStatus(
     callback: (status: string | null, address: string) => unknown,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.subscribe((provider) =>
       provider.watchAddressStatus(this.getDepositAddress(), (status) =>
-        runCallback(
-          () => callback(status, this.getDepositAddress()),
-          options.onError,
-        ),
+        runCallback(() => callback(status, this.getDepositAddress())),
       ),
     );
   }
@@ -537,27 +533,25 @@ export class BaseWallet {
 
   // sets up a callback to be called upon wallet's balance change
   // can be cancelled by calling the function returned from this one
-  // a failed balance read goes to options.onError, as the callback's own errors do
+  // a failed balance read goes to console.error, as the callback's own errors do
   public async watchBalance(
     callback: (balance: bigint) => unknown,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.watchStatus(async () => {
       const balance = await this.getBalance();
       await callback(balance);
-    }, options);
+    });
   }
 
   /**
    * Watch wallet for new transactions. Transactions already in the history
    * when the watch starts are not reported; each new one is reported once.
    * @param callback - Called with new transaction hashes when they appear; its errors, and a
-   * failed history read, go to `options.onError`
+   * failed history read, go to console.error
    * @returns Cancel function to stop watching
    */
   public async watchTransactionHashes(
     callback: (txHash: string) => unknown,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     // Seeded before subscribing so the history at setup is not reported as new
     const existing = await this.getRawHistory();
@@ -590,30 +584,34 @@ export class BaseWallet {
 
       // each on its own, so that one failing does not keep the others from being reported
       for (const txHash of newTxHashes) {
-        runCallback(() => callback(txHash), options.onError);
+        runCallback(() => callback(txHash));
       }
-    }, options);
+    });
   }
 
   /**
    * Watch wallet for new transactions
    * @param callback - Called with each new transaction; its errors, and a failed read of the
-   * transaction or the history, go to `options.onError`
+   * transaction or the history, go to console.error
    * @returns Cancel function to stop watching
    */
   public async watchTransactions(
     callback: (transaction: ElectrumRawTransaction) => unknown,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.watchTransactionHashes(async (txHash: string) => {
       const tx = await this.provider.getRawTransactionObject(txHash);
       await callback(tx);
-    }, options);
+    });
   }
 
+  /**
+   * Watch wallet for new transactions with token outputs
+   * @param callback - Called with each new transaction that has a token output; its errors, and a
+   * failed read of the transaction or the history, go to console.error
+   * @returns Cancel function to stop watching
+   */
   public async watchTokenTransactions(
     callback: (tx: ElectrumRawTransaction) => unknown,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.watchTransactions(
       async (transaction: ElectrumRawTransaction) => {
@@ -621,7 +619,6 @@ export class BaseWallet {
           await callback(transaction);
         }
       },
-      options,
     );
   }
 
@@ -1111,7 +1108,7 @@ export class BaseWallet {
   /**
    * watchBlocks Watch network blocks
    *
-   * @param callback callback with a block header object
+   * @param callback callback with a block header object; its errors go to console.error
    * @param skipCurrentHeight if set, the notification about current block will not arrive
    *
    * @returns a function which will cancel watching upon evaluation
@@ -1119,7 +1116,6 @@ export class BaseWallet {
   public async watchBlocks(
     callback: (header: HexHeaderI) => unknown,
     skipCurrentHeight: boolean = true,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     // the skip is done here rather than by the provider, so a move to another provider can tell
     // its current tip, delivered on subscribing, from the header already seen
@@ -1133,7 +1129,7 @@ export class BaseWallet {
           skip = false;
           return;
         }
-        if (!seen) runCallback(() => callback(header), options.onError);
+        if (!seen) runCallback(() => callback(header));
       }, false),
     );
   }

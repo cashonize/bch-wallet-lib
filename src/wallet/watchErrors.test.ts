@@ -8,8 +8,8 @@ import { BaseWallet } from "./Base.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWallet } from "./Wif.js";
 
-// A watch callback's throw or rejection, and a failed read a watch makes for it, goes to the
-// watch's onError, or to console.error without one; never an unhandled rejection
+// A watch callback's throw or rejection, and a failed read a watch makes for it, goes to
+// console.error; never an unhandled rejection
 let provider: MockNetworkProvider;
 let refuseAddress: boolean;
 let unhandled: unknown[];
@@ -49,29 +49,24 @@ async function fund(address: string, satoshis: bigint) {
 const boom = new Error("callback failed");
 
 describe("a watch callback that fails", () => {
-  test("goes to onError, once per failure, and the watch goes on", async () => {
+  test("goes to console.error, once per failure, and the watch goes on", async () => {
     const wallet = await RegTestWallet.newRandom();
-    const errors: unknown[] = [];
     const balances: bigint[] = [];
-    await wallet.watchBalance(
-      async (balance) => {
-        balances.push(balance);
-        throw boom;
-      },
-      { onError: (error) => errors.push(error) },
-    );
+    await wallet.watchBalance(async (balance) => {
+      balances.push(balance);
+      throw boom;
+    });
 
     await fund(wallet.cashaddr, 1_000n);
     await delay(100);
     await fund(wallet.cashaddr, 2_000n);
     await delay(100);
     expect(balances).toEqual([1_000n, 3_000n]);
-    expect(errors).toEqual([boom, boom]);
-    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleError.mock.calls).toEqual([[boom], [boom]]);
     await wallet.stop();
   });
 
-  test("goes to console.error without onError", async () => {
+  test("goes to console.error from a balance and a status watch", async () => {
     const wallet = await RegTestWallet.newRandom();
     await wallet.watchBalance(() => {
       throw boom;
@@ -88,13 +83,9 @@ describe("a watch callback that fails", () => {
 
   test("does not keep a single-address wallet's other watchers from being called", async () => {
     const wallet = await RegTestWallet.newRandom();
-    const errors: unknown[] = [];
-    await wallet.watchStatus(
-      async () => {
-        throw boom;
-      },
-      { onError: (error) => errors.push(error) },
-    );
+    await wallet.watchStatus(async () => {
+      throw boom;
+    });
     const statuses: (string | null)[] = [];
     await wallet.watchStatus((status) => {
       statuses.push(status);
@@ -102,62 +93,45 @@ describe("a watch callback that fails", () => {
 
     await fund(wallet.cashaddr, 1_000n);
     await delay(100);
-    expect(errors).toEqual([boom]);
+    expect(consoleError.mock.calls).toEqual([[boom]]);
     expect(statuses).toHaveLength(1);
     await wallet.stop();
   });
 
-  test("goes to onError from the base status watch", async () => {
+  test("goes to console.error from the base status watch", async () => {
     const wallet = await RegTestWallet.newRandom();
-    const errors: unknown[] = [];
     // the provider-backed watch that the wallet classes override
-    await BaseWallet.prototype.watchStatus.call(
-      wallet,
-      async () => {
-        throw boom;
-      },
-      { onError: (error) => errors.push(error) },
-    );
+    await BaseWallet.prototype.watchStatus.call(wallet, async () => {
+      throw boom;
+    });
     // it fires on subscribing
     await delay(20);
-    expect(errors).toEqual([boom]);
+    expect(consoleError.mock.calls).toEqual([[boom]]);
     await wallet.stop();
   });
 
-  test("goes to onError from an HD wallet's watch", async () => {
+  test("goes to console.error from an HD wallet's watch", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    const errors: unknown[] = [];
-    await wallet.watchBalance(
-      async () => {
-        throw boom;
-      },
-      { onError: (error) => errors.push(error) },
-    );
+    await wallet.watchBalance(async () => {
+      throw boom;
+    });
 
     await fund(wallet.getDepositAddress(0), 1_000n);
     await delay(300);
-    expect(errors).toEqual([boom]);
+    expect(consoleError.mock.calls).toEqual([[boom]]);
     await wallet.stop();
   });
 
-  test("goes to onError for each new transaction", async () => {
+  test("goes to console.error for each new transaction", async () => {
     await provider.seedAlice();
     const wallet = await RegTestWallet.newRandom();
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const errors: unknown[] = [];
-    const onError = (error: unknown) => errors.push(error);
-    await wallet.watchTransactionHashes(
-      () => {
-        throw boom;
-      },
-      { onError },
-    );
-    await wallet.watchTransactions(
-      async () => {
-        throw boom;
-      },
-      { onError },
-    );
+    await wallet.watchTransactionHashes(() => {
+      throw boom;
+    });
+    await wallet.watchTransactions(async () => {
+      throw boom;
+    });
 
     await alice.send([
       { cashaddr: wallet.cashaddr, value: 1_000n },
@@ -166,45 +140,20 @@ describe("a watch callback that fails", () => {
     await alice.send({ cashaddr: wallet.cashaddr, value: 1_000n });
     await delay(300);
     // each watch reports each of the two transactions once
-    expect(errors).toEqual([boom, boom, boom, boom]);
+    expect(consoleError.mock.calls).toEqual([[boom], [boom], [boom], [boom]]);
     await alice.stop();
     await wallet.stop();
   });
 
-  test("goes to onError from a block watch", async () => {
+  test("goes to console.error from a block watch", async () => {
     const wallet = await RegTestWallet.newRandom();
-    const errors: unknown[] = [];
-    await wallet.watchBlocks(
-      async () => {
-        throw boom;
-      },
-      true,
-      { onError: (error) => errors.push(error) },
-    );
+    await wallet.watchBlocks(async () => {
+      throw boom;
+    }, true);
 
     await provider.mine(wallet.cashaddr, 1);
     await delay(100);
-    expect(errors).toEqual([boom]);
-    await wallet.stop();
-  });
-
-  test("an onError that throws goes to console.error", async () => {
-    const wallet = await RegTestWallet.newRandom();
-    const handlerError = new Error("onError failed");
-    await wallet.watchBalance(
-      () => {
-        throw boom;
-      },
-      {
-        onError: () => {
-          throw handlerError;
-        },
-      },
-    );
-
-    await fund(wallet.cashaddr, 1_000n);
-    await delay(100);
-    expect(consoleError.mock.calls).toEqual([[handlerError]]);
+    expect(consoleError.mock.calls).toEqual([[boom]]);
     await wallet.stop();
   });
 
@@ -232,18 +181,15 @@ describe("a read that a watch makes and that fails", () => {
     await delay(300);
   }
 
-  test("goes to the watch's onError", async () => {
+  test("goes to console.error", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    const errors: unknown[] = [];
     const balances: bigint[] = [];
-    await wallet.watchBalance((balance) => balances.push(balance), {
-      onError: (error) => errors.push(error),
-    });
+    await wallet.watchBalance((balance) => balances.push(balance));
 
     await failGapExtension(wallet);
     expect(balances).toEqual([]);
-    expect(errors).toHaveLength(1);
-    expect((errors[0] as Error).message).toBe("subscription refused");
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError.mock.calls[0][0].message).toBe("subscription refused");
     refuseAddress = false;
     await wallet.stop();
   });

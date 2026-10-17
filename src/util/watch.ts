@@ -2,25 +2,11 @@ import type { CancelFn } from "../wallet/interface.js";
 import { toError } from "./toError.js";
 
 /**
- * Run a watch callback, sync or async, and hand its throw or rejection to onError, or to
- * console.error without one. Never throws and never leaves a promise unhandled.
+ * Run a watch callback, sync or async, and hand its throw or rejection to console.error. Never
+ * throws and never leaves a promise unhandled.
  */
-export function runCallback(
-  callback: () => unknown,
-  onError?: (error: unknown) => void,
-): void {
-  const report = (error: unknown) => {
-    if (!onError) {
-      console.error(error);
-      return;
-    }
-    try {
-      // an async onError (only possible from untyped code) gets its rejection reported too
-      settle(onError(error), (e) => console.error(e));
-    } catch (handlerError) {
-      console.error(handlerError);
-    }
-  };
+export function runCallback(callback: () => unknown): void {
+  const report = (error: unknown) => console.error(error);
   try {
     settle(callback(), report);
   } catch (error) {

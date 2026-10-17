@@ -26,7 +26,7 @@ import { derivePrefix } from "../util/derivePublicKeyHash.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { CancelFn, WatchOptions } from "./interface.js";
+import { CancelFn } from "./interface.js";
 import { networkPrefixError } from "../util/networkPrefixError.js";
 import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
@@ -54,10 +54,9 @@ export class WatchWallet extends BaseWallet {
   static walletType = WalletTypeEnum.Watch;
 
   // Subscription-first infrastructure: single subscription shared by all watchers
-  private watchCallbacks: Array<{
-    callback: (status: string | null, address: string) => unknown;
-    onError?: (error: unknown) => void;
-  }> = [];
+  private watchCallbacks: Array<
+    (status: string | null, address: string) => unknown
+  > = [];
   private baseCancelFn?: CancelFn;
   /** Settles when the latest status watch is in place or has failed, and never rejects. */
   watchPromise?: Promise<void>;
@@ -311,22 +310,20 @@ export class WatchWallet extends BaseWallet {
   }
 
   private notifyWatchCallbacks(status: string | null, address: string) {
-    for (const { callback, onError } of this.watchCallbacks) {
-      runCallback(() => callback(status, address), onError);
+    for (const callback of this.watchCallbacks) {
+      runCallback(() => callback(status, address));
     }
   }
 
   public override async watchStatus(
     callback: (status: string | null, address: string) => unknown,
-    options: WatchOptions = {},
   ): Promise<CancelFn> {
     await this.watched();
 
-    const watcher = { callback, onError: options.onError };
-    this.watchCallbacks.push(watcher);
+    this.watchCallbacks.push(callback);
 
     return async () => {
-      const index = this.watchCallbacks.indexOf(watcher);
+      const index = this.watchCallbacks.indexOf(callback);
       if (index > -1) {
         this.watchCallbacks.splice(index, 1);
       }

@@ -1,6 +1,7 @@
 import {
-  binToNumberUint16LE,
+  authenticationInstructionsAreMalformed,
   binToUtf8,
+  decodeAuthenticationInstructions,
   hexToBin,
   Input,
   Output,
@@ -252,33 +253,37 @@ export class OpReturnData {
   /**
    * parseBinary - parse OP_RETURN data and return pushed chunks of binary data
    *
+   * An empty push gives an empty chunk, OP_1NEGATE and OP_1..OP_16 their one-byte number.
+   * Throws when the script does not start with OP_RETURN, or has a non-push opcode or a truncated push.
+   *
    * @param opReturn   Raw OP_RETURN data
    *
    * @returns array of binary data chunks pushed
    */
   public static parseBinary(opReturn: Uint8Array): Uint8Array[] {
+    if (opReturn[0] !== 0x6a) {
+      throw new Error("Not an OP_RETURN script");
+    }
+    const instructions = decodeAuthenticationInstructions(opReturn.slice(1));
+    if (authenticationInstructionsAreMalformed(instructions)) {
+      throw new Error("Malformed push in OP_RETURN script");
+    }
+
     const chunks: Uint8Array[] = [];
-    let position = 1;
-
-    // handle direct push, OP_PUSHDATA1, OP_PUSHDATA2;
-    // OP_PUSHDATA4 is not supported in OP_RETURNs by consensus
-    while (opReturn[position]) {
-      let length = 0;
-      if (opReturn[position] === 0x4c) {
-        length = opReturn[position + 1];
-        position += 2;
-      } else if (opReturn[position] === 0x4d) {
-        length = binToNumberUint16LE(
-          opReturn.slice(position + 1, position + 3),
-        );
-        position += 3;
+    for (const instruction of instructions) {
+      const { opcode } = instruction;
+      if ("data" in instruction) {
+        // OP_0 is a push of empty data
+        chunks.push(instruction.data);
+      } else if (opcode === 0x4f) {
+        chunks.push(Uint8Array.from([0x81])); // OP_1NEGATE pushes -1
+      } else if (opcode >= 0x51 && opcode <= 0x60) {
+        chunks.push(Uint8Array.from([opcode - 0x50])); // OP_1..OP_16
       } else {
-        length = opReturn[position];
-        position += 1;
+        throw new Error(
+          `Non-push opcode 0x${opcode.toString(16)} in OP_RETURN script`,
+        );
       }
-
-      chunks.push(opReturn.slice(position, position + length));
-      position += length;
     }
 
     return chunks;

@@ -1,3 +1,4 @@
+import { binToHex, hexToBin } from "@bitauth/libauth";
 import { UtxoId } from "../interface.js";
 import { fromUtxoId, OpReturnData, toUtxoId } from "./model.js";
 
@@ -58,5 +59,56 @@ describe("OpReturnData limits", () => {
     expect(OpReturnData.from(pushData1(76)).buffer.slice(0, 3)).toStrictEqual(
       Uint8Array.from([0x6a, 0x4c, 76]),
     );
+  });
+});
+
+describe("OpReturnData.parseBinary", () => {
+  test("goes on past an empty push", () => {
+    expect(
+      OpReturnData.parse("6a0442434d52000b61667465722d656d707479"),
+    ).toStrictEqual(["BCMR", "", "after-empty"]);
+  });
+
+  test("reads OP_1NEGATE and OP_1..OP_16 as their numbers", () => {
+    const chunks = OpReturnData.parseBinary(
+      hexToBin("6a044142434451604f03aabbcc"),
+    );
+    expect(chunks.map((chunk) => binToHex(chunk))).toStrictEqual([
+      "41424344",
+      "01",
+      "10",
+      "81",
+      "aabbcc",
+    ]);
+  });
+
+  test("reads OP_PUSHDATA1 and OP_PUSHDATA2", () => {
+    const chunks = OpReturnData.parseBinary(hexToBin("6a4c02aabb4d0300ccddee"));
+    expect(chunks.map((chunk) => binToHex(chunk))).toStrictEqual([
+      "aabb",
+      "ccddee",
+    ]);
+  });
+
+  test("round-trips what fromArray builds", () => {
+    const parts = ["BCMR", "", "x".repeat(80), "after"];
+    const { buffer } = OpReturnData.fromArray(parts);
+    expect(OpReturnData.parse(binToHex(buffer))).toStrictEqual(parts);
+  });
+
+  test("a bare OP_RETURN has no chunks", () => {
+    expect(OpReturnData.parseBinary(Uint8Array.from([0x6a]))).toStrictEqual([]);
+  });
+
+  test("throws on a non-push opcode, a truncated push, or a script that is no OP_RETURN", () => {
+    // OP_DUP after a push
+    expect(() => OpReturnData.parse("6a0141" + "76")).toThrow(
+      "Non-push opcode 0x76 in OP_RETURN script",
+    );
+    // pushes 4 bytes, only 2 follow
+    expect(() => OpReturnData.parse("6a04aabb")).toThrow(
+      "Malformed push in OP_RETURN script",
+    );
+    expect(() => OpReturnData.parse("0141")).toThrow("Not an OP_RETURN script");
   });
 });

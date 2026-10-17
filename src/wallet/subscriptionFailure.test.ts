@@ -76,8 +76,6 @@ async function fund(address: string, satoshis: bigint) {
   });
 }
 
-const txHash = "00".repeat(32);
-
 async function newAddress() {
   const wallet = await RegTestWallet.newRandom();
   await wallet.stop();
@@ -85,20 +83,13 @@ async function newAddress() {
 }
 
 describe("a subscription that cannot be made", () => {
-  test("rejects waitForTransaction for a txHash", async () => {
+  test("rejects watchBlocks", async () => {
     const wallet = await RegTestWallet.newRandom();
-    refuse.transaction = true;
-    await expect(wallet.waitForTransaction({ txHash })).rejects.toThrow(
+    refuse.headers = true;
+    await expect(wallet.watchBlocks(() => {})).rejects.toThrow(
       "subscription refused",
     );
     await wallet.stop();
-  }, 5000);
-
-  test("rejects waitForBlock", async () => {
-    refuse.headers = true;
-    await expect(provider.waitForBlock()).rejects.toThrow(
-      "subscription refused",
-    );
   }, 5000);
 
   test("rejects sendRawTransaction awaiting propagation", async () => {

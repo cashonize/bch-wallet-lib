@@ -247,42 +247,4 @@ describe("a read that a watch makes and that fails", () => {
     refuseAddress = false;
     await wallet.stop();
   });
-
-  test("rejects waitForBalance and ends its watch", async () => {
-    const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
-    const waiting = wallet.waitForBalance(5_000n);
-    // a watch that does not fail keeps it waiting
-    await fund(wallet.getDepositAddress(0), 1_000n);
-    await delay(300);
-
-    const rejected = expect(waiting).rejects.toThrow("subscription refused");
-    await failGapExtension(wallet);
-    await rejected;
-    refuseAddress = false;
-    expect(wallet["walletWatchCallbacks"]).toHaveLength(0);
-    await wallet.stop();
-  });
-
-  test("rejects waitForTokenBalance", async () => {
-    const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
-    const waiting = wallet.waitForTokenBalance("11".repeat(32), 1n);
-    const rejected = expect(waiting).rejects.toThrow("subscription refused");
-    await failGapExtension(wallet);
-    await rejected;
-    refuseAddress = false;
-    await wallet.stop();
-  });
-
-  test("rejects waitForTransaction", async () => {
-    const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchPromise;
-    const waiting = wallet.waitForTransaction();
-    const rejected = expect(waiting).rejects.toThrow("subscription refused");
-    await failGapExtension(wallet);
-    await rejected;
-    refuseAddress = false;
-    await wallet.stop();
-  });
 });

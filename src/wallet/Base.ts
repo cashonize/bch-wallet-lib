@@ -3,13 +3,7 @@ import { purgeWalletCache, WalletCache } from "../cache/walletCache.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
-import {
-  DsproofData,
-  HexHeaderI,
-  NFTCapability,
-  TxI,
-  Utxo,
-} from "../interface.js";
+import { HexHeaderI, NFTCapability, TxI, Utxo } from "../interface.js";
 import { getNetworkProvider } from "../network/default.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
@@ -34,20 +28,14 @@ import {
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
-import { runCallback, waitOnWatch } from "../util/watch.js";
+import { runCallback } from "../util/watch.js";
 import { WalletTypeEnum } from "./enum.js";
 import {
   InsufficientFundsError,
   InvalidRequestError,
   UtxoNotAvailableError,
 } from "./errors.js";
-import {
-  CancelFn,
-  SendRequestOptionsI,
-  WaitForTransactionOptions,
-  WaitForTransactionResponse,
-  WatchOptions,
-} from "./interface.js";
+import { CancelFn, SendRequestOptionsI, WatchOptions } from "./interface.js";
 import {
   fromUtxoId,
   OpReturnData,
@@ -561,59 +549,6 @@ export class BaseWallet {
     }, options);
   }
 
-  // waits for address balance to be greater than or equal to the target value
-  // this call halts the execution; it rejects if the watch or a balance read fails
-  public async waitForBalance(value: bigint): Promise<bigint> {
-    // Check if condition is already met before watching
-    const currentBalance = await this.getBalance();
-    if (currentBalance >= value) {
-      return currentBalance;
-    }
-
-    return waitOnWatch<bigint>((done, options) =>
-      this.watchBalance((balance) => {
-        if (balance >= value) done(balance);
-      }, options),
-    );
-  }
-
-  // sets up a callback to be called upon wallet's token balance change
-  // can be cancelled by calling the function returned from this one
-  // a failed balance read goes to options.onError, as the callback's own errors do
-  public async watchTokenBalance(
-    category: string,
-    callback: (balance: bigint) => unknown,
-    options: WatchOptions = {},
-  ): Promise<CancelFn> {
-    return await this.watchStatus(async () => {
-      const balance = await this.getTokenBalance(category);
-      await callback(balance);
-    }, options);
-  }
-
-  // waits for address token balance to be greater than or equal to the target amount
-  // this call halts the execution; it rejects if the watch or a balance read fails
-  public async waitForTokenBalance(
-    category: string,
-    amount: bigint,
-  ): Promise<bigint> {
-    // Check if condition is already met before watching
-    const currentBalance = await this.getTokenBalance(category);
-    if (currentBalance >= amount) {
-      return currentBalance;
-    }
-
-    return waitOnWatch<bigint>((done, options) =>
-      this.watchTokenBalance(
-        category,
-        (balance) => {
-          if (balance >= amount) done(balance);
-        },
-        options,
-      ),
-    );
-  }
-
   /**
    * Watch wallet for new transactions. Transactions already in the history
    * when the watch starts are not reported; each new one is reported once.
@@ -689,34 +624,6 @@ export class BaseWallet {
       },
       options,
     );
-  }
-
-  /**
-   * Watch for double-spend proofs on incoming transactions.
-   * For each new unconfirmed transaction, subscribes to its dsproof
-   * for a short window. If a dsproof arrives, the callback is invoked.
-   *
-   * @param callback - Called with the dsproof data when a double-spend is detected; its errors,
-   * and a failed dsproof subscription, go to `options.onError`
-   * @param window - How long (ms) to watch each transaction for dsproofs (default 5000)
-   * @returns Cancel function to stop watching
-   */
-  public async watchDoubleSpends(
-    callback: (dsproof: DsproofData) => unknown,
-    window: number = 5000,
-    options: WatchOptions = {},
-  ): Promise<CancelFn> {
-    return this.watchTransactionHashes(async (txHash: string) => {
-      const cancel = await this.subscribe((provider) =>
-        provider.subscribeToDsproof(txHash, ([proofTxHash, dsproof]) => {
-          if (txHash === proofTxHash && dsproof !== null) {
-            runCallback(() => callback(dsproof), options.onError);
-          }
-        }),
-      );
-
-      setTimeout(() => runCallback(cancel, options.onError), window);
-    }, options);
   }
 
   /**
@@ -1202,78 +1109,6 @@ export class BaseWallet {
     throw Error("getRawHistory not implemented in BaseWallet");
   }
 
-  // gets last transaction of this wallet
-  public async getLastTransaction(
-    confirmedOnly: boolean = false,
-  ): Promise<ElectrumRawTransaction | null> {
-    let history: TxI[] = await this.getRawHistory();
-    if (confirmedOnly) {
-      history = history.filter((val) => val.height > 0);
-    }
-
-    if (!history.length) {
-      return null;
-    }
-
-    const [lastTx] = history.slice(-1);
-    return this.provider.getRawTransactionObject(lastTx.tx_hash);
-  }
-
-  // waits for next transaction, program execution is halted
-  public async waitForTransaction(
-    options: WaitForTransactionOptions = {
-      getTransactionInfo: true,
-      getBalance: false,
-      txHash: undefined,
-    },
-  ): Promise<WaitForTransactionResponse> {
-    if (options.getTransactionInfo === undefined) {
-      options = { ...options, getTransactionInfo: true };
-    }
-
-    const makeResponse = async (txHash?: string) => {
-      const response = <WaitForTransactionResponse>{};
-      const promises: any[] = [undefined, undefined];
-
-      if (options.getBalance === true) {
-        promises[0] = this.getBalance();
-      }
-
-      if (options.getTransactionInfo === true) {
-        if (!txHash) {
-          promises[1] = this.getLastTransaction();
-        } else {
-          promises[1] = this.provider.getRawTransactionObject(txHash);
-        }
-      }
-
-      const result = await Promise.all(promises);
-      response.balance = result[0];
-      response.transactionInfo = result[1];
-
-      return response;
-    };
-
-    // waiting for a specific transaction to propagate
-    const txHash = options.txHash;
-    if (txHash) {
-      await waitOnWatch<void>((done) =>
-        this.subscribe((provider) =>
-          provider.subscribeToTransaction(txHash, (data) => {
-            if (data && data[0] === txHash && data[1] !== null) done();
-          }),
-        ),
-      );
-      return makeResponse(txHash);
-    }
-
-    // waiting for any address transaction; rejects if the watch fails
-    await waitOnWatch<void>((done, watchOptions) =>
-      this.watchStatus(() => done(), watchOptions),
-    );
-    return makeResponse();
-  }
-
   /**
    * watchBlocks Watch network blocks
    *
@@ -1302,16 +1137,6 @@ export class BaseWallet {
         if (!seen) runCallback(() => callback(header), options.onError);
       }, false),
     );
-  }
-
-  /**
-   * waitForBlock Wait for a network block
-   *
-   * @param height if specified waits for this exact blockchain height, otherwise resolves with the next block
-   *
-   */
-  public async waitForBlock(height?: number): Promise<HexHeaderI> {
-    return this.provider.waitForBlock(height);
   }
 
   //#endregion Funds

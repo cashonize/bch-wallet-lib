@@ -1,7 +1,6 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { binToHex, utf8ToBin } from "@bitauth/libauth";
 import { NFTCapability } from "../interface.js";
-import { delay } from "../util/index.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
 
@@ -444,58 +443,5 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(bobUtxos.length).toBe(2);
     expect(bobUtxos[0].satoshis).toBe(3000n);
     expect(bobUtxos[1].satoshis).toBe(3349n);
-  });
-
-  test("Test cashtoken waiting and watching balance", async () => {
-    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const bob = await RegTestWallet.newRandom();
-
-    const genesisResponse = await alice.tokenGenesis({
-      amount: 100n,
-      value: 5000n,
-      nft: {
-        capability: NFTCapability.minting,
-        commitment: "74657374",
-      },
-      cashaddr: alice.cashaddr!,
-    });
-
-    const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
-    expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
-    expect(tokenUtxos.length).toBe(1);
-    expect(tokenUtxos[0].satoshis).toBe(5000n);
-
-    let seenBalance = 0n;
-    const sending = delay(0).then(() =>
-      alice.send([
-        new TokenSendRequest({
-          cashaddr: bob.cashaddr!,
-          amount: 100n,
-          category: category,
-          value: 1500n,
-          nft: {
-            capability: NFTCapability.minting,
-            commitment: "74657374",
-          },
-        }),
-      ]),
-    );
-
-    const cancel = await bob.watchTokenBalance(category, (balance) => {
-      seenBalance = balance;
-    });
-
-    const [balance, _] = await Promise.all([
-      bob.waitForTokenBalance(category, 100n),
-      delay(1000),
-      sending,
-    ]);
-
-    expect(balance).toBe(100n);
-    expect(seenBalance).toBe(100n);
-
-    await Promise.all([cancel(), delay(1000)]);
   });
 });

@@ -2,14 +2,7 @@ import { binToBase64, utf8ToBin } from "@bitauth/libauth";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { CacheProvider } from "../cache/interface.js";
 import { Config } from "../config.js";
-import {
-  DsproofData,
-  HeaderI,
-  HexHeaderI,
-  Network,
-  TxI,
-  Utxo,
-} from "../interface.js";
+import { HeaderI, HexHeaderI, Network, TxI, Utxo } from "../interface.js";
 import { decodeHeader } from "../util/header.js";
 import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { toError } from "../util/toError.js";
@@ -423,23 +416,6 @@ export default class ElectrumNetworkProvider {
     return this.subscribeToHeaders(waitForBlockCallback);
   }
 
-  // Wait for the next block or a block at given blockchain height.
-  public async waitForBlock(height?: number): Promise<HexHeaderI> {
-    if (this.currentHeight && !height) {
-      height = this.currentHeight + 1;
-    }
-    return waitOnWatch<HexHeaderI>((done) =>
-      this.watchBlocks((header) => {
-        if (!height) {
-          height = header.height + 1;
-          return;
-        }
-
-        if (header.height >= height) done(header);
-      }),
-    );
-  }
-
   // subscribe to notifications sent when new block is found, the block header is sent to callback
   private async subscribeToHeaders(
     callback: (header: HexHeaderI) => unknown,
@@ -474,17 +450,6 @@ export default class ElectrumNetworkProvider {
   ): Promise<CancelFn> {
     return this.subscribeRequest(
       "blockchain.transaction.subscribe",
-      [txHash],
-      callback,
-    );
-  }
-
-  async subscribeToDsproof(
-    txHash: string,
-    callback: (data: [txHash: string, dsproof: DsproofData | null]) => unknown,
-  ): Promise<CancelFn> {
-    return this.subscribeRequest(
-      "blockchain.transaction.dsproof.subscribe",
       [txHash],
       callback,
     );

@@ -1,5 +1,5 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { SendRequestOptionsI, WaitForTransactionOptions } from "./interface.js";
+import { SendRequestOptionsI } from "./interface.js";
 import { TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
 
@@ -34,19 +34,5 @@ describe("the caller's options object is left as it was", () => {
       options,
     );
     expect(options).toEqual({ broadcast: false });
-  });
-
-  test("waitForTransaction", async () => {
-    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const bob = await RegTestWallet.newRandom();
-    const { txId } = await alice.send({
-      cashaddr: bob.cashaddr,
-      value: 10_000n,
-    });
-
-    const options: WaitForTransactionOptions = { txHash: txId };
-    const response = await bob.waitForTransaction(options);
-    expect(response.transactionInfo?.txid).toBe(txId);
-    expect(options).toEqual({ txHash: txId });
   });
 });

@@ -168,27 +168,6 @@ describe("setProvider", () => {
   });
 });
 
-describe("waitForTransaction", () => {
-  test("ends its subscription for a transaction already known", async () => {
-    const wallet = await RegTestWallet.newRandom();
-    await fund(oldProvider, wallet.cashaddr, 10_000n);
-    const { txId } = await wallet.send([
-      { cashaddr: wallet.cashaddr, value: 1_000n },
-    ]);
-    // the provider's own height subscription, which a send no longer opens, stays open
-    await oldProvider.getBlockHeight();
-    const before = oldProvider.subscriptions;
-
-    await wallet.waitForTransaction({ txHash: txId! });
-    expect(oldProvider.subscriptions).toBe(before);
-
-    // only the wallet's own address watch follows it to another provider
-    await wallet.setProvider(newProvider);
-    expect(newProvider.subscriptions).toBe(1);
-    await wallet.stop();
-  });
-});
-
 describe("stop", () => {
   test("ends a watch that was still subscribing when it ran", async () => {
     const wallet = await RegTestWallet.newRandom();

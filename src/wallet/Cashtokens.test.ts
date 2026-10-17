@@ -9,6 +9,8 @@ import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { waitForTokenBalance } from "#test/balances.js";
+import json from "../test/json.test.js";
 import { convert, delay } from "../util/index.js";
 import {
   SendRequest,
@@ -699,7 +701,6 @@ describe(`Test cashtokens`, () => {
       bobTxId = tx.txid;
     });
 
-    let seenBalance = 0n;
     const sending: Promise<SendResponse> = delay(0).then(() =>
       alice.send([
         new TokenSendRequest({
@@ -715,17 +716,11 @@ describe(`Test cashtokens`, () => {
       ]),
     );
 
-    const cancel = await bob.watchTokenBalance(category, (balance) => {
-      seenBalance = balance;
-    });
-
-    const balance = await bob.waitForTokenBalance(category, 100n);
+    const balance = await waitForTokenBalance(bob, category, 100n);
     const sendResponse = await sending;
     await delay(2000);
     expect(balance).toBe(100n);
-    expect(seenBalance).toBe(100n);
     expect(sendResponse.txId).toBe(bobTxId);
-    await cancel();
     await txCancel();
     await delay(500);
   });

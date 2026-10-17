@@ -1,5 +1,4 @@
 import { Utxo } from "../interface.js";
-import { ElectrumRawTransaction } from "../network/interface.js";
 
 export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
@@ -14,17 +13,6 @@ export interface SendRequestOptionsI {
   tokenOperation?: "send" | "genesis" | "mint" | "burn";
   ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction; they must be in the spend's pool
   broadcast?: boolean; // true
-}
-
-export interface WaitForTransactionOptions {
-  getTransactionInfo?: boolean;
-  getBalance?: boolean;
-  txHash?: string;
-}
-
-export interface WaitForTransactionResponse {
-  transactionInfo?: ElectrumRawTransaction;
-  balance?: bigint;
 }
 
 export type CancelFn = () => Promise<void>;

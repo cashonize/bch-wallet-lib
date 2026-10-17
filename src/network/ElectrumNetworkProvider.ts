@@ -15,7 +15,7 @@ import {
 import { decodeHeader } from "../util/header.js";
 import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { getTransactionHash } from "../util/transaction.js";
-import { runCallback } from "../util/watch.js";
+import { runCallback, waitOnWatch } from "../util/watch.js";
 import { CancelFn } from "../wallet/interface.js";
 import {
   ElectrumRawTransaction,
@@ -409,30 +409,17 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
       );
       return txHash;
     }
-    return new Promise((resolve, reject) => {
-      let cancel: CancelFn | undefined;
-
-      const waitForTransactionCallback = async (
-        data: [txHash: string, confirmations: number | null],
-      ) => {
-        if (data && data[0] === txHash && data[1] !== null) {
-          await cancel?.();
-          resolve(txHash);
-        }
-      };
-      this.subscribeToTransaction(txHash, waitForTransactionCallback).then(
-        (subscribed) => {
-          cancel = subscribed;
-          this.performRequest("blockchain.transaction.broadcast", [
-            txHex,
-          ]).catch(async (error) => {
-            await cancel?.();
-            reject(error);
-          });
-        },
-        reject,
+    await waitOnWatch<void>(async (done, { onError }) => {
+      const cancel = await this.subscribeToTransaction(txHash, (data) => {
+        if (data && data[0] === txHash && data[1] !== null) done();
+      });
+      // broadcast once subscribed, so that the transaction's first status is not missed
+      this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
+        onError,
       );
+      return cancel;
     });
+    return txHash;
   }
 
   // Get transaction history of a given cashaddr
@@ -491,27 +478,19 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   // Wait for the next block or a block at given blockchain height.
   public async waitForBlock(height?: number): Promise<HexHeaderI> {
-    return new Promise((resolve, reject) => {
-      let cancelWatch: CancelFn | undefined;
-      if (this.currentHeight && !height) {
-        height = this.currentHeight + 1;
-      }
-
-      this.watchBlocks(async (header) => {
+    if (this.currentHeight && !height) {
+      height = this.currentHeight + 1;
+    }
+    return waitOnWatch<HexHeaderI>((done) =>
+      this.watchBlocks((header) => {
         if (!height) {
           height = header.height + 1;
           return;
         }
 
-        if (header.height >= height) {
-          await cancelWatch?.();
-          resolve(header);
-          return;
-        }
-      }).then((cancel) => {
-        cancelWatch = cancel;
-      }, reject);
-    });
+        if (header.height >= height) done(header);
+      }),
+    );
   }
 
   // subscribe to notifications sent when new block is found, the block header is sent to callback

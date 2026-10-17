@@ -38,7 +38,7 @@ import {
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
-import { runCallback } from "../util/watch.js";
+import { runCallback, waitOnWatch } from "../util/watch.js";
 import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
 import { InsufficientFundsError } from "./errors.js";
 import { decodeTransaction } from "./Util.js";
@@ -600,7 +600,7 @@ export class BaseWallet implements WalletI {
   }
 
   // waits for address balance to be greater than or equal to the target value
-  // this call halts the execution
+  // this call halts the execution; it rejects if the watch or a balance read fails
   public async waitForBalance(value: bigint): Promise<bigint> {
     // Check if condition is already met before watching
     const currentBalance = await this.getBalance();
@@ -608,17 +608,11 @@ export class BaseWallet implements WalletI {
       return currentBalance;
     }
 
-    return new Promise((resolve, reject) => {
-      let watchCancel: CancelFn | undefined;
-      this.watchBalance(async (balance: bigint) => {
-        if (balance >= value) {
-          await watchCancel?.();
-          resolve(balance);
-        }
-      }).then((cancel) => {
-        watchCancel = cancel;
-      }, reject);
-    });
+    return waitOnWatch<bigint>((done, options) =>
+      this.watchBalance((balance) => {
+        if (balance >= value) done(balance);
+      }, options),
+    );
   }
 
   // sets up a callback to be called upon wallet's token balance change
@@ -636,7 +630,7 @@ export class BaseWallet implements WalletI {
   }
 
   // waits for address token balance to be greater than or equal to the target amount
-  // this call halts the execution
+  // this call halts the execution; it rejects if the watch or a balance read fails
   public async waitForTokenBalance(
     category: string,
     amount: bigint,
@@ -647,17 +641,15 @@ export class BaseWallet implements WalletI {
       return currentBalance;
     }
 
-    return new Promise((resolve, reject) => {
-      let watchCancel: CancelFn | undefined;
-      this.watchTokenBalance(category, async (balance: bigint) => {
-        if (balance >= amount) {
-          await watchCancel?.();
-          resolve(balance);
-        }
-      }).then((cancel) => {
-        watchCancel = cancel;
-      }, reject);
-    });
+    return waitOnWatch<bigint>((done, options) =>
+      this.watchTokenBalance(
+        category,
+        (balance) => {
+          if (balance >= amount) done(balance);
+        },
+        options,
+      ),
+    );
   }
 
   /**
@@ -1296,68 +1288,47 @@ export class BaseWallet implements WalletI {
       options = { ...options, getTransactionInfo: true };
     }
 
-    return new Promise((resolve, reject) => {
-      let txHashSeen = false;
+    const makeResponse = async (txHash?: string) => {
+      const response = <WaitForTransactionResponse>{};
+      const promises: any[] = [undefined, undefined];
 
-      const makeResponse = async (txHash?: string) => {
-        const response = <WaitForTransactionResponse>{};
-        const promises: any[] = [undefined, undefined];
-
-        if (options.getBalance === true) {
-          promises[0] = this.getBalance();
-        }
-
-        if (options.getTransactionInfo === true) {
-          if (!txHash) {
-            promises[1] = this.getLastTransaction();
-          } else {
-            promises[1] = this.provider.getRawTransactionObject(txHash);
-          }
-        }
-
-        const result = await Promise.all(promises);
-        response.balance = result[0];
-        response.transactionInfo = result[1];
-
-        return response;
-      };
-
-      // waiting for a specific transaction to propagate
-      if (options.txHash) {
-        let cancel: CancelFn | undefined;
-
-        const waitForTransactionCallback = async (data) => {
-          if (data && data[0] === options.txHash! && data[1] !== null) {
-            txHashSeen = true;
-            await cancel?.();
-            resolve(makeResponse(options.txHash!));
-          }
-        };
-
-        this.subscribe((provider) =>
-          provider.subscribeToTransaction(
-            options.txHash!,
-            waitForTransactionCallback,
-          ),
-        )
-          .then(async (subscribed) => {
-            cancel = subscribed;
-            // the status of a known transaction arrives while subscribing, before cancel is set
-            if (txHashSeen) await cancel();
-          })
-          .catch(reject);
-        return;
+      if (options.getBalance === true) {
+        promises[0] = this.getBalance();
       }
 
-      // waiting for any address transaction
-      let watchCancel: CancelFn | undefined;
-      this.watchStatus(async (_status) => {
-        await watchCancel?.();
-        resolve(makeResponse());
-      }).then((cancel) => {
-        watchCancel = cancel;
-      }, reject);
-    });
+      if (options.getTransactionInfo === true) {
+        if (!txHash) {
+          promises[1] = this.getLastTransaction();
+        } else {
+          promises[1] = this.provider.getRawTransactionObject(txHash);
+        }
+      }
+
+      const result = await Promise.all(promises);
+      response.balance = result[0];
+      response.transactionInfo = result[1];
+
+      return response;
+    };
+
+    // waiting for a specific transaction to propagate
+    const txHash = options.txHash;
+    if (txHash) {
+      await waitOnWatch<void>((done) =>
+        this.subscribe((provider) =>
+          provider.subscribeToTransaction(txHash, (data) => {
+            if (data && data[0] === txHash && data[1] !== null) done();
+          }),
+        ),
+      );
+      return makeResponse(txHash);
+    }
+
+    // waiting for any address transaction; rejects if the watch fails
+    await waitOnWatch<void>((done, watchOptions) =>
+      this.watchStatus(() => done(), watchOptions),
+    );
+    return makeResponse();
   }
 
   /**

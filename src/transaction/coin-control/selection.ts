@@ -72,7 +72,7 @@ export const selectBranchAndBound: CoinSelectionFn = (ctx) => {
   // come first; once a partial sum exceeds the upper bound we backtrack).
   const sorted = sortBySatoshisDesc(ctx.available);
   let bestMatch: number[] | null = null;
-  const tryInclude: boolean[] = new Array(sorted.length).fill(false);
+  const tryInclude: boolean[] = Array.from(sorted, () => false);
   let total = 0n;
   let depth = 0;
   // Iterative search with a budget so degenerate inputs don't hang.

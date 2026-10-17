@@ -594,7 +594,6 @@ export async function getFeeAmountSimple({
 export async function getFeeAmount({
   utxos,
   sendRequests,
-  sourceAddress,
   relayFeePerByteInSatoshi,
   feePaidBy,
   discardChange,

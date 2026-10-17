@@ -1,7 +1,7 @@
 import { WalletDbEntryI } from "./interface.js";
 
 export default abstract class StorageProvider {
-  public constructor(...args: any[]) {
+  public constructor(..._args: any[]) {
     throw new Error("StorageProvider is abstract and cannot be instantiated");
   }
 

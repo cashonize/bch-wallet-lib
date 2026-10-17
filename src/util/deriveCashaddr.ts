@@ -121,7 +121,7 @@ export function isTokenaddr(address: string): boolean {
 export function convertAddress(
   address: string,
   network: Network = "mainnet",
-  withTokens: boolean | undefined = undefined,
+  withTokens?: boolean,
 ): string {
   const result = decodeAddress(address);
 

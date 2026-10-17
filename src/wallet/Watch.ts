@@ -84,10 +84,10 @@ export class WatchWallet extends BaseWallet {
   /// This internal method is called by the various static constructors
   protected async initialize({
     name = "",
-    publicKey = undefined,
-    publicKeyCompressed = undefined,
-    publicKeyHash = undefined,
-    address = undefined,
+    publicKey,
+    publicKeyCompressed,
+    publicKeyHash,
+    address,
   }: WatchWalletOptions = {}): Promise<this> {
     if (publicKey?.length) {
       // @ts-ignore
@@ -275,7 +275,7 @@ export class WatchWallet extends BaseWallet {
     for (const callback of this.watchCallbacks) {
       try {
         callback(status, address);
-      } catch (_e) {
+      } catch {
         // Ignore callback errors to not break other watchers
       }
     }

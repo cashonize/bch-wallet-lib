@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, "..");
 dotenv.config({ path: path.resolve(root, ".env.regtest") });
 try {
   dotenv.config({ path: path.resolve(root, ".env.testnet") });
-} catch (e) {}
+} catch {}
 
 export default defineConfig({
   resolve: {

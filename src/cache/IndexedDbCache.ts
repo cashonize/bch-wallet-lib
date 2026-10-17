@@ -6,9 +6,7 @@ export class IndexedDbCache implements CacheProvider {
 
   constructor(
     private objectStoreName: string = "ElectrumNetworkProviderCache",
-  ) {
-    this.objectStoreName = objectStoreName;
-  }
+  ) {}
 
   private getDatabaseObjectFromTarget(
     target: EventTarget | null,

@@ -78,7 +78,7 @@ export class SignedMessage implements SignedMessageI {
       messageHash,
     ) as Uint8Array;
     const electronEncoding = new Uint8Array([
-      ...[31 + rs.recoveryId],
+      31 + rs.recoveryId,
       ...rs.signature,
     ]);
     return {

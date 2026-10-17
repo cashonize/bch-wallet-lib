@@ -14,7 +14,7 @@ export default class IndexedDBProvider implements StorageProvider {
     if (this.db) return this.db;
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, 31);
-      request.onupgradeneeded = (event) => {
+      request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains(this.storeName)) {
           db.createObjectStore(this.storeName, { keyPath: "name" });

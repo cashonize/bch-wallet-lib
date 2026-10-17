@@ -79,14 +79,14 @@ export class Wallet extends WatchWallet {
   /// This internal method is called by the various static constructors
   protected async initialize({
     name = "",
-    mnemonic = undefined,
-    derivationPath = undefined,
-    privateKey = undefined,
-    privateKeyWif = undefined,
-    publicKey = undefined,
-    publicKeyCompressed = undefined,
-    publicKeyHash = undefined,
-    address = undefined,
+    mnemonic,
+    derivationPath,
+    privateKey,
+    privateKeyWif,
+    publicKey,
+    publicKeyCompressed,
+    publicKeyHash,
+    address,
   }: WalletOptions = {}) {
     // seed wallet
     if (this.walletType === WalletTypeEnum.Seed && !mnemonic) {

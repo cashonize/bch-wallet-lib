@@ -130,7 +130,7 @@ export class SingleAddressWalletCache implements WalletCacheI {
           address: addr,
           tokenAddress: tokenAddr,
         });
-      } catch (_e) {
+      } catch {
         // ignore
       }
     }
@@ -226,7 +226,7 @@ export class HDWalletCache implements WalletCacheI {
           }
         }
         migrated = dropped || parsed.indexCache !== undefined;
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

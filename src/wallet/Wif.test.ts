@@ -312,7 +312,7 @@ describe(`XPubKey path derivation`, () => {
       let w = await Wallet.fromId(
         "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
       );
-      let commonPaths = await deriveHdPaths(w.mnemonic!, w.network, ["m"]);
+      await deriveHdPaths(w.mnemonic!, w.network, ["m"]);
     } catch (e: any) {
       expect(e.message).toBe(
         "Storing or sharing of parent public key may lead to loss of funds. Storing or sharing *root* parent public keys is strongly discouraged, although all parent keys have risk. See: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#implications",
@@ -395,7 +395,7 @@ describe(`XPubKey path derivation`, () => {
         "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
       );
       const { getXPubKeys } = await import("../util/hd.js");
-      let commonPaths = await getXPubKeys(w.mnemonic!, w.network, ["m"]);
+      await getXPubKeys(w.mnemonic!, w.network, ["m"]);
     } catch (e: any) {
       expect(e.message).toBe(
         "Storing or sharing of parent public key may lead to loss of funds. Storing or sharing *root* parent public keys is strongly discouraged, although all parent keys have risk. See: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#implications",

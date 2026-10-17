@@ -406,7 +406,7 @@ export class BaseWallet implements WalletI {
     return new this().namedExists(name, dbName);
   }
 
-  protected fromId(walletId: string): Promise<this> {
+  protected fromId(_walletId: string): Promise<this> {
     throw Error("fromId not implemented in BaseWallet");
   }
 
@@ -1142,8 +1142,8 @@ export class BaseWallet implements WalletI {
 
   // gets transaction history of this wallet
   public async getRawHistory(
-    fromHeight: number = 0,
-    toHeight: number = -1,
+    _fromHeight: number = 0,
+    _toHeight: number = -1,
   ): Promise<TxI[]> {
     throw Error("getRawHistory not implemented in BaseWallet");
   }

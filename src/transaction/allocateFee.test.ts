@@ -284,7 +284,6 @@ describe("Fee tests", () => {
       ["greg", 2000n],
       ["harry", 2000n],
     ];
-    let fee = 1n;
     let requests = asSendRequestObject(to) as SendRequest[];
 
     let result = sortSendRequests(requests);

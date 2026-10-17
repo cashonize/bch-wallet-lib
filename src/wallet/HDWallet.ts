@@ -140,10 +140,10 @@ export class HDWallet extends BaseWallet {
     name = "",
     branches,
     indices,
-    mnemonic = undefined,
-    derivation = undefined,
-    xPriv = undefined,
-    xPub = undefined,
+    mnemonic,
+    derivation,
+    xPriv,
+    xPub,
   }: HDWalletOptions = {}) {
     // newRandom
     if (!xPriv && !xPub && !mnemonic) {
@@ -503,7 +503,7 @@ export class HDWallet extends BaseWallet {
     for (const callback of this.walletWatchCallbacks) {
       try {
         callback(status, address);
-      } catch (e) {
+      } catch {
         // Ignore callback errors to not break other watchers
       }
     }
@@ -568,7 +568,7 @@ export class HDWallet extends BaseWallet {
   ): Promise<void> {
     const timeout = options.timeout ?? 100;
 
-    const targets: Record<number, number> = { ...(options.indices ?? {}) };
+    const targets: Record<number, number> = { ...options.indices };
     if (options.depositIndex !== undefined) {
       targets[DEPOSIT_BRANCH] = options.depositIndex;
     }

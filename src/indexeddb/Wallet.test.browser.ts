@@ -159,7 +159,7 @@ describe("Wallet should function in the browser", () => {
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
       )
     ).toDbString();
-    const w3 = await RegTestWallet.replaceNamed(name, seedId);
+    await RegTestWallet.replaceNamed(name, seedId);
     const w4 = await RegTestWallet.named(name);
 
     const w5 = await RegTestWallet.replaceNamed(`${name}_nonexistent`, seedId);

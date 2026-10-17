@@ -18,7 +18,7 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(tokenBalance).toBe(100n);
     const tokenUtxos = await alice.getTokenUtxos(category);
     expect(tokenUtxos.length).toBe(1);
-    const response = await alice.send([
+    await alice.send([
       new TokenSendRequest({
         cashaddr: bob.cashaddr!,
         amount: 25n,
@@ -413,7 +413,7 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(tokenUtxos[0].satoshis).toBe(7000n);
 
     // lower the token satoshi value
-    const response = await bob.send([
+    await bob.send([
       new TokenSendRequest({
         cashaddr: bob.cashaddr!,
         amount: 100n,

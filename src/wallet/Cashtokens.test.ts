@@ -41,7 +41,7 @@ describe(`Test cashtokens`, () => {
     await alice.send([
       [bob.cashaddr!, BigInt(await convert(0.101, "bch", "sat"))],
     ]);
-    const genesisResponse = await bob.tokenGenesis({
+    await bob.tokenGenesis({
       amount: 100n,
     });
 
@@ -102,7 +102,7 @@ describe(`Test cashtokens`, () => {
     expect(tokenBalance).toBe(300n);
     const tokenUtxos = await alice.getTokenUtxos(category);
     expect(tokenUtxos.length).toBe(1);
-    const response = await alice.send([
+    await alice.send([
       new TokenSendRequest({
         cashaddr: bob.cashaddr!,
         amount: 25n,
@@ -610,7 +610,7 @@ describe(`Test cashtokens`, () => {
     expect(tokenUtxos[0].satoshis).toBe(7000n);
 
     // lower the token satoshi value
-    const response = await bob.send([
+    await bob.send([
       new TokenSendRequest({
         cashaddr: bob.cashaddr!,
         amount: 100n,

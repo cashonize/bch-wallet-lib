@@ -9,7 +9,7 @@ export async function sumSendRequestAmounts(
   requests: Array<SendRequest | TokenSendRequest | OpReturnData>,
 ) {
   if (requests) {
-    const balanceArray: (BigInt | Error)[] = await Promise.all(
+    const balanceArray: (bigint | Error)[] = await Promise.all(
       requests.map(async (r: SendRequest | TokenSendRequest | OpReturnData) => {
         if (r instanceof SendRequest) {
           return r.value;
@@ -25,7 +25,7 @@ export async function sumSendRequestAmounts(
   }
 }
 
-function sumBalance(a: BigInt, b: BigInt | Error) {
+function sumBalance(a: bigint, b: bigint | Error) {
   // a is zero or a number
   if (b instanceof Error) {
     throw b;

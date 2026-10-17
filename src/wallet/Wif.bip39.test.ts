@@ -13,7 +13,7 @@ describe(`Test bip39 edge cases`, () => {
   test("Should match match the abandon seed", async () => {
     let abandonSeed =
       "9d7aab1883c82345264e144366d69edacb85be1b311bd97487e241c1a7f6f870dbab428e30f584ea75a608d2d5c50af5199ca79dba02108d85a4272e55f43449";
-    let w = deriveSeedFromBip39Mnemonic(new Array(12).join("abandon "));
+    let w = deriveSeedFromBip39Mnemonic("abandon ".repeat(11));
     let wSeed = new Uint8Array(w.buffer);
     expect(wSeed).toStrictEqual(hexToBin(abandonSeed));
   });

@@ -33,7 +33,7 @@ test("Store and replace a Regtest wallet", async () => {
   await db.init();
 
   expect(await db.walletExists("storereplace")).toBe(false);
-  let w1 = await db.addWallet("storereplace", "keep seed");
+  await db.addWallet("storereplace", "keep seed");
   let w2 = await db.getWallet("storereplace");
   expect("keep seed").toBe(w2!.wallet);
   expect(await db.walletExists("storereplace")).toBe(true);
@@ -43,12 +43,12 @@ test("Store and replace a Regtest wallet", async () => {
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
     )
   ).toDbString();
-  let w3 = await db.updateWallet("storereplace", seedId);
+  await db.updateWallet("storereplace", seedId);
   let w4 = await db.getWallet("storereplace");
   expect(w4!.wallet).not.toBe("keep seed");
   expect(w4!.wallet).toBe(seedId);
 
-  let w5 = await db.updateWallet("storereplace_nonexistent", seedId);
+  await db.updateWallet("storereplace_nonexistent", seedId);
   let w6 = await db.getWallet("storereplace_nonexistent")!;
   expect(w6).toBe(undefined);
 

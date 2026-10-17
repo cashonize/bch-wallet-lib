@@ -75,9 +75,9 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
    - The outpoint of each requested output in `SendResponse`.
 4. **Public HD address info.** Add `addressInfo(branch, index)` returning `{address, tokenAddress, publicKeyHash, used, txCount, utxos}`, and make `getUsedAddresses(branch)` public. Also derive addresses on untracked branches, such as the defi chain 7, without counting them in the balance. Cashonize reads `walletCache` and the raw history maps directly today, and v4 renamed those internals (`addressRows.ts`, `hdAddresses.vue`, `hdAddressSelect.vue`, `wizSigning.ts`, `cauldronPools.ts`).
 5. **An address scan that constructs no wallets.** Derive path P, indices a..b, plus a history check. This replaces `scanDerivationPaths`, which on v4 would leave subscriptions and key-bearing cache records behind.
-6. **Cheaper history.**
-   - Backfill balances from the wallet's own utxos instead of one `getBalance` request per address.
-   - Cap concurrency in `getRawTransactions` and `getHeaders`, and let them fail per item.
+6. **Cheaper history.** Done: the wallets backfill balances from their own utxos, and every fan-out of a history load is capped at 10 in flight (`concurrency` option). Still open:
+   - Let `getRawTransactions` and `getHeaders` fail per item; one failure still rejects the whole call.
+   - An HD wallet's address discovery still subscribes, and fetches for, every address of a gap extension at once.
 7. **Exchange rate.**
    - Add a stale-on-error fallback, e.g. `get(symbol, {staleOnError: true})`. A dApp sign dialog needs a fiat value or must refuse.
    - Key the cache by rate source, or clear it when `GetExchangeRateFn` changes. Otherwise the old provider's rate is served for up to 250 s.

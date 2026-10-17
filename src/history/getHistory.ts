@@ -9,9 +9,13 @@ import {
   Opcodes,
   TransactionCommon,
 } from "@bitauth/libauth";
-import { HeaderI, TxI, Utxo } from "../interface.js";
+import { TxI, Utxo } from "../interface.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
-import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
+import {
+  DEFAULT_CONCURRENCY,
+  Limiter,
+  mapConcurrent,
+} from "../util/mapConcurrent.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
 
@@ -53,7 +57,7 @@ export const getHistory = async ({
   rawHistory?: TxI[];
   /** The current utxos of `addresses`, token coins included, which the running balances are backfilled from */
   utxos: Utxo[];
-  /** Requests in flight at most, for each step of the load */
+  /** Requests in flight at most over the whole load, a positive integer or `Infinity` (no limit) */
   concurrency?: number;
 }): Promise<TransactionHistoryItem[]> => {
   if (!addresses.length) {
@@ -64,12 +68,15 @@ export const getHistory = async ({
     count = 1e10;
   }
 
+  // one bound for every request of the load, the steps that run side by side included
+  const limiter = new Limiter(concurrency);
+
   let allHistory: TxI[];
   if (rawHistory) {
     allHistory = rawHistory;
   } else {
     allHistory = (
-      await mapConcurrent(addresses, concurrency, (address) =>
+      await mapConcurrent(addresses, limiter, (address) =>
         provider.getHistory(address),
       )
     ).flat();
@@ -101,15 +108,11 @@ export const getHistory = async ({
   }
   const uniqueHeights = [...uniqueHeightsSet];
 
-  // one batch after the other, so that no more than `concurrency` requests are in flight
   const historyHashes = history.map((tx) => tx.tx_hash);
-  const txHexMap = await provider.getRawTransactions(historyHashes, {
-    concurrency,
-  });
-  let headerMap = new Map<number, HeaderI>();
-  if (uniqueHeights.length > 0) {
-    headerMap = await provider.getHeaders(uniqueHeights, { concurrency });
-  }
+  const [txHexMap, headerMap] = await Promise.all([
+    provider.getRawTransactions(historyHashes, { limiter }),
+    provider.getHeaders(uniqueHeights, { limiter }),
+  ]);
 
   const timestampMap: Record<number, number> = {};
   for (const [height, header] of headerMap) {
@@ -159,7 +162,7 @@ export const getHistory = async ({
   // Batch fetch prevout transactions
   const prevoutHashes = [...prevoutHashSet];
   const prevoutHexMap = await provider.getRawTransactions(prevoutHashes, {
-    concurrency,
+    limiter,
   });
 
   // Build prevout transaction map (decode all prevout txs)

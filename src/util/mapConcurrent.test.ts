@@ -1,4 +1,4 @@
-import { mapConcurrent } from "./mapConcurrent.js";
+import { Limiter, mapConcurrent } from "./mapConcurrent.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
 
@@ -62,4 +62,26 @@ test("refuses a concurrency below 1 or not an integer", async () => {
     RangeError,
   );
   expect(await mapConcurrent([], 3, async (x) => x)).toEqual([]);
+});
+
+test("fan-outs sharing a Limiter keep to its bound together", async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const fn = async (item: number) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    for (let i = 0; i < 1 + (item % 3); i++) await tick();
+    inFlight--;
+    return item;
+  };
+  const items = Array.from({ length: 10 }, (_, i) => i);
+  const limiter = new Limiter(3);
+  const [a, b] = await Promise.all([
+    mapConcurrent(items, limiter, fn),
+    mapConcurrent(items, limiter, fn),
+  ]);
+  expect(a).toEqual(items);
+  expect(b).toEqual(items);
+  expect(maxInFlight).toBe(3);
+  expect(() => new Limiter(0)).toThrow(RangeError);
 });

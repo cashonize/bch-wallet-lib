@@ -470,6 +470,51 @@ describe("history load", () => {
     expect(history).toEqual(reference);
   });
 
+  test("transactions and headers load side by side, under one bound", async () => {
+    const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+    const bob = await RegTestWallet.newRandom();
+    for (let i = 0; i < 4; i++) {
+      await miner.send({ cashaddr: bob.cashaddr!, value: 10000n });
+      await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
+    }
+    await bob.getBalance();
+
+    // the methods in flight whenever a request starts
+    const provider = bob.provider as ElectrumNetworkProvider;
+    const target = provider as unknown as {
+      performRequest<T>(method: string, parameters?: unknown[]): Promise<T>;
+    };
+    const original = target.performRequest.bind(provider);
+    const inFlight: string[] = [];
+    let maxInFlight = 0;
+    let together = false;
+    target.performRequest = async <T>(
+      method: string,
+      parameters?: unknown[],
+    ): Promise<T> => {
+      inFlight.push(method);
+      maxInFlight = Math.max(maxInFlight, inFlight.length);
+      together ||=
+        inFlight.includes("blockchain.transaction.get") &&
+        inFlight.includes("blockchain.header.get");
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return await original<T>(method, parameters);
+      } finally {
+        inFlight.splice(inFlight.indexOf(method), 1);
+      }
+    };
+    try {
+      const history = await bob.getHistory({ concurrency: 3 });
+      expect(history.length).toBe(4);
+    } finally {
+      delete (target as { performRequest?: unknown }).performRequest;
+    }
+
+    expect(together).toBe(true);
+    expect(maxInFlight).toBe(3);
+  });
+
   test("the first load of an HD wallet's history keeps at most 10 requests in flight", async () => {
     const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
     const hd = await RegTestHDWallet.newRandom();

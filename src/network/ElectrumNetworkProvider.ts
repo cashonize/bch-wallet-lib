@@ -4,7 +4,11 @@ import { CacheProvider } from "../cache/interface.js";
 import { Config } from "../config.js";
 import { HeaderI, HexHeaderI, Network, TxI, Utxo } from "../interface.js";
 import { decodeHeader } from "../util/header.js";
-import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
+import {
+  DEFAULT_CONCURRENCY,
+  Limiter,
+  mapConcurrent,
+} from "../util/mapConcurrent.js";
 import { toError } from "../util/toError.js";
 import { getTransactionHash } from "../util/transaction.js";
 import { runCallback, waitOnWatch } from "../util/watch.js";
@@ -26,6 +30,8 @@ import type { Transport } from "./Transport.js";
 export interface ConcurrencyOptions {
   /** Requests in flight at most for this call, a positive integer or `Infinity` (no limit). Default 10. */
   concurrency?: number;
+  /** @internal A bound shared with other fan-outs, instead of `concurrency` */
+  limiter?: Limiter;
 }
 
 /** Internal type for cached verbose transactions. fetchHeight is stripped before returning. */
@@ -123,7 +129,7 @@ export default class ElectrumNetworkProvider {
     if (misses.length > 0) {
       const fetched = await mapConcurrent(
         misses,
-        options.concurrency ?? DEFAULT_CONCURRENCY,
+        options.limiter ?? options.concurrency ?? DEFAULT_CONCURRENCY,
         async (hash) => {
           const tx = await this.performRequest<string>(
             "blockchain.transaction.get",
@@ -186,7 +192,7 @@ export default class ElectrumNetworkProvider {
     if (misses.length > 0) {
       const fetched = await mapConcurrent(
         misses,
-        options.concurrency ?? DEFAULT_CONCURRENCY,
+        options.limiter ?? options.concurrency ?? DEFAULT_CONCURRENCY,
         async (height) => {
           const result = await this.performRequest<HexHeaderI>(
             "blockchain.header.get",

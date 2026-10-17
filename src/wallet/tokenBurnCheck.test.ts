@@ -105,6 +105,24 @@ describe("a built transaction that burns tokens is refused", () => {
     expect(await getTokenBalance(bob, category)).toBe(0n);
   });
 
+  test("a send ignores a tokenBurns option smuggled in by untyped code", async () => {
+    const wallet = await fundedWallet();
+    const bob = await RegTestWallet.newRandom();
+    const category = (await wallet.tokenGenesis({ amount: 100n }))
+      .categories![0];
+    dropped.tokenaddr = wallet.tokenaddr;
+    const options = { tokenBurns: { fungible: { [category]: 90n } } };
+
+    const request = new TokenSendRequest({
+      cashaddr: bob.tokenaddr,
+      category,
+      amount: 10n,
+    });
+    const error = await burnError(wallet.send(request, options as any));
+    expect(error.amount).toBe(90n);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+  });
+
   test("a send whose NFT change is dropped", async () => {
     const wallet = await fundedWallet();
     const bob = await RegTestWallet.newRandom();

@@ -1,3 +1,4 @@
+import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import {
   assertSuccess,
   CashAddressNetworkPrefix,
@@ -864,6 +865,7 @@ export class HDWallet extends BaseWallet {
     discardChange: boolean = false,
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
+    tokenBurns?: TokenBurnAllowance,
   ) {
     if (!this.xPriv && !privateKey) {
       throw new Error(`Missing private key`);
@@ -874,6 +876,7 @@ export class HDWallet extends BaseWallet {
       discardChange,
       options,
       privateKey,
+      tokenBurns,
     );
   }
 

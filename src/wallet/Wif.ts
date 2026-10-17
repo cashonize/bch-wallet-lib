@@ -1,4 +1,5 @@
 //#region Imports
+import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import {
   assertSuccess,
   binToHex,
@@ -376,6 +377,7 @@ export class Wallet extends WatchWallet {
     discardChange: boolean = false,
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
+    tokenBurns?: TokenBurnAllowance,
   ) {
     privateKey = privateKey ?? this.privateKey;
 
@@ -388,6 +390,7 @@ export class Wallet extends WatchWallet {
       discardChange,
       options,
       privateKey,
+      tokenBurns,
     );
   }
 

@@ -95,12 +95,6 @@ function checkProviderNetwork(
   }
 }
 
-// The options a token operation passes on to its send
-interface TokenOperationOptions extends SendRequestOptionsI {
-  /** what the operation may burn; undefined when its caller turned the token check off */
-  tokenBurns?: TokenBurnAllowance;
-}
-
 /**
  * A class to hold features used by all wallets
  * @class  BaseWallet
@@ -876,15 +870,19 @@ export class BaseWallet {
     return { txId, transaction, categories };
   }
 
-  // A token operation's send: the burns the operation allows reach the token conservation check
+  // A token operation's send: the burns the operation allows reach the token conservation check.
+  // They are a parameter, not an option, so that no options object can allow a burn on a send.
   protected async sendTokenOperation(
     requests: Array<SendRequest | TokenSendRequest | OpReturnData>,
-    options: TokenOperationOptions,
+    options: SendRequestOptionsI,
+    tokenBurns: TokenBurnAllowance | undefined,
   ): Promise<SendResponse> {
     const { encodedTransaction, categories } = await this.encodeTransaction(
       requests,
       undefined,
       options,
+      undefined,
+      tokenBurns,
     );
     return this._send(encodedTransaction, categories, options);
   }
@@ -902,8 +900,9 @@ export class BaseWallet {
       | OpReturnData
       | Array<SendRequest | TokenSendRequest | OpReturnData>,
     discardChange: boolean = false,
-    options?: TokenOperationOptions,
+    options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
+    tokenBurns?: TokenBurnAllowance,
   ) {
     let sendRequests = asSendRequestObject(requests);
 
@@ -913,7 +912,6 @@ export class BaseWallet {
     }
     // A send burns no token; a token operation turns checkTokenQuantities off for its own coin
     // choice and says instead what it may burn, unless its caller turned the check off.
-    let tokenBurns = options?.tokenBurns;
     if (!tokenBurns && checkTokenQuantities) {
       tokenBurns = {};
     }
@@ -1211,14 +1209,17 @@ export class BaseWallet {
     const extraRequests = sendRequests as Array<
       SendRequest | TokenSendRequest | OpReturnData
     >;
-    return this.sendTokenOperation([...genesisSendRequests, ...extraRequests], {
-      ...options,
-      utxoIds: utxos,
-      ensureUtxos: pinnedInputs,
-      checkTokenQuantities: false,
-      tokenOperation: "genesis",
-      tokenBurns: options?.checkTokenQuantities === false ? undefined : {},
-    });
+    return this.sendTokenOperation(
+      [...genesisSendRequests, ...extraRequests],
+      {
+        ...options,
+        utxoIds: utxos,
+        ensureUtxos: pinnedInputs,
+        checkTokenQuantities: false,
+        tokenOperation: "genesis",
+      },
+      options?.checkTokenQuantities === false ? undefined : {},
+    );
   }
 
   /**
@@ -1300,13 +1301,16 @@ export class BaseWallet {
       }
     }
 
-    return this.sendTokenOperation(outputs, {
-      ...options,
-      ensureUtxos,
-      checkTokenQuantities: false,
-      tokenOperation: "mint",
-      tokenBurns: options?.checkTokenQuantities === false ? undefined : {},
-    });
+    return this.sendTokenOperation(
+      outputs,
+      {
+        ...options,
+        ensureUtxos,
+        checkTokenQuantities: false,
+        tokenOperation: "mint",
+      },
+      options?.checkTokenQuantities === false ? undefined : {},
+    );
   }
 
   /**
@@ -1446,14 +1450,16 @@ export class BaseWallet {
     }
 
     const opReturn = OpReturnData.fromString(message || "");
-    return this.sendTokenOperation([opReturn, ...changeSendRequests], {
-      ...options,
-      checkTokenQuantities: false,
-      ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
-      tokenOperation: "burn",
-      tokenBurns:
-        options?.checkTokenQuantities === false ? undefined : tokenBurns,
-    });
+    return this.sendTokenOperation(
+      [opReturn, ...changeSendRequests],
+      {
+        ...options,
+        checkTokenQuantities: false,
+        ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
+        tokenOperation: "burn",
+      },
+      options?.checkTokenQuantities === false ? undefined : tokenBurns,
+    );
   }
 
   //#endregion Cashtokens

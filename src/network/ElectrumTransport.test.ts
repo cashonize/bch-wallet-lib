@@ -539,7 +539,6 @@ describe("a broadcast through the provider", () => {
     expect(rejected.name).toBe("BroadcastRejectedError");
     expect(rejected.message).toBe(message);
     expect(rejected.reason).toBe("txn-mempool-conflict");
-    expect(rejected.code).toBe(18);
     expect(rejected.txid).toBe(await getTransactionHash(txHex));
     expect(rejected.cause).toBeInstanceOf(Error);
     expect((rejected.cause as Error).cause).toEqual({ code: 1, message });

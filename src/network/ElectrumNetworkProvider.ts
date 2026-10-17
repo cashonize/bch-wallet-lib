@@ -580,10 +580,9 @@ export default class ElectrumNetworkProvider {
 function broadcastError(error: unknown, txid: string): Error {
   if (serverErrorCode(error) === undefined) return toError(error);
   const { message } = error as Error;
-  const { reason, code } = parseRejection(message);
+  const reason = parseRejection(message);
   return new BroadcastRejectedError(message, {
     reason,
-    code,
     txid,
     cause: error,
   });

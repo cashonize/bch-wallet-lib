@@ -1069,7 +1069,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
         `the transaction was rejected by network rules.\n\ndust (code 64)\n`,
       );
       expect(e).toBeInstanceOf(BroadcastRejectedError);
-      expect(e).toMatchObject({ reason: "dust", code: 64 });
+      expect(e).toMatchObject({ reason: "dust" });
     }
   });
 

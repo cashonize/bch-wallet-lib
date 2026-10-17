@@ -148,7 +148,6 @@ describe("a refused broadcast is a BroadcastRejectedError", () => {
     expect(error).toBeInstanceOf(BroadcastRejectedError);
     const rejected = error as BroadcastRejectedError;
     expect(rejected.reason).toBe("txn-mempool-conflict");
-    expect(rejected.code).toBe(18);
     expect(rejected.txid).toBe(second.txId);
     expect(rejected.alreadyKnown).toBe(false);
     expect(rejected.message).toBe(
@@ -173,6 +172,5 @@ describe("a refused broadcast is a BroadcastRejectedError", () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(BroadcastRejectedError);
     expect((error as BroadcastRejectedError).reason).toBe("Missing inputs");
-    expect((error as BroadcastRejectedError).code).toBeUndefined();
   });
 });

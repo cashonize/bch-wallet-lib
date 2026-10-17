@@ -596,6 +596,9 @@ describe("a transaction the server sends that does not decode", () => {
       rawHistory: [{ tx_hash: txid, height: 0 }],
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({
+      message: expect.stringMatching(/^Error reading transaction/),
+    });
   });
 
   test("as a spent transaction", async () => {
@@ -605,5 +608,8 @@ describe("a transaction the server sends that does not decode", () => {
       rawHistory: [{ tx_hash: "44".repeat(32), height: 0 }],
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({
+      message: expect.stringMatching(/^Error reading transaction/),
+    });
   });
 });

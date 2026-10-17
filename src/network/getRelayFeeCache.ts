@@ -1,23 +1,25 @@
 import { bchParam } from "../chain.js";
-import { networkTickerMap } from "./constant.js";
+import { Config } from "../config.js";
 import { default as NetworkProvider } from "./NetworkProvider.js";
 
+// Per provider, so that a wallet moved to another server (setProvider) asks that server
+const relayFeeCache = new WeakMap<NetworkProvider, number>();
+
+// The fee rate for a send in satoshis per byte: Config.RelayFeePerByte, or the server's blockchain.relayfee
 export async function getRelayFeeCache(provider: NetworkProvider) {
-  let relayFeePerKbInCoins;
-  if (networkTickerMap[provider.network] + "_RELAY_FEE" in globalThis) {
-    // Stores the fee in BCH_RELAY_FEE, tBCH_RELAY_FEE, etc
-    relayFeePerKbInCoins =
-      globalThis[networkTickerMap[provider.network] + "_RELAY_FEE"];
-  }
-  if (typeof relayFeePerKbInCoins !== "number") {
-    relayFeePerKbInCoins = await provider.getRelayFee();
-    globalThis[networkTickerMap[provider.network] + "_RELAY_FEE"] =
-      relayFeePerKbInCoins;
-  }
+  if (Config.RelayFeePerByte !== undefined) return Config.RelayFeePerByte;
+
+  let feePerByte = relayFeeCache.get(provider);
+  if (feePerByte !== undefined) return feePerByte;
+
+  const relayFeePerKbInCoins = await provider.getRelayFee();
   if (typeof relayFeePerKbInCoins === "number") {
-    return Math.round(relayFeePerKbInCoins * Number(bchParam.subUnits)) / 1000;
+    feePerByte =
+      Math.round(relayFeePerKbInCoins * Number(bchParam.subUnits)) / 1000;
   } else {
     console.warn("Couldn't get min relay fee, using default instead");
-    return Math.round(0.00001 * Number(bchParam.subUnits)) / 1000;
+    feePerByte = 1;
   }
+  relayFeeCache.set(provider, feePerByte);
+  return feePerByte;
 }

@@ -11,6 +11,8 @@ export class Config {
   static UseIndexedDBCache = false;
   // caches the raw transactions in browser's memory
   static UseMemoryCache = false;
+  // fee rate for every send in satoshis per byte; when unset the server's blockchain.relayfee is used
+  static RelayFeePerByte: number | undefined = undefined;
 
   public static setIpfsGateway(ipfsGateway: string) {
     this.DefaultIpfsGateway = ipfsGateway;

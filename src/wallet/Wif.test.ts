@@ -2,6 +2,8 @@ import {
   binsAreEqual,
   binToHex,
   decodeTransaction,
+  encodeBase58AddressFormat,
+  encodePrivateKeyWif,
   hexToBin,
   lockingBytecodeToCashAddress,
   utf8ToBin,
@@ -120,9 +122,7 @@ describe(`Test creation of wallet from walletId`, () => {
           "wif:testnet:KysvoRyDkxQycBGj49K8oC3minAfoXnVmkcgx6UsZx3g2VvyGCAa",
         );
       } catch (e: any) {
-        expect(e.message).toBe(
-          "Testnet type wif KysvoRyDkxQycBGj49K8oC3minAfoXnVmkcgx6UsZx3g2VvyGCAa passed, should start with c",
-        );
+        expect(e.message).toBe("WIF is for mainnet, expected testnet");
       }
     });
 
@@ -133,9 +133,7 @@ describe(`Test creation of wallet from walletId`, () => {
           "wif:mainnet:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
         );
       } catch (e: any) {
-        expect(e.message).toBe(
-          "Mainnet type wif cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6 passed, should start with L or K",
-        );
+        expect(e.message).toBe("WIF is for testnet, expected mainnet");
       }
     });
 
@@ -160,6 +158,87 @@ describe(`Test creation of wallet from walletId`, () => {
         expect(e.message).toBe("Unknown wallet type 'q2k'");
       }
     });
+  });
+});
+
+describe(`WIF validation`, () => {
+  const key = new Uint8Array(32).fill(0x11);
+  const mainnetWif = encodePrivateKeyWif(key, "mainnet");
+  const testnetWif = encodePrivateKeyWif(key, "testnet");
+
+  const errorOf = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+    } catch (e: any) {
+      return e as Error;
+    }
+    throw Error("expected an error");
+  };
+
+  test("Errors never quote the WIF", async () => {
+    const cases: [() => Promise<unknown>, string][] = [
+      [() => Wallet.fromWIF(testnetWif), testnetWif],
+      [() => TestNetWallet.fromWIF(mainnetWif), mainnetWif],
+      [
+        () => Wallet.fromWIF(encodePrivateKeyWif(key, "mainnetUncompressed")),
+        encodePrivateKeyWif(key, "mainnetUncompressed"),
+      ],
+      [
+        () => Wallet.fromWIF(mainnetWif.slice(0, -1) + "x"),
+        mainnetWif.slice(0, -1),
+      ],
+      [
+        () => Wallet.fromWIF(mainnetWif.slice(0, -1) + "0"),
+        mainnetWif.slice(0, -1),
+      ],
+    ];
+    for (const [fn, secret] of cases) {
+      const error = await errorOf(fn);
+      expect(error.message).not.toContain(secret);
+      expect(error.message).not.toContain(secret.slice(0, 20));
+    }
+  });
+
+  test("Uncompressed WIFs are rejected on every network", async () => {
+    const mainnetUncompressed = encodePrivateKeyWif(key, "mainnetUncompressed");
+    const testnetUncompressed = encodePrivateKeyWif(key, "testnetUncompressed");
+    expect(mainnetUncompressed[0]).toBe("5");
+    await expect(Wallet.fromWIF(mainnetUncompressed)).rejects.toThrow(
+      "Uncompressed WIF private keys are not supported",
+    );
+    await expect(TestNetWallet.fromWIF(testnetUncompressed)).rejects.toThrow(
+      "Uncompressed WIF private keys are not supported",
+    );
+    await expect(RegTestWallet.fromWIF(testnetUncompressed)).rejects.toThrow(
+      "Uncompressed WIF private keys are not supported",
+    );
+    await expect(
+      RegTestWallet.fromId(`wif:regtest:${mainnetUncompressed}`),
+    ).rejects.toThrow("Uncompressed WIF private keys are not supported");
+  });
+
+  test("A base58check string that is not a WIF is rejected", async () => {
+    // a P2PKH legacy address: valid base58check, version 0, 20-byte payload
+    await expect(
+      Wallet.fromWIF("1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"),
+    ).rejects.toThrow("Invalid WIF: unknown version byte");
+    // right version byte, 31-byte payload
+    await expect(
+      Wallet.fromWIF(
+        encodeBase58AddressFormat(0x80, new Uint8Array(31).fill(0x11)),
+      ),
+    ).rejects.toThrow("Invalid WIF: unexpected payload length");
+  });
+
+  test("Compressed WIFs still decode to the key's address", async () => {
+    const mainnet = await Wallet.fromWIF(mainnetWif);
+    expect(binToHex(mainnet.privateKey!)).toBe(binToHex(key));
+    expect(mainnet.privateKeyWif).toBe(mainnetWif);
+    const regtest = await RegTestWallet.fromWIF(testnetWif);
+    expect(binToHex(regtest.privateKey!)).toBe(binToHex(key));
+    expect(regtest.cashaddr).toBe(
+      (await RegTestWallet.fromPrivateKey(key)).cashaddr,
+    );
   });
 });
 

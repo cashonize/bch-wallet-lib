@@ -3,7 +3,6 @@ import {
   assertSuccess,
   binToHex,
   CashAddressNetworkPrefix,
-  decodePrivateKeyWif,
   deriveHdPath,
   deriveHdPrivateNodeFromSeed,
   deriveHdPublicNode,
@@ -20,7 +19,7 @@ import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
 import { signUnsignedTransaction } from "../transaction/Wif.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
-import { checkWifNetwork } from "../util/checkWifNetwork.js";
+import { decodeWif } from "../util/decodeWif.js";
 import { WalletTypeEnum } from "./enum.js";
 import { MnemonicI, SendRequestOptionsI, WalletInfoI } from "./interface.js";
 import {
@@ -177,17 +176,13 @@ export class Wallet extends WatchWallet {
     }
 
     if (privateKeyWif?.length) {
-      checkWifNetwork(privateKeyWif, this.network);
+      if (!this.privateKey) {
+        // @ts-ignore
+        this.privateKey = decodeWif(privateKeyWif, this.network);
+      }
 
       // @ts-ignore
       this.privateKeyWif = privateKeyWif;
-
-      if (!this.privateKey) {
-        // @ts-ignore
-        this.privateKey = assertSuccess(
-          decodePrivateKeyWif(privateKeyWif),
-        ).privateKey;
-      }
 
       publicKey = assertSuccess(
         secp256k1.derivePublicKeyUncompressed(this.privateKey),

@@ -617,7 +617,9 @@ export class HDWallet extends BaseWallet {
   public override async watchTransactionHashes(
     callback: (txHash: string) => void,
   ): Promise<CancelFn> {
-    const seenTxHashes = new Set<string>();
+    // Seeded before subscribing so the history at setup is not reported as new
+    const existing = await this.getRawHistory();
+    const seenTxHashes = new Set(existing.map((tx) => tx.tx_hash));
 
     return this.watchStatus(async () => {
       const history = await this.getRawHistory();

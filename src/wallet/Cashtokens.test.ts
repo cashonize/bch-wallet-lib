@@ -667,6 +667,12 @@ describe(`Test cashtokens`, () => {
     expect(tokenUtxos.length).toBe(1);
     expect(tokenUtxos[0].satoshis).toBe(5000n);
 
+    // set up before the send, since only transactions new after setup are reported
+    let bobTxId = ".";
+    const txCancel = await bob.watchTokenTransactions((tx) => {
+      bobTxId = tx.txid;
+    });
+
     let seenBalance = 0n;
     let sendResponse: SendResponse = {};
     setTimeout(
@@ -688,11 +694,6 @@ describe(`Test cashtokens`, () => {
 
     const cancel = await bob.watchTokenBalance(category, (balance) => {
       seenBalance = balance;
-    });
-
-    let bobTxId = ".";
-    const txCancel = await bob.watchTokenTransactions((tx) => {
-      bobTxId = tx.txid;
     });
 
     const balance = await bob.waitForTokenBalance(category, 100n);

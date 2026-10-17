@@ -1135,7 +1135,6 @@ describe("HDWallet", () => {
       reportedHashes.push(txHash);
     });
 
-    // Wait for initial callback to fire with existing tx
     await delay(2000);
 
     // Send a new transaction to the HD wallet
@@ -1200,30 +1199,31 @@ describe("HDWallet", () => {
     }
   });
 
-  it("watchTransactionHashes handles transactions across multiple deposit addresses", async () => {
+  it("watchTransactionHashes reports only transactions that are new after the watch started (mainnet-js#257)", async () => {
     const fundingWallet = await RegTestWallet.fromId(
       "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
     );
     const hdWallet = await RegTestHDWallet.newRandom();
 
     // Fund deposit address 0
-    const fund0Response = await fundingWallet.send({
+    await fundingWallet.send({
       cashaddr: hdWallet.getDepositAddress(0),
       value: 100000n,
     });
-    await mine({ cashaddr: hdWallet.getDepositAddress(0), blocks: 1 });
+    await mine({ cashaddr: fundingWallet.cashaddr!, blocks: 1 });
     await delay(1000);
 
     // Fund deposit address 1
-    const fund1Response = await fundingWallet.send({
+    await fundingWallet.send({
       cashaddr: hdWallet.getDepositAddress(1),
       value: 100000n,
     });
-    await mine({ cashaddr: hdWallet.getDepositAddress(0), blocks: 1 });
+    await mine({ cashaddr: fundingWallet.cashaddr!, blocks: 1 });
     await delay(1000);
 
     // depositIndex should be 2
     expect(hdWallet.indices.get(0)!).toBe(2);
+    expect((await hdWallet.getRawHistory()).length).toBe(2);
 
     // Set up watchTransactionHashes, collect all reported hashes
     const reportedHashes: string[] = [];
@@ -1232,27 +1232,21 @@ describe("HDWallet", () => {
       reportedHashes.push(txHash);
     });
 
-    // Wait for initial callback to fire
     await delay(2000);
+    expect(reportedHashes).toEqual([]);
 
     // Send a new transaction to the wallet's next deposit address
     const fund2Response = await fundingWallet.send({
       cashaddr: hdWallet.getDepositAddress(),
       value: 50000n,
     });
-    await mine({ cashaddr: hdWallet.getDepositAddress(0), blocks: 1 });
+    await mine({ cashaddr: fundingWallet.cashaddr!, blocks: 1 });
     await delay(2000);
 
     await cancelWatch();
 
-    // All 3 tx hashes appear in the collected output
-    expect(reportedHashes).toContain(fund0Response.txId);
-    expect(reportedHashes).toContain(fund1Response.txId);
-    expect(reportedHashes).toContain(fund2Response.txId);
-
-    // Each tx hash appears exactly once
-    const uniqueHashes = new Set(reportedHashes);
-    expect(uniqueHashes.size).toBe(reportedHashes.length);
+    // The history at setup is not replayed when the first new transaction arrives
+    expect(reportedHashes).toEqual([fund2Response.txId]);
   });
 
   it("gap is maintained when addresses near the edge are used", async () => {

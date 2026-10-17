@@ -620,16 +620,24 @@ export class BaseWallet implements WalletI {
   }
 
   /**
-   * Watch wallet for new transactions
+   * Watch wallet for new transactions. Transactions already in the history
+   * when the watch starts are not reported; each new one is reported once.
    * @param callback - Called with new transaction hashes when they appear
    * @returns Cancel function to stop watching
    */
   public async watchTransactionHashes(
     callback: (txHash: string) => void,
   ): Promise<CancelFn> {
+    // Seeded before subscribing so the history at setup is not reported as new
+    const existing = await this.getRawHistory();
     const seenTxHashes = new Set<string>();
-
     let topHeight = 0;
+    for (const tx of existing) {
+      seenTxHashes.add(tx.tx_hash);
+      if (tx.height > topHeight) {
+        topHeight = tx.height;
+      }
+    }
 
     return this.watchStatus(async () => {
       const history = (await this.getRawHistory(topHeight)).sort((a, b) =>

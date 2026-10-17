@@ -23,7 +23,12 @@ import {
   toSat,
 } from "../util/index.js";
 import { CancelFn } from "./interface.js";
-import { OpReturnData, SendResponse, toUtxoId } from "./model.js";
+import {
+  OpReturnData,
+  SendResponse,
+  TokenSendRequest,
+  toUtxoId,
+} from "./model.js";
 import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
 
 beforeAll(async () => {
@@ -846,6 +851,50 @@ describe(`Wallet subscriptions`, () => {
     expect(blockWatchResult).toBe(true);
     expect(blockWaitResult).toBe(true);
     expect(blockNumberWaitResult).toBe(true);
+  });
+
+  test("Should report only transactions that are new after the watch started (mainnet-js#257)", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+
+    // History before the watch: two confirmed fundings and an unconfirmed token genesis
+    await alice.send({ cashaddr: bob.cashaddr!, value: 10000n });
+    await alice.send({ cashaddr: bob.cashaddr!, value: 10000n });
+    await mine({ cashaddr: alice.cashaddr!, blocks: 1 });
+    const genesis = await bob.tokenGenesis({ amount: 100n });
+    const category = genesis.categories![0];
+    await delay(1000);
+    expect((await bob.getRawHistory()).length).toBe(3);
+
+    const hashes: string[] = [];
+    const transactions: string[] = [];
+    const tokenTransactions: string[] = [];
+    const cancels = [
+      await bob.watchTransactionHashes((txHash) => hashes.push(txHash)),
+      await bob.watchTransactions((tx) => transactions.push(tx.txid)),
+      await bob.watchTokenTransactions((tx) => tokenTransactions.push(tx.txid)),
+    ];
+    await delay(1000);
+    expect(hashes).toEqual([]);
+    expect(transactions).toEqual([]);
+    expect(tokenTransactions).toEqual([]);
+
+    const sendResponse = await bob.send(
+      new TokenSendRequest({
+        cashaddr: bob.getTokenDepositAddress(),
+        category,
+        amount: 100n,
+      }),
+    );
+    await delay(1000);
+    // confirming the new transaction and the genesis reports neither again
+    await mine({ cashaddr: alice.cashaddr!, blocks: 1 });
+    await delay(1000);
+    await Promise.all(cancels.map((cancel) => cancel()));
+
+    expect(hashes).toEqual([sendResponse.txId]);
+    expect(transactions).toEqual([sendResponse.txId]);
+    expect(tokenTransactions).toEqual([sendResponse.txId]);
   });
 });
 

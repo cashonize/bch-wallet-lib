@@ -13,6 +13,7 @@ import {
   walletFromId,
 } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
+import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -256,28 +257,31 @@ describe("Wallet should function in the browser", () => {
     Config.UseLocalStorageCache = false;
   });
 
-  test("Should use localStorage cache for block headers", async () => {
-    const aliceWallet = await Wallet.newRandom();
-    const height = 854724;
-    await aliceWallet.provider!.getHeader(854724);
-    expect(
-      localStorage.getItem(
-        `bch-wallet-lib:header-${aliceWallet.provider!.network}-${height}-${false}`,
-      ),
-    ).toBe(null);
-    Config.UseLocalStorageCache = true;
-    await aliceWallet.provider!.getHeader(854724);
-    await aliceWallet.provider!.getHeader(854724, true);
+  test.skipIf(!liveTests)(
+    "Should use localStorage cache for block headers",
+    async () => {
+      const aliceWallet = await Wallet.newRandom();
+      const height = 854724;
+      await aliceWallet.provider!.getHeader(854724);
+      expect(
+        localStorage.getItem(
+          `bch-wallet-lib:header-${aliceWallet.provider!.network}-${height}-${false}`,
+        ),
+      ).toBe(null);
+      Config.UseLocalStorageCache = true;
+      await aliceWallet.provider!.getHeader(854724);
+      await aliceWallet.provider!.getHeader(854724, true);
 
-    expect(
-      localStorage.getItem(
-        `bch-wallet-lib:header-${aliceWallet.provider!.network}-${height}-${false}`,
-      ) === null,
-    ).toBe(false);
-    expect(typeof (await aliceWallet.provider!.getHeader(854724))).toBe(
-      "object",
-    );
+      expect(
+        localStorage.getItem(
+          `bch-wallet-lib:header-${aliceWallet.provider!.network}-${height}-${false}`,
+        ) === null,
+      ).toBe(false);
+      expect(typeof (await aliceWallet.provider!.getHeader(854724))).toBe(
+        "object",
+      );
 
-    Config.UseLocalStorageCache = false;
-  });
+      Config.UseLocalStorageCache = false;
+    },
+  );
 });

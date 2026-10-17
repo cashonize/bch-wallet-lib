@@ -35,6 +35,7 @@ import { walletFromId } from "./createWallet.js";
 import { HDWallet } from "./HDWallet.js";
 import { WatchWallet } from "./Watch.js";
 import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
+import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -605,29 +606,32 @@ describe(`Watch only Wallets`, () => {
     }
   });
 
-  test("Should get the regtest wallet balance in eur", async () => {
-    // Build Alice's wallet from Wallet Import Format string, send some sats
-    if (!process.env.ADDRESS) {
-      throw Error("Attempted to pass an empty address");
-    } else {
-      Config.DefaultCurrency = "eur";
-      let alice = await RegTestWallet.watchOnly(process.env.ADDRESS); // insert WIF from #1
-      // Build Bob's wallet from a public address, check his balance.
-      expect(alice.getPublicKeyHash()!.length).toBe(20);
-      const aliceBalance = await alice.getBalance();
-      expect(toBch(aliceBalance)).toBeGreaterThan(5000);
-      expect(await toCurrency(await alice.getBalance(), "eur")).toBeGreaterThan(
-        0,
-      );
-      expect(
-        await toCurrency(
-          await (await RegTestWallet.newRandom()).getBalance(),
-          "eur",
-        ),
-      ).toBe(0);
-      Config.DefaultCurrency = "usd";
-    }
-  });
+  test.skipIf(!liveTests)(
+    "Should get the regtest wallet balance in eur",
+    async () => {
+      // Build Alice's wallet from Wallet Import Format string, send some sats
+      if (!process.env.ADDRESS) {
+        throw Error("Attempted to pass an empty address");
+      } else {
+        Config.DefaultCurrency = "eur";
+        let alice = await RegTestWallet.watchOnly(process.env.ADDRESS); // insert WIF from #1
+        // Build Bob's wallet from a public address, check his balance.
+        expect(alice.getPublicKeyHash()!.length).toBe(20);
+        const aliceBalance = await alice.getBalance();
+        expect(toBch(aliceBalance)).toBeGreaterThan(5000);
+        expect(
+          await toCurrency(await alice.getBalance(), "eur"),
+        ).toBeGreaterThan(0);
+        expect(
+          await toCurrency(
+            await (await RegTestWallet.newRandom()).getBalance(),
+            "eur",
+          ),
+        ).toBe(0);
+        Config.DefaultCurrency = "usd";
+      }
+    },
+  );
 
   (process.env.ALICE_TESTNET_WALLET_ID ? test : test.skip)(
     "Should send to testnet coins to a random address",
@@ -739,14 +743,17 @@ describe(`Wallet subscriptions`, () => {
     expect(resp2.txId).toBeDefined();
   });
 
-  test("Create two wallets, get balances concurrently", async () => {
-    const [balance1, balance2] = await Promise.all([
-      Wallet.newRandom().then((wallet) => wallet.getBalance()),
-      Wallet.newRandom().then((wallet) => wallet.getBalance()),
-    ]);
-    expect(balance1).toBe(0n);
-    expect(balance2).toBe(0n);
-  });
+  test.skipIf(!liveTests)(
+    "Create two wallets, get balances concurrently",
+    async () => {
+      const [balance1, balance2] = await Promise.all([
+        Wallet.newRandom().then((wallet) => wallet.getBalance()),
+        Wallet.newRandom().then((wallet) => wallet.getBalance()),
+      ]);
+      expect(balance1).toBe(0n);
+      expect(balance2).toBe(0n);
+    },
+  );
 
   test("Should watch then wait", async () => {
     const aliceWallet = await RegTestWallet.newRandom();

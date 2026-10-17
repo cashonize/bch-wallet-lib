@@ -21,6 +21,7 @@ export default defineConfig({
     "process.env.USE_MOCK_PROVIDER": JSON.stringify(
       process.env.USE_MOCK_PROVIDER || "",
     ),
+    "process.env.LIVE_TESTS": JSON.stringify(process.env.LIVE_TESTS || ""),
     "process.env.ADDRESS": JSON.stringify(process.env.ADDRESS || ""),
     "process.env.PRIVATE_WIF": JSON.stringify(process.env.PRIVATE_WIF || ""),
     "process.env.ALICE_ID": JSON.stringify(process.env.ALICE_ID || ""),

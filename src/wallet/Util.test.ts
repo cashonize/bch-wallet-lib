@@ -13,8 +13,7 @@ import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";
 import { decodeTransaction, getTransactionHash } from "./Util.js";
 import { RegTestWallet } from "./Wif.js";
-
-const isMock = !!process.env.USE_MOCK_PROVIDER;
+import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -61,7 +60,7 @@ describe("Utility tests", () => {
     ).toBe(utxo.txid);
   });
 
-  (isMock ? test.skip : test)(
+  test.skipIf(!liveTests)(
     "Should decode a transaction from fist block",
     async () => {
       const decoded = await decodeTransaction(
@@ -76,7 +75,7 @@ describe("Utility tests", () => {
     },
   );
 
-  (isMock ? test.skip : test)(
+  test.skipIf(!liveTests)(
     "Should decode a transaction and fetch input values and addresses",
     async () => {
       const txHash =

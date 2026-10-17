@@ -4,6 +4,7 @@ import { EXCHANGE_RATE_TTL } from "../constant.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { convert } from "../util/convert.js";
 import { ExchangeRate } from "./ExchangeRate.js";
+import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -24,12 +25,12 @@ describe("Exchange rate tests", () => {
     expect(rate).toBe(1337.42);
   });
 
-  test("Test other currencies", async () => {
+  test.skipIf(!liveTests)("Test other currencies", async () => {
     const eurRate = await ExchangeRate.get("eur");
     expect(eurRate).toBeGreaterThan(0);
   });
 
-  test("Test non-existing currency", async () => {
+  test.skipIf(!liveTests)("Test non-existing currency", async () => {
     await expect(ExchangeRate.get("xyz")).rejects.toThrow();
   });
 

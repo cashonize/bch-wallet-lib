@@ -37,6 +37,7 @@ Run one file: `USE_MOCK_PROVIDER=1 pnpm exec vitest run --config test/vitest.con
 - The default suite runs on `@paryonusd/mem-cash` (a private npm package, pinned exactly; its source is at `~/ParyonUSD/paryon_mem_cash`, read-only for you), an in-memory Electrum server and BCH VM that follows BCHN and Fulcrum closely (Fulcrum's listunspent and history order, BCHN's refusal reasons), run here with the May 2026 rules. Don't write tests that depend on insertion order where Fulcrum defines another. Use it for every change: wallets are funded on it, transactions are validated by it, and a test can broadcast and read back.
 - A fix comes with a test that fails without it. For coin selection, change and fees, assert the actual transaction (inputs, outputs, amounts, token data), not just that a send succeeded.
 - Tests that need the Docker regtest (BCHN + Fulcrum) are skipped in mock mode; don't add new ones of that kind when mem-cash can do it.
+- `pnpm test` and `pnpm test:browser` run offline. A test whose result depends on a public service (mainnet or chipnet electrum, exchange-rate APIs) is marked with `test.skipIf(!liveTests)` from `test/live.ts`: it runs on the Docker regtest, and in mock mode only with `LIVE_TESTS=1` (e.g. `LIVE_TESTS=1 pnpm test`). Prefer mem-cash or a fetch mock (`test/fetch.ts`) over a new live test.
 
 ## Code style
 

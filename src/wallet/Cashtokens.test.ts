@@ -20,6 +20,7 @@ import {
 } from "./model.js";
 import { InsufficientFundsError } from "./errors.js";
 import { RegTestWallet, TestNetWallet } from "./Wif.js";
+import { liveTests } from "#test/live.js";
 
 const inputOutpoints = (transactionHex: string) => {
   const tx = decodeTransaction(hexToBin(transactionHex));
@@ -64,7 +65,7 @@ afterAll(async () => {
 });
 
 describe(`Test cashtokens`, () => {
-  test("Test chipnet request", async () => {
+  test.skipIf(!liveTests)("Test chipnet request", async () => {
     const wallet = await TestNetWallet.watchOnly(
       "bchtest:pzszr88euuuy87uarx9krcuh5psy4zzghsm2033xk4",
     );

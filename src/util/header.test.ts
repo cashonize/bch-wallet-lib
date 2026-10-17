@@ -1,8 +1,7 @@
 import { HeaderI, HexHeaderI } from "../interface.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { Wallet } from "../wallet/Wif.js";
-
-const isMock = !!process.env.USE_MOCK_PROVIDER;
+import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -12,7 +11,7 @@ afterAll(async () => {
 });
 
 describe("header tests", () => {
-  (isMock ? it.skip : it)("decodeHeader", async () => {
+  it.skipIf(!liveTests)("decodeHeader", async () => {
     const wallet = await Wallet.newRandom();
     const hexHeader = (await wallet.provider!.getHeader(854724)) as HexHeaderI;
     expect(hexHeader.height).toBe(854724);

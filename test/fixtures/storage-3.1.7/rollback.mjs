@@ -33,9 +33,6 @@ const lib = await import(pathToFileURL(path.join(DIST, "index.js")).href);
 const { IndexedDBProvider: LibIndexedDBProvider } = await import(
   pathToFileURL(path.join(DIST, "indexeddb/index.js")).href
 );
-const { ExchangeRate: LibExchangeRate } = await import(
-  pathToFileURL(path.join(DIST, "rate/ExchangeRate.js")).href
-);
 const old = await import(
   pathToFileURL(path.join(CASHONIZE_MODULES, "mainnet-js/dist/module/index.js"))
     .href
@@ -186,8 +183,19 @@ for (const { network } of NETWORKS) {
   await provider.getRawTransactionObject(txids[3]);
   await provider.getHeaders([chains[network].height - 3]);
 }
+// in Node the library caches rates in the global scope; for this call it sees a browser, and
+// caches in localStorage as Cashonize does
 lib.Config.GetExchangeRateFn = async () => 400.25;
-await LibExchangeRate.getRateFromLocalStorage("usd");
+const nodeGlobal = globalThis.global;
+delete globalThis.global;
+globalThis.document = {};
+try {
+  await lib.ExchangeRate.getQuote("usd");
+} finally {
+  globalThis.global = nodeGlobal;
+  delete globalThis.document;
+}
+assert.ok(localStorage.getItem("rate-usd"), "the library cached the rate");
 const writtenByLibrary = await dumpIndexedDB();
 const libRecords = walletCacheRecords(writtenByLibrary);
 assert.ok(libRecords.size > 0, "the library wrote HD cache records");

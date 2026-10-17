@@ -8,14 +8,14 @@ beforeAll(() => {
 });
 
 test.skipIf(!liveTests)("Should get price sat in usd", async () => {
-  let rate = await ExchangeRate.get("usd");
+  let { rate } = await ExchangeRate.getQuote("usd");
   let usd = await convert(100000000, "sat", "usd");
   expect(Math.round(rate)).toBeLessThan(usd + 1);
   expect(Math.round(rate)).toBeGreaterThan(usd - 1);
 });
 
 test.skipIf(!liveTests)("Should get of bch in usd", async () => {
-  let rate = await ExchangeRate.get("usd");
+  let { rate } = await ExchangeRate.getQuote("usd");
   let usd = await convert(1, "bch", "usd");
   expect(Math.round(rate)).toBeLessThan(usd + 1);
   expect(Math.round(rate)).toBeGreaterThan(usd - 1);
@@ -27,7 +27,7 @@ test.skipIf(!liveTests)("Should get usd value in fixed format", async () => {
 });
 
 test.skipIf(!liveTests)("Should get price in usd in bch", async () => {
-  let rate = await ExchangeRate.get("usd");
+  let { rate } = await ExchangeRate.getQuote("usd");
   let unity = await convert(rate, "usd", "bch");
   expect(unity).toBeLessThan(1.01);
   expect(unity).toBeGreaterThan(0.99);

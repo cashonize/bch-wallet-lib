@@ -18,10 +18,10 @@ test("Get price of sat(s)", async () => {
 });
 
 test.skipIf(!liveTests)("Get price of USD, Usd, usd", async () => {
-  // Clear exchange rate cache so ExchangeRate.get() inside amountInSatoshi
+  // Clear exchange rate cache so the rate inside amountInSatoshi
   // fetches a fresh rate consistent with what we read here
   globalThis.RATE = {};
-  let usdRate = await ExchangeRate.get("usd");
+  let { rate: usdRate } = await ExchangeRate.getQuote("usd");
   let rate = await amountInSatoshi(usdRate - 10, "USD");
   expect(rate).toBeLessThan(bchParam.subUnits);
   rate = await amountInSatoshi(usdRate - 10, "Usd");

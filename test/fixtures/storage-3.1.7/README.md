@@ -33,9 +33,9 @@ The wallets: single-address seed wallets on the standard and the bitcoin.com pat
 
 ## Left out
 
-- The network: the fake server answers what discovery and the cache writes ask, nothing is broadcast, and decoded history (`getHistory`) is not run. The electrum caches are filled by calling the provider's `getRawTransaction(s)` and `getHeader(s)` directly.
+- The network: the fake server answers what discovery and the cache writes ask, nothing is broadcast, and decoded history (`getHistory`) is not run. The electrum caches are filled by calling the provider's `getRawTransaction(s)` and `getHeader(s)` directly (in `rollback.mjs`, the library's `getRawTransactions`, `getRawTransactionObject` and `getHeaders`).
 - Wallets made by `named()` from a random mnemonic: their ids are built in the form `named()` stores (`seed:<network>:<mnemonic>:m/44'/145'/0'/0/0`, `hd:<network>:<mnemonic>:m/44'/145'/0':0:0`) and stored with `replaceNamed`, as Cashonize's import flows do.
-- The exchange rate goes through `ExchangeRate.getRateFromLocalStorage` directly with a stubbed `Config.GetExchangeRateFn`, since in Node 3.1.7 only caches it in the global scope.
+- The exchange rate goes through 3.1.7's `ExchangeRate.getRateFromLocalStorage` directly with a stubbed `Config.GetExchangeRateFn`, since in Node 3.1.7 only caches it in the global scope. `rollback.mjs` has the library's `ExchangeRate.getQuote` see a browser for its one call, for the same reason.
 - `Config.UseLocalStorageCache` and `UseMemoryCache` (Cashonize uses neither), the encrypted storage provider, the regtest database, and the app's own localStorage keys and WalletConnect / CashConnect databases, which are not the library's.
 
 What 3.1.7 does not write is visible in the dump: single-address wallets have no `WalletCache` record (their cache is an in-memory `Map`), and neither has the xpub HD wallet, whose debounced write throws on its missing private keys.

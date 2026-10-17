@@ -9,7 +9,6 @@ import {
   utf8ToBin,
 } from "@bitauth/libauth";
 import { bchParam } from "../chain.js";
-import { Config } from "../config.js";
 import { DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
 import { mine } from "../mine/index.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
@@ -542,7 +541,6 @@ describe(`Watch only Wallets`, () => {
       if (!process.env.ADDRESS) {
         throw Error("Attempted to pass an empty address");
       } else {
-        Config.DefaultCurrency = "eur";
         let alice = await RegTestWallet.watchOnly(process.env.ADDRESS); // insert WIF from #1
         // Build Bob's wallet from a public address, check his balance.
         expect(alice.getPublicKeyHash()!.length).toBe(20);
@@ -557,7 +555,6 @@ describe(`Watch only Wallets`, () => {
             "eur",
           ),
         ).toBe(0);
-        Config.DefaultCurrency = "usd";
       }
     },
   );

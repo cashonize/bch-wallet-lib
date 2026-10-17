@@ -59,7 +59,7 @@ The reimplementations share a few causes. They make good API rules:
 | `getMaxAmountToSend`, then `send`                                                 | Same, after a confirm dialog                                                                                                                        | Fine; `sendMax` when the amount equals the max                                                                                     |
 | Transfer everything                                                               | 2N+1 sends (`transferAssets.ts`)                                                                                                                    | Optional `sendAll(addr, {utxoIds})`: one transaction, no change                                                                    |
 
-Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArray`, `decodeHeader`, `convert`, `watchBlocks`, `getHeaders`, `submitTransaction`, `ExchangeRate.get` with `Config.GetExchangeRateFn`, and the storage provider's `getWallets`.
+Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArray`, `decodeHeader`, `convert`, `watchBlocks`, `getHeaders`, `submitTransaction`, `ExchangeRate.get` with `Config.GetExchangeRateFn` (now `getQuote`, section 5), and the storage provider's `getWallets`.
 
 ## 3. Open library work, by priority
 
@@ -126,3 +126,4 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 - A `TokenSendRequest` with amount 0 and no NFT now throws `InvalidRequestError`. `createTokens.vue` builds one when the circulating amount is 0; skip that output instead.
 - Coins picked for mutable-NFT requests now come after the other token coins in the inputs.
 - mainnet-js 3.1.7 can't open an `hd:<xprv>` row, so a wallet stored that way can't be rolled back. Check whether Cashonize ever stores one.
+- `ExchangeRate.get(currency, true)` is gone: `store.ts` reads `(await ExchangeRate.getQuote(currency)).rate`, or passes `{ staleOnError: true }` and replaces `currentExchangeRate`'s fallback (section 4).

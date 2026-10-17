@@ -1,6 +1,6 @@
 import { bchParam } from "../chain.js";
 import { UnitEnum } from "../enum.js";
-import { ExchangeRate } from "../rate/ExchangeRate.js";
+import { getRate } from "../rate/ExchangeRate.js";
 import { sanitizeUnit } from "../util/sanitizeUnit.js";
 
 /**
@@ -22,7 +22,7 @@ export async function satoshiToAmount(
     case UnitEnum.SAT:
       return Number(value);
     default:
-      const Currency_over_BCH = await ExchangeRate.get(rawUnit);
+      const Currency_over_BCH = await getRate(rawUnit);
       // truncate currency amounts to fixed precision (2),
       // then return the fixed value string as a float.
       const currencyValue = Number(

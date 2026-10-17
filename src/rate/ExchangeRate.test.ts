@@ -6,6 +6,27 @@ import { convert } from "../util/convert.js";
 import { ExchangeRate } from "./ExchangeRate.js";
 import { liveTests } from "#test/live.js";
 
+// The module as a browser loads it, caching in localStorage (in Node it caches in the global scope),
+// with a Config of its own
+async function inBrowser() {
+  vi.resetModules();
+  vi.doMock("../util/getRuntimePlatform.js", async (importOriginal) => {
+    const actual =
+      await importOriginal<typeof import("../util/getRuntimePlatform.js")>();
+    return {
+      ...actual,
+      getRuntimePlatform: () => actual.RuntimePlatform.browser,
+    };
+  });
+  try {
+    const { Config } = await import("../config.js");
+    const { ExchangeRate } = await import("./ExchangeRate.js");
+    return { Config, ExchangeRate };
+  } finally {
+    vi.doUnmock("../util/getRuntimePlatform.js");
+  }
+}
+
 beforeAll(async () => {
   await initProviders();
 });
@@ -20,18 +41,23 @@ describe("Exchange rate tests", () => {
         BCH: 1337.42,
       },
     });
+    delete globalThis.RATE;
 
-    let rate = await ExchangeRate.get("usd", false);
-    expect(rate).toBe(1337.42);
+    try {
+      const { rate } = await ExchangeRate.getQuote("usd");
+      expect(rate).toBe(1337.42);
+    } finally {
+      delete globalThis.RATE;
+    }
   });
 
   test.skipIf(!liveTests)("Test other currencies", async () => {
-    const eurRate = await ExchangeRate.get("eur");
-    expect(eurRate).toBeGreaterThan(0);
+    const { rate } = await ExchangeRate.getQuote("eur");
+    expect(rate).toBeGreaterThan(0);
   });
 
   test.skipIf(!liveTests)("Test non-existing currency", async () => {
-    await expect(ExchangeRate.get("xyz")).rejects.toThrow();
+    await expect(ExchangeRate.getQuote("xyz")).rejects.toThrow();
   });
 
   test("Test custom exchange rate function", async () => {
@@ -41,15 +67,19 @@ describe("Exchange rate tests", () => {
       }
       throw new Error("Unsupported currency");
     };
+    delete globalThis.RATE;
 
-    const usdRate = await ExchangeRate.get("usd", false);
-    expect(usdRate).toBe(5555.55);
+    try {
+      const { rate } = await ExchangeRate.getQuote("usd");
+      expect(rate).toBe(5555.55);
 
-    await expect(ExchangeRate.get("eur", false)).rejects.toThrow(
-      "Unsupported currency",
-    );
-
-    Config.GetExchangeRateFn = undefined;
+      await expect(ExchangeRate.getQuote("eur")).rejects.toThrow(
+        "Unsupported currency",
+      );
+    } finally {
+      Config.GetExchangeRateFn = undefined;
+      delete globalThis.RATE;
+    }
   });
 
   test("Cache the first fetched rate", async () => {
@@ -83,30 +113,37 @@ describe("Exchange rate tests", () => {
     };
     delete globalThis.RATE;
     localStorage.removeItem("rate-usd");
+    const browser = await inBrowser();
 
     try {
-      for (const get of [
-        (symbol: string) => ExchangeRate.get(symbol),
-        (symbol: string) => ExchangeRate.getRateFromLocalStorage(symbol),
-      ]) {
+      for (const variant of [{ Config, ExchangeRate }, browser]) {
+        const get = async (symbol: string) =>
+          (await variant.ExchangeRate.getQuote(symbol)).rate;
         fetchesA = 0;
         fetchesB = 0;
-        Config.GetExchangeRateFn = sourceA;
+        variant.Config.GetExchangeRateFn = sourceA;
         expect(await get("usd")).toBe(400);
         expect(await get("usd")).toBe(400);
         expect(fetchesA).toBe(1);
 
-        Config.GetExchangeRateFn = sourceB;
+        variant.Config.GetExchangeRateFn = sourceB;
         expect(await get("usd")).toBe(500);
         expect(fetchesB).toBe(1);
 
         // switching back does not revive the rate cached before the switch
-        Config.GetExchangeRateFn = sourceA;
+        variant.Config.GetExchangeRateFn = sourceA;
         expect(await get("usd")).toBe(400);
         expect(fetchesA).toBe(2);
+        variant.Config.GetExchangeRateFn = undefined;
       }
+      // the browser's rate went to localStorage
+      expect(JSON.parse(localStorage.getItem("rate-usd")!)).toMatchObject({
+        symbol: "usd",
+        rate: 400,
+      });
     } finally {
       Config.GetExchangeRateFn = undefined;
+      browser.Config.GetExchangeRateFn = undefined;
       delete globalThis.RATE;
       localStorage.removeItem("rate-usd");
     }
@@ -119,7 +156,7 @@ describe("Exchange rate tests", () => {
     delete globalThis.RATE;
 
     try {
-      const pendingA = ExchangeRate.get("usd");
+      const pendingA = ExchangeRate.getQuote("usd");
       await vi.waitFor(() => expect(resolveA).toBeDefined());
       let fetchesB = 0;
       Config.GetExchangeRateFn = async (): Promise<number> => {
@@ -127,9 +164,9 @@ describe("Exchange rate tests", () => {
         return 500;
       };
       resolveA!(400);
-      expect(await pendingA).toBe(400);
+      expect((await pendingA).rate).toBe(400);
 
-      expect(await ExchangeRate.get("usd")).toBe(500);
+      expect((await ExchangeRate.getQuote("usd")).rate).toBe(500);
       expect(fetchesB).toBe(1);
     } finally {
       Config.GetExchangeRateFn = undefined;
@@ -138,9 +175,9 @@ describe("Exchange rate tests", () => {
   });
 
   test("A rate cached by mainnet-js 3 is used until the rate source changes", async () => {
-    vi.resetModules();
-    const { Config } = await import("../config.js");
-    const { ExchangeRate } = await import("./ExchangeRate.js");
+    const { Config, ExchangeRate } = await inBrowser();
+    const get = async (symbol: string) =>
+      (await ExchangeRate.getQuote(symbol)).rate;
     let fetches = 0;
     const source = async (): Promise<number> => {
       fetches++;
@@ -153,18 +190,18 @@ describe("Exchange rate tests", () => {
     );
 
     try {
-      expect(await ExchangeRate.getRateFromLocalStorage("usd")).toBe(400);
+      expect(await get("usd")).toBe(400);
       expect(fetches).toBe(0);
 
       // after a switch, the source of an untagged rate is unknown
       Config.GetExchangeRateFn = async () => 600;
-      expect(await ExchangeRate.getRateFromLocalStorage("usd")).toBe(600);
+      expect(await get("usd")).toBe(600);
       Config.GetExchangeRateFn = source;
       localStorage.setItem(
         "rate-usd",
         JSON.stringify({ symbol: "usd", rate: 400, ttl: Date.now() + 100000 }),
       );
-      expect(await ExchangeRate.getRateFromLocalStorage("usd")).toBe(500);
+      expect(await get("usd")).toBe(500);
       expect(fetches).toBe(1);
       expect(JSON.parse(localStorage.getItem("rate-usd")!)).toMatchObject({
         symbol: "usd",
@@ -203,15 +240,8 @@ describe("Exchange rate tests", () => {
       await expect(ExchangeRate.getQuote("usd")).rejects.toThrow(
         "rate source down",
       );
-      await expect(ExchangeRate.get("usd")).rejects.toThrow("rate source down");
       expect(
         await ExchangeRate.getQuote("usd", { staleOnError: true }),
-      ).toEqual({ symbol: "usd", rate: 400, fetchedAt, stale: true });
-      expect(
-        await ExchangeRate.getQuote("usd", {
-          useCache: false,
-          staleOnError: true,
-        }),
       ).toEqual({ symbol: "usd", rate: 400, fetchedAt, stale: true });
 
       // no last known rate for the symbol: the error is thrown

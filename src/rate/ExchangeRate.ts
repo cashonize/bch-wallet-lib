@@ -8,8 +8,6 @@ import {
 } from "../util/getRuntimePlatform.js";
 
 export interface ExchangeRateOptions {
-  // default true; false always fetches, and does not cache what it fetched
-  useCache?: boolean;
   // when the fetch fails, return the last cached rate of the current source, however old, instead of throwing
   staleOnError?: boolean;
 }
@@ -24,62 +22,22 @@ export interface ExchangeRateQuote {
 }
 
 export class ExchangeRate {
-  symbol: string;
-  rate: number;
-  ttl: number;
-  constructor({
-    symbol,
-    rate,
-    ttl,
-  }: {
-    symbol: string;
-    rate: number;
-    ttl: number;
-  }) {
-    this.symbol = symbol;
-    this.rate = rate;
-    this.ttl = ttl;
-  }
-
-  toString() {
-    this.rate.toFixed(2);
-  }
-
-  static async get(symbol: string, useCache = true) {
-    const quote = await getQuote(platformCache(), symbol, { useCache });
-    return quote.rate;
-  }
-
-  // like get(), and tells when the rate was fetched and whether it is stale
+  /**
+   * The BCH rate in `symbol` (e.g. "usd"), from `Config.GetExchangeRateFn` or the built-in
+   * sources, cached for its TTL; tells when the rate was fetched and whether it is stale.
+   */
   static async getQuote(
     symbol: string,
     options: ExchangeRateOptions = {},
   ): Promise<ExchangeRateQuote> {
     return await getQuote(platformCache(), symbol, options);
   }
+}
 
-  static async getRateFromLocalStorage(
-    symbol: string,
-    useCache = true,
-  ): Promise<number> {
-    const quote = await getQuote(localStorageCache, symbol, { useCache });
-    return quote.rate;
-  }
-
-  static async getRateFromGlobalScope(symbol, useCache = true) {
-    const quote = await getQuote(globalScopeCache, symbol, { useCache });
-    return quote.rate;
-  }
-
-  static cacheRateInGlobalScope(symbol, rate) {
-    globalThis.RATE ??= {};
-    globalThis.RATE[symbol] = {
-      symbol: symbol,
-      rate: rate,
-      ttl: getTtl(),
-      source: currentSourceTag(),
-    };
-  }
+// The rate behind the unit conversions (convert, amountInSatoshi); not part of the entry
+export async function getRate(symbol: string): Promise<number> {
+  const quote = await getQuote(platformCache(), symbol, {});
+  return quote.rate;
 }
 
 interface RateCache {
@@ -164,14 +122,11 @@ async function getQuote(
   symbol: string,
   options: ExchangeRateOptions,
 ): Promise<ExchangeRateQuote> {
-  const useCache = options.useCache ?? true;
   const sourceTag = currentSourceTag();
   const source = Config.GetExchangeRateFn;
-  if (useCache) {
-    const cached = await cache.read(symbol);
-    if (isUsable(cached, sourceTag) && cached.ttl > Date.now()) {
-      return toQuote(symbol, cached, false);
-    }
+  const cached = await cache.read(symbol);
+  if (isUsable(cached, sourceTag) && cached.ttl > Date.now()) {
+    return toQuote(symbol, cached, false);
   }
 
   let freshRate: number;
@@ -190,7 +145,7 @@ async function getQuote(
   }
   const entry = { symbol, rate: freshRate, ttl: getTtl(), source: sourceTag };
   // a rate of a source switched away from while it was fetched is not cached
-  if (useCache && currentSourceTag() === sourceTag) {
+  if (currentSourceTag() === sourceTag) {
     // a rate that cannot be cached (e.g. storage full) is still returned
     await cache.write(entry).catch(() => {});
   }
@@ -210,13 +165,8 @@ function toQuote(
   };
 }
 
-export function getTtl() {
+function getTtl() {
   return Math.trunc(Date.now() + EXCHANGE_RATE_TTL);
-}
-
-// Attempt to get the usd rate from some web app
-export async function getRateFromExchange(symbol: string): Promise<number> {
-  return await fetchRate(Config.GetExchangeRateFn, symbol);
 }
 
 async function fetchRate(
@@ -254,16 +204,4 @@ async function fetchRate(
   }
 
   throw Error(`Currency '${symbol}' is not supported.`);
-}
-
-// Lazy cache warm-up - call this explicitly if you want to pre-fetch rates.
-// Does not throw if offline.
-let _exchangeRatePromise: Promise<number | Error> | undefined;
-export function getExchangeRatePromise(): Promise<number | Error> {
-  if (!_exchangeRatePromise) {
-    _exchangeRatePromise = ExchangeRate.get(Config.DefaultCurrency)
-      .then((result) => result)
-      .catch((error: Error) => error);
-  }
-  return _exchangeRatePromise;
 }

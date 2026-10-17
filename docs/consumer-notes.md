@@ -4,7 +4,7 @@ Cashonize (`~/Cashonize/cashonize-wallet`) is this library's first user. It runs
 
 The inventory this builds on, written for the fork decision, is `~/Cashonize/mainnet-js-fork/research/cashonize-usage.md` (sections 4 and 7: where the app bypasses mainnet-js and the workarounds it carries). This file adds the reasons and the API conclusions.
 
-Written 2026-10-17 against bch-wallet-lib main `ae646b0`, after the first fix workflow. Sections 3 and 4 say what is fixed and what is still open.
+Written 2026-10-17 against bch-wallet-lib main `ae646b0`, after the first fix workflow; sections 3 to 5 updated at `2b3fd2e`, after the second, with what the Cashonize migration branch ran into. Sections 3 and 4 say what is fixed and what is still open.
 
 ## 1. The pattern: the caller owns the async steps
 
@@ -54,9 +54,7 @@ The reimplementations share a few causes. They make good API rules:
 | `namedExists`                                                                     | Raw IndexedDB check                                                                                                                                 | Make it a free function that constructs nothing                                                                                    |
 | `watchTransactions` / `watchTokenTransactions`                                    | Fetches each tx again for its input values to skip self-sent ones                                                                                   | Add a `loadInputValues` option; a utxo-set diff could avoid the network entirely                                                   |
 | `signUnsignedTransaction` (it overwrites every input with one key's P2PKH unlock) | WalletConnect, WizardConnect and flipstarter each sign with libauth: per-input keys, contract placeholders, ALL\|UTXOS or ALL\|ANYONECANPAY sighash | Add a single-input signer (`signInput(tx, sourceOutputs, i, key, {hashType, algorithm})`); sign only the wallet's own empty inputs |
-| `decodeTransaction` (`wallet/Util.ts`)                                            | `getRawTransactions` plus libauth `decodeTransaction`                                                                                               | Drop it, or stop it throwing on outputs without an address, keep token data and take a provider                                    |
 | `tokenMint` for an identity's minting NFT                                         | Hand-built mint via `send` with `ensureUtxos: [authUtxo]` (`authchainIdentity.ts` `mintOutputs`)                                                    | Let the caller name the minting utxo and its return address                                                                        |
-| `SignedMessage.verify` (strict string compare, throws on bad input)               | Lowercases the address and catches throws (`messageSigning.ts`)                                                                                     | Compare decoded payloads and return `valid: false`                                                                                 |
 | `toCurrency` / `toBch` (async, they fetch a rate)                                 | Sync multiply with a rate already held (`utils.ts` `convertToCurrency`, `satsToBch`)                                                                | No helper needed                                                                                                                   |
 | `getMaxAmountToSend`, then `send`                                                 | Same, after a confirm dialog                                                                                                                        | Fine; `sendMax` when the amount equals the max                                                                                     |
 | Transfer everything                                                               | 2N+1 sends (`transferAssets.ts`)                                                                                                                    | Optional `sendAll(addr, {utxoIds})`: one transaction, no change                                                                    |
@@ -65,25 +63,23 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
 
 ## 3. Open library work, by priority
 
-1. **Reserved coins stay out of every spend.** Today Cashonize reads `getUtxos()`, subtracts its reservations and passes the rest as `utxoIds` (`store.ts` `spendConfig`). That costs an extra read, and the snapshot can lag behind the wallet. Two changes fix it:
-   - add `excludeUtxoIds` (or a `utxoFilter`), honored by `send`, `sendMax`, `getMaxAmountToSend`, `tokenGenesis`, `tokenMint` and `tokenBurn`;
-   - reject an `ensureUtxos` coin that isn't in `utxoIds`. Today it goes into the selection unchecked and can spend a reserved coin. Once that's fixed, a caller can also name the exact NFT to send.
-2. **Choose the server at construction.** Add `fromId(id, {provider})` / `named(name, {provider})`. Today HD discovery starts on the global provider, and Cashonize sets `DefaultProvider.servers` in advance so the wallet's addresses don't leak to a default server. `setProvider` already exists.
-3. **Explicit coins in token operations.**
-   - A `genesisInputs` option on `tokenGenesis` that throws if the coin isn't available.
+Done in round 2 and moved to section 4: reserved coins out of every spend (`excludeUtxoIds`, `ensureUtxos` inside the pool), the exchange-rate fallback, request validation, cheaper history.
+
+1. **Choose the server at construction.** Add `fromId(id, {provider})` / `named(name, {provider})`. Today HD discovery starts on the global provider, and Cashonize sets `DefaultProvider.servers` in advance so the wallet's addresses don't leak to a default server. On the migration branch, the sweep's temporary wallets and every wallet before `initializeWallet` still use the global provider. `setProvider` already exists; it leaves the old provider connected, which Cashonize can disconnect itself once `setProvider` resolves (say so in its JSDoc).
+2. **Saving constructs nothing.** `replaceNamed` (and `named` when it creates) constructs the wallet, and construction subscribes: the chipnet copy Cashonize stores of every new wallet subscribes on chipnet, and an import's two copies do the same. Add a store-only `saveNamedWallet(name, walletId, dbName)`. Same rule for `namedExists`, which still constructs a wallet.
+3. **An address scan that constructs no wallets.** Derive path P, indices a..b, plus a history check. This replaces `scanDerivationPaths`, whose ~83 wallets each subscribe as they are constructed and are never stopped (a real leak on the migration branch).
+4. **Explicit coins in token operations.**
+   - A `genesisInputs` option on `tokenGenesis` that throws if the coin isn't available (today: narrow with `utxoIds` and rely on order).
    - The minting utxo and its return address as options on `tokenMint`.
    - The outpoint of each requested output in `SendResponse`.
-4. **Public HD address info.** Add `addressInfo(branch, index)` returning `{address, tokenAddress, publicKeyHash, used, txCount, utxos}`, and make `getUsedAddresses(branch)` public. Also derive addresses on untracked branches, such as the defi chain 7, without counting them in the balance. Cashonize reads `walletCache` and the raw history maps directly today, and v4 renamed those internals (`addressRows.ts`, `hdAddresses.vue`, `hdAddressSelect.vue`, `wizSigning.ts`, `cauldronPools.ts`).
-5. **An address scan that constructs no wallets.** Derive path P, indices a..b, plus a history check. This replaces `scanDerivationPaths`, which on v4 would leave subscriptions behind.
-6. **Cheaper history.** Done: the wallets backfill balances from their own utxos, and every fan-out of a history load is capped at 10 in flight (`concurrency` option). Still open:
-   - Let `getRawTransactions` and `getHeaders` fail per item; one failure still rejects the whole call.
-   - An HD wallet's address discovery still subscribes, and fetches for, every address of a gap extension at once.
-7. **Exchange rate.**
-   - Add a stale-on-error fallback, e.g. `get(symbol, {staleOnError: true})`. A dApp sign dialog needs a fiat value or must refuse.
-   - Key the cache by rate source, or clear it when `GetExchangeRateFn` changes. Otherwise the old provider's rate is served for up to 250 s.
-8. **Errors.**
-   - Give WIF errors a type or a code, and export `decodeWif` or `wifNetwork`. The sweep QR filter currently guesses the network from the first character.
-9. **Request validation.** Reject non-hex or odd-length commitments and categories; libauth reads `abc` as `ab0c`. Optionally check amount ≤ 2^63−1 and the 100 kB standard size before signing.
+5. **Public HD address info.** Add `addressInfo(branch, index)` returning `{address, tokenAddress, publicKeyHash, used, txCount, utxos}`, and make `getUsedAddresses(branch)` public. Also derive addresses on untracked branches, such as the defi chain 7, without counting them in the balance. Cashonize reads `walletCache` and the raw history maps directly (`addressRows.ts`, `hdAddresses.vue`, `hdAddressSelect.vue`, `wizSigning.ts`, `cauldronPools.ts`).
+6. **Errors that are still plain `Error`s or not `Error`s.**
+   - `checkUtxos` throws a plain `Error` ("Utxos [...] not found in wallet") for a `utxoIds` coin no longer in the wallet, the case of a coin spent between a read and the send; the same case in `ensureUtxos` throws `UtxoNotAvailableError`. Use that.
+   - `IndexedDbCache` rejects with the raw `Event` (`request.onerror = reject` in getItem, setItem, removeItem); use `requestError(request)` as `IndexedDBProvider` does.
+   - Wallet id parsing, the relay-fee settings and `decodeWif` throw plain `Error`s. Give WIF errors a type or code and export `decodeWif` or `wifNetwork`; the sweep QR filter guesses the network from the first character.
+7. **Storage helpers that don't stop at one bad row.** `pruneWalletCaches` throws "Not a stored wallet id" on one unreadable stored id, which blocks every later prune; skip such ids (Cashonize's old prune did). `getNamedWalletId` returns `''` for an empty stored id; return `undefined`.
+8. **Coin-control hooks and burn allowances (round-2 final review, medium).** `outputOrdering` is not held to a permutation of the outputs, so a hook can drop the change or change a value; check it as `inputOrdering` is. `tokenBurns` is on the public send options and its allowance in `tokenBurn` is too wide (an NFT kept but listed as burnable, NFTs not counted). Cashonize uses neither hook.
+9. **History.** Let `getRawTransactions` and `getHeaders` fail per item; one failure still rejects the whole call. An HD wallet's address discovery still subscribes, and fetches for, every address of a gap extension at once.
 10. **Smaller additions.**
     - Export `utxoToSourceOutput(utxo)`, which the library's own `prepareInputs` and `prepareTokenOutputs` also use. Cashonize has three copies (`utxoConverter.ts`, `flipstarter.ts`, `cashconnectStore.ts`), and `prepareInputs` quietly uses a zero key when the cache has none.
     - Add `provider.getSourceOutput(txid, vout)` with exact bigints.
@@ -91,6 +87,7 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
     - Accept the token form of an address in `hasAddress`, or add `hasLockingBytecode`.
     - Add a derivation option on `named` / `newRandom`.
     - Add `skipInitial` on `watchBalance` / `watchStatus`, as `watchBlocks` already has.
+    - Check the 100 kB standard size before signing.
 
 ## 4. Already fixed here: Cashonize code that goes on migration
 
@@ -109,6 +106,11 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
 | `getNamedWalletIdFromDb`, `deleteWalletFromDb`, `pruneHdWalletKeyCache`                                             | `getNamedWalletId` returns `undefined`; `deleteNamedWallet`, `pruneWalletCaches` (mainnet-js#261, #249)                                                                                 |
 | `cashconnectStore.waitForBlockchainConnection`; `connectElectrum` windows                                           | Each request connects; silent sockets are replaced; set `connectTimeout: 15000`                                                                                                         |
 | The uncompressed-WIF pre-check (keep it only for the localized message)                                             | Error-free `decodeWif` (mainnet-js#258)                                                                                                                                                 |
+| `spendConfig` pre-reads `getUtxos()` and subtracts the reservations into `utxoIds`                                  | `excludeUtxoIds` on every spend; an `ensureUtxos` coin outside the pool throws `UtxoNotAvailableError`                                                                                  |
+| The exchange-rate fallback to the last known rate (`currentExchangeRate`)                                           | `ExchangeRate.getQuote(symbol, {staleOnError})` with `stale` and `fetchedAt`; the cache follows `GetExchangeRateFn`                                                                     |
+| `nftMintForm.vue` `isHex`; genesis amount range checks                                                              | `InvalidRequestError` for bad hex, odd length, >128-byte commitments and amounts outside 0..2^63−1                                                                                      |
+| Lowercasing and try/catch around `SignedMessage.verify`; libauth `decodeTransaction` instead of the library's       | `verify` compares decoded addresses and returns `valid: false`; `decodeTransaction` decodes every output and takes a provider                                                           |
+| `spendAuthUtxo`'s narrowing as the only guard against a burn                                                        | `TokenBurnError` refuses a built transaction that burns tokens (the narrowing stays as defense in depth)                                                                                |
 | Comments about `UseLocalStorageCache` and `DefaultCurrency` being unsafe                                            | mainnet-js#261, the rate fix (#262)                                                                                                                                                     |
 
 ## 5. API breaks Cashonize will hit
@@ -119,3 +121,6 @@ Used as intended and fine: `sendMax` over a one-coin pool, `OpReturnData.fromArr
 - The HD fields `depositIndex`, `changeIndex`, `depositRawHistory` and `changeRawHistory` are replaced by per-branch `indices` / `rawHistory` maps. `walletCache.getByIndex(i, change)` became `getByIndex(i, branch)`.
 - Single-address wallets now subscribe on construction (their cache stays in memory, as in 3.1.7). Never construct one just to look something up.
 - `watchBalance` still fires once on subscribe, so Cashonize's `electrumSubscriptionsActive` guard stays.
+- A `TokenSendRequest` with amount 0 and no NFT now throws `InvalidRequestError`. `createTokens.vue` builds one when the circulating amount is 0; skip that output instead.
+- Coins picked for mutable-NFT requests now come after the other token coins in the inputs.
+- mainnet-js 3.1.7 can't open an `hd:<xprv>` row, so a wallet stored that way can't be rolled back. Check whether Cashonize ever stores one.

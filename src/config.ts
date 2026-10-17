@@ -11,7 +11,7 @@ export class Config {
   static UseIndexedDBCache = false;
   // caches the raw transactions in browser's memory
   static UseMemoryCache = false;
-  // fee rate for every send in satoshis per byte; when unset the server's blockchain.relayfee is used
+  // fee rate for every send in satoshis per byte, at least 1; when unset the server's blockchain.relayfee is used
   static RelayFeePerByte: number | undefined = undefined;
   // the highest fee rate in satoshis per byte a server's blockchain.relayfee can set
   static MaxRelayFeePerByte = 10;

@@ -8,11 +8,32 @@ const MinRelayFeePerByte = 1;
 // The server's rate per provider, so that a wallet moved to another server (setProvider) asks that server
 const relayFeeCache = new WeakMap<NetworkProvider, number>();
 
-// The fee rate for a send in satoshis per byte: Config.RelayFeePerByte, or the server's blockchain.relayfee
-// bounded to [1, Config.MaxRelayFeePerByte], since an unchecked server rate would set what the wallet
-// burns in fees (mainnet-js#254)
+// Config is assigned by the app, possibly from untyped code or stored settings, so a bad value is
+// caught here and named rather than surfacing as a broken fee calculation
+function checkFeeSetting(name: string, value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `Config.${name} must be a finite, non-negative number of satoshis per byte, got ${String(value)}`,
+    );
+  }
+  return value;
+}
+
+// The fee rate for a send in satoshis per byte, never below 1: Config.RelayFeePerByte, or the server's
+// blockchain.relayfee capped at Config.MaxRelayFeePerByte, since an unchecked server rate would set what the
+// wallet burns in fees (mainnet-js#254)
 export async function getRelayFeeCache(provider: NetworkProvider) {
-  if (Config.RelayFeePerByte !== undefined) return Config.RelayFeePerByte;
+  const maxFeePerByte = checkFeeSetting(
+    "MaxRelayFeePerByte",
+    Config.MaxRelayFeePerByte,
+  );
+  if (Config.RelayFeePerByte !== undefined) {
+    const feePerByte = checkFeeSetting(
+      "RelayFeePerByte",
+      Config.RelayFeePerByte,
+    );
+    return Math.max(feePerByte, MinRelayFeePerByte);
+  }
 
   let serverFeePerByte = relayFeeCache.get(provider);
   if (serverFeePerByte === undefined) {
@@ -30,8 +51,6 @@ export async function getRelayFeeCache(provider: NetworkProvider) {
     relayFeeCache.set(provider, serverFeePerByte);
   }
 
-  return Math.min(
-    Math.max(serverFeePerByte, MinRelayFeePerByte),
-    Config.MaxRelayFeePerByte,
-  );
+  const feePerByte = Math.min(serverFeePerByte, maxFeePerByte);
+  return Math.max(feePerByte, MinRelayFeePerByte);
 }

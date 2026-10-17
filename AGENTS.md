@@ -13,7 +13,7 @@ pnpm test           # vitest on the in-memory chain (mem-cash); the default, no 
 pnpm test:regtest   # the same suite against BCHN + Fulcrum in Docker
 pnpm test:browser   # browser tests (vitest browser mode, Chromium)
 pnpm typecheck      # tsc --noEmit over src and test
-pnpm lint           # oxlint --type-aware
+pnpm lint           # oxlint, type-aware (.oxlintrc.json); correctness and promise rules are errors
 pnpm format         # oxfmt (format:check in CI)
 pnpm build          # tsc -p tsconfig.build.json to dist/
 ```

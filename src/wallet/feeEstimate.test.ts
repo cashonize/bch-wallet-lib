@@ -50,6 +50,22 @@ const feeCheck = async (
   };
 };
 
+// A new wallet holding `count` coins of `value` sats, and the funding wallet
+const fund = async (count: number, value: bigint) => {
+  const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+  const bob = await RegTestWallet.newRandom();
+  await alice.send(
+    Array.from(
+      { length: count },
+      () => new SendRequest({ cashaddr: bob.cashaddr!, value }),
+    ),
+  );
+  return { alice, bob, coins: await bob.getUtxos() };
+};
+
+const outputValues = (transactionHex: string) =>
+  decode(transactionHex).outputs.map((output) => output.valueSatoshis);
+
 beforeAll(async () => {
   await initProviders();
 });
@@ -199,5 +215,33 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
       decode(sendMax.transaction).outputs.map((output) => output.valueSatoshis),
     ).toEqual([max]);
     expect((await bob.getTokenUtxos()).length).toBe(150);
+  });
+
+  test("a change at or below dust is topped up when another input costs less than it", async () => {
+    const { alice, bob, coins } = await fund(20, 1000n);
+    // 11 coins cover 9000 sats and their fee and leave 404 sats, which would go to the miners;
+    // a 12th coin costs 141 sats and brings the change back above dust
+    const response = await bob.send(
+      new SendRequest({ cashaddr: alice.cashaddr!, value: 9000n }),
+    );
+    expect(decode(response.transaction).inputs.length).toBe(12);
+    const { paid, expected } = await feeCheck(bob, response.transaction, coins);
+    expect(paid).toBe(expected);
+    expect(outputValues(response.transaction)).toEqual([
+      9000n,
+      12000n - 9000n - expected,
+    ]);
+  });
+
+  test("a change at or below dust is left to the miners when another input costs more", async () => {
+    const { alice, bob, coins } = await fund(10, 1000n);
+    // six coins leave 125 sats, less than the 141 sats a seventh input costs
+    const response = await bob.send(
+      new SendRequest({ cashaddr: alice.cashaddr!, value: 4950n }),
+    );
+    expect(decode(response.transaction).inputs.length).toBe(6);
+    expect(outputValues(response.transaction)).toEqual([4950n]);
+    const { paid } = await feeCheck(bob, response.transaction, coins);
+    expect(paid).toBe(6000n - 4950n);
   });
 });

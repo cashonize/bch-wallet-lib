@@ -1,5 +1,6 @@
 import { binToHex, CashAddressNetworkPrefix, sha256 } from "@bitauth/libauth";
 import { purgeWalletCache, WalletCache } from "../cache/walletCache.js";
+import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import type { WalletDbEntryI } from "../db/interface.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
@@ -1057,9 +1058,9 @@ export class BaseWallet implements WalletI {
 
     // The fee is estimated from the coins the selection picks, not from every candidate: sizing
     // the whole pool made token operations fund an input for each token coin of the wallet, and
-    // plain sends over-select (mainnet-js#253). Each round selects for the last round's estimate
-    // until the selected coins cover their own fee, the precise one included.
+    // plain sends over-select (mainnet-js#253).
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
+    const ensureUtxos = options?.ensureUtxos || [];
     const estimateFee = (inputs: Utxo[]) =>
       getFeeAmountSimple({
         utxos: inputs,
@@ -1068,53 +1069,73 @@ export class BaseWallet implements WalletI {
         relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
         feePaidBy: feePaidBy,
       });
-    let feeEstimate = await estimateFee(options?.ensureUtxos || []);
-    let selectedUtxos: Utxo[] = [];
-    let fundingUtxos: Utxo[] = [];
-    let fee = 0n;
-    for (let round = 0; ; round++) {
-      selectedUtxos = await getSuitableUtxos(
-        utxos,
-        spendAmount + feeEstimate,
-        bestHeight,
-        feePaidBy,
-        selectionRequests,
-        options?.ensureUtxos || [],
-        options?.tokenOperation,
-        {
-          coinSelection: options?.coinSelection,
-          feePerByte: relayFeePerByteInSatoshi,
-        },
-      );
-      if (selectedUtxos.length === 0) {
-        throw new InsufficientFundsError(
-          "The available inputs couldn't satisfy the request with fees",
-          { asset: "bch" },
+    // Each round selects for the last round's estimate plus `margin` until the selected coins
+    // cover their own fee, the precise one included; the estimate only grows.
+    const settle = async (margin: bigint, feeEstimate: bigint) => {
+      for (let round = 0; ; round++) {
+        const selectedUtxos = await getSuitableUtxos(
+          utxos,
+          spendAmount + feeEstimate + margin,
+          bestHeight,
+          feePaidBy,
+          selectionRequests,
+          ensureUtxos,
+          options?.tokenOperation,
+          {
+            coinSelection: options?.coinSelection,
+            feePerByte: relayFeePerByteInSatoshi,
+          },
         );
+        if (selectedUtxos.length === 0) {
+          throw new InsufficientFundsError(
+            "The available inputs couldn't satisfy the request with fees",
+            { asset: "bch" },
+          );
+        }
+        let feeNeeded = await estimateFee(selectedUtxos);
+        if (feeNeeded <= feeEstimate) {
+          const fundingUtxos = options?.inputOrdering
+            ? options.inputOrdering({ inputs: selectedUtxos })
+            : selectedUtxos;
+          const fee = await getFeeAmount({
+            utxos: fundingUtxos,
+            sendRequests: sendRequests,
+            sourceAddress: this.getDepositAddress(),
+            relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
+            feePaidBy: feePaidBy,
+            walletCache: this.walletCache,
+            fee: options?.fee,
+          });
+          if (fee <= feeEstimate) return { selectedUtxos, fundingUtxos, fee };
+          feeNeeded = fee;
+        }
+        // this cuts off a coinSelection that never settles
+        if (round > utxos.length) {
+          throw new Error("The fee estimate did not settle on a set of inputs");
+        }
+        feeEstimate = feeNeeded;
       }
-      let feeNeeded = await estimateFee(selectedUtxos);
-      if (feeNeeded <= feeEstimate) {
-        fundingUtxos = options?.inputOrdering
-          ? options.inputOrdering({ inputs: selectedUtxos })
-          : selectedUtxos;
-        fee = await getFeeAmount({
-          utxos: fundingUtxos,
-          sendRequests: sendRequests,
-          sourceAddress: this.getDepositAddress(),
-          relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-          feePaidBy: feePaidBy,
-          walletCache: this.walletCache,
-          fee: options?.fee,
-        });
-        if (fee <= feeEstimate) break;
-        feeNeeded = fee;
+    };
+    const initialEstimate = await estimateFee(ensureUtxos);
+    let settled = await settle(0n, initialEstimate);
+    // Change at or below dust is not built and goes to the miners. Selecting for change above
+    // dust is kept when it pays the miners less, the extra inputs' fees included.
+    const change =
+      sumUtxoValue(settled.selectedUtxos) - spendAmount - settled.fee;
+    if (
+      feePaidBy === FeePaidByEnum.change &&
+      !discardChange &&
+      change > 0n &&
+      change <= DUST_UTXO_THRESHOLD
+    ) {
+      try {
+        const withChange = await settle(DUST_UTXO_THRESHOLD + 1n, settled.fee);
+        if (withChange.fee < settled.fee + change) settled = withChange;
+      } catch (e) {
+        if (!(e instanceof InsufficientFundsError)) throw e;
       }
-      // the estimate grows every round; this cuts off a coinSelection that never settles
-      if (round > utxos.length) {
-        throw new Error("The fee estimate did not settle on a set of inputs");
-      }
-      feeEstimate = feeNeeded;
     }
+    const { selectedUtxos, fundingUtxos, fee } = settled;
     // a token coin the change was not computed from would be burned
     const tokenInputIds = new Set(tokenInputs.map(toUtxoId));
     if (

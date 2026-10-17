@@ -57,10 +57,21 @@ describe("request constructors", () => {
         bad,
       );
     }
+  });
+
+  test("a category is lowercased", async () => {
+    const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
+    const upper = "AB".repeat(32);
+    const nft = { capability: none, commitment: "" };
     expect(
-      new TokenSendRequest({ cashaddr, category: "AB".repeat(32), amount: 1n })
-        .category,
-    ).toBe("AB".repeat(32));
+      new TokenSendRequest({ cashaddr, category: upper, amount: 1n }).category,
+    ).toBe("ab".repeat(32));
+    expect(new TokenMintRequest({ category: upper, nft }).category).toBe(
+      "ab".repeat(32),
+    );
+    expect(new TokenBurnRequest({ category: upper, amount: 1n }).category).toBe(
+      "ab".repeat(32),
+    );
   });
 
   test("a commitment must be even-length hex of at most 128 bytes", async () => {
@@ -145,6 +156,67 @@ describe("request constructors", () => {
       }).amount,
     ).toBe(0n);
     expect(new TokenGenesisRequest({ amount: 1n }).amount).toBe(1n);
+  });
+});
+
+describe("a category in uppercase finds its coins", () => {
+  // bob holds a minting NFT with 100 fungible tokens of its category
+  const withBaton = async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100_000n });
+    const genesis = await bob.tokenGenesis({
+      amount: 100n,
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    const category = genesis.categories[0];
+    return { bob, category, upper: category.toUpperCase() };
+  };
+
+  test("send", async () => {
+    const { bob, category, upper } = await withBaton();
+    const carol = await RegTestWallet.newRandom();
+
+    const response = await bob.send({
+      cashaddr: carol.tokenaddr!,
+      category: upper,
+      amount: 30n,
+    } as TokenSendRequest);
+
+    expect(response.categories).toEqual([category]);
+    const [coin] = await getTokenUtxos(carol, category);
+    expect(coin.token?.amount).toBe(30n);
+  });
+
+  test("tokenMint, from a request or a plain object", async () => {
+    const { bob, category, upper } = await withBaton();
+    const nft = { capability: none, commitment: "01" };
+
+    await bob.tokenMint(new TokenMintRequest({ category: upper, nft }));
+    const plain = { category: upper, nft };
+    await bob.tokenMint(plain);
+
+    expect(plain.category).toBe(upper);
+    const minted = (await getTokenUtxos(bob, category)).filter(
+      (utxo) => utxo.token?.nft?.capability === none,
+    );
+    expect(minted).toHaveLength(2);
+  });
+
+  test("tokenBurn, from a request or a plain object", async () => {
+    const { bob, category, upper } = await withBaton();
+    // fungible tokens off the baton's coin, which comes back
+    const nft = { capability: NFTCapability.minting, commitment: "" };
+
+    await bob.tokenBurn(
+      new TokenBurnRequest({ category: upper, amount: 10n, nft }),
+    );
+    const plain = { category: upper, amount: 10n, nft };
+    await bob.tokenBurn(plain);
+
+    expect(plain.category).toBe(upper);
+    const [baton] = await getTokenUtxos(bob, category);
+    expect(baton.token?.amount).toBe(80n);
   });
 });
 

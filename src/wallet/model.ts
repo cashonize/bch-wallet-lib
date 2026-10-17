@@ -27,13 +27,18 @@ const shown = (value: unknown) =>
 
 type RequestNft = { capability?: NFTCapability; commitment?: string };
 
-export function checkTokenCategory(category: unknown): void {
+/**
+ * The category lowercased, as the wallet's coins carry it, so that a category in either case finds
+ * its coins; throws when it is not 64 hex characters.
+ */
+export function toTokenCategory(category: unknown): string {
   if (typeof category !== "string" || !/^[0-9a-fA-F]{64}$/.test(category)) {
     throw new InvalidRequestError(
       `Invalid category supplied: ${shown(category)}, expected 64 hex characters`,
       { field: "category", value: category },
     );
   }
+  return category.toLowerCase();
 }
 
 // libauth's hexToBin reads an odd-length or non-hex string as other bytes ("abc" as ab0c)
@@ -102,14 +107,14 @@ export function checkGenesisRequest(request: TokenGenesisRequest): void {
 
 /** Validates a mint request's token data, before the operation reads any coin. */
 export function checkMintRequest(request: TokenMintRequest): void {
-  checkTokenCategory(request.category);
+  toTokenCategory(request.category);
   checkTokenCommitment(request.nft);
   checkTokenOutput(0n, request.nft);
 }
 
 /** Validates a burn request's token data, before the operation reads any coin. */
 export function checkBurnRequest(request: TokenBurnRequest): void {
-  checkTokenCategory(request.category);
+  toTokenCategory(request.category);
   checkTokenCommitment(request.nft);
   const amount = toTokenAmount(request.amount);
   if (amount === 0n && !hasNft(request.nft)) {
@@ -187,7 +192,7 @@ export class TokenBurnRequest {
       commitment: string;
     };
   }) {
-    this.category = category;
+    this.category = toTokenCategory(category);
     this.amount = toTokenAmount(amount);
     this.nft = nft;
     checkBurnRequest(this);
@@ -220,7 +225,7 @@ export class TokenSendRequest {
       commitment: string;
     };
   }) {
-    checkTokenCategory(category);
+    this.category = toTokenCategory(category);
     checkTokenCommitment(nft);
     this.amount = toTokenAmount(amount);
     checkTokenOutput(this.amount, nft);
@@ -228,7 +233,6 @@ export class TokenSendRequest {
 
     this.cashaddr = cashaddr;
     this.value = value;
-    this.category = category;
     this.nft = nft;
   }
 }
@@ -256,7 +260,7 @@ export class TokenMintRequest {
     cashaddr?: string;
     value?: bigint;
   }) {
-    this.category = category;
+    this.category = toTokenCategory(category);
     this.nft = nft;
     this.cashaddr = cashaddr;
     this.value = value;

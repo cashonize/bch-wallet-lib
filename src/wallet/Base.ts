@@ -57,9 +57,7 @@ import {
   SendRequest,
   SendRequestType,
   SendResponse,
-  checkBurnRequest,
   checkGenesisRequest,
-  checkMintRequest,
   toTokenAmount,
   TokenBurnRequest,
   TokenGenesisRequest,
@@ -1248,8 +1246,9 @@ export class BaseWallet {
     }
 
     const requestsByCategory = new Map<string, TokenMintRequest[]>();
-    for (const request of mintRequests) {
-      checkMintRequest(request);
+    for (const given of mintRequests) {
+      // a copy: validated and its category lowercased, the caller's object left as it was
+      const request = new TokenMintRequest(given);
       const bucket = requestsByCategory.get(request.category) ?? [];
       bucket.push(request);
       requestsByCategory.set(request.category, bucket);
@@ -1340,7 +1339,8 @@ export class BaseWallet {
     if (burnRequests.length === 0) {
       throw new Error("tokenBurn requires at least one request");
     }
-    burnRequests.forEach(checkBurnRequest);
+    // copies: validated and their categories lowercased, the caller's objects left as they were
+    burnRequests = burnRequests.map((request) => new TokenBurnRequest(request));
 
     const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];

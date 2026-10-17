@@ -162,7 +162,7 @@ test("the entry keeps the spend models' internals off its API", () => {
     "asSendRequestObject",
     "fromUtxoId",
     "toUtxoId",
-    "checkTokenCategory",
+    "toTokenCategory",
     "checkTokenCommitment",
     "toTokenAmount",
     "checkTokenOutput",

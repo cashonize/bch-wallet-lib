@@ -35,3 +35,9 @@ test("the entry keeps the storage and cache internals out", () => {
     expect(entry.Config, name).not.toHaveProperty(name);
   }
 });
+
+test("SignedMessage has only the static sign and verify", () => {
+  expect(Object.getOwnPropertyNames(entry.SignedMessage.prototype)).toEqual([
+    "constructor",
+  ]);
+});

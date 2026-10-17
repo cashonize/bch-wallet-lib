@@ -86,6 +86,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 
 - `new IndexedDBProvider(dbName)` requires `dbName`. Without it the provider opened a database named `"wallet"`, which no wallet stores to: `named()` and `getNamedWalletId` use `"bitcoincash"` and `"bchtest"`. A caller that relied on the default passes `"wallet"`.
 - `WalletCacheI`'s `init`, `flush`, `getByPath` and `setStatusAndUtxos` are marked `@internal`: the wallets call them, and a caller who does can break the wallet's own state. `get`, `getByIndex` and `persist` stay.
+- `SignedMessage.sign(message, privateKey)` returns `{ signature }` only and no longer computes a DER or Schnorr signature; `SignedMessage.verify(message, signature, address)` takes the address as a required argument and returns `{ valid }` only. Only the static methods remain; `new SignedMessage()` has no methods.
 
 ### Removed
 
@@ -99,3 +100,4 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `Config.DefaultIpfsGateway` and `Config.setIpfsGateway`: nothing in the library fetches from IPFS, so the setting had no effect. A caller that resolves IPFS links keeps its gateway in its own settings.
 - The main-entry exports `StorageProvider` and `purgeWalletCache`. `BaseWallet.StorageProvider` still takes a provider class such as `IndexedDBProvider`; a caller that typed its own provider with `StorageProvider` types it with `NonNullable<typeof BaseWallet.StorageProvider>`, or implements the methods `IndexedDBProvider` has. A caller that purged a wallet's cache record calls `deleteNamedWallet(name, dbName)`, which removes the row and the record, or `pruneWalletCaches(keepWalletIds)`.
 - `ElectrumNetworkProvider.cache` is private. The cache is chosen by `Config.UseIndexedDBCache`, as before; a caller that read or wrote entries through it reads the transactions and headers through the provider's methods.
+- `SignedMessage.verify`'s `publicKey` parameter, with the DER, Schnorr and compact verification it enabled: only a recoverable signature verifies, against the address that signed it. The `raw` and `details` fields of the sign and verify responses go with it, as do the types `SignedMessageRawI`, `SignedMessageDetailsI`, `VerifyMessageDetailsI` and `SignedMessageI`.

@@ -1,5 +1,6 @@
 import {
   assertSuccess,
+  binToHex,
   decodeTransaction,
   hexToBin,
   lockingBytecodeToCashAddress,
@@ -1172,6 +1173,85 @@ describe("HDWallet", () => {
       alice.getTokenDepositAddress(4),
       alice.getTokenDepositAddress(5),
     ]);
+  });
+
+  it("a fungible token send spends only the coins its amount needs", async () => {
+    const fundingWallet = await RegTestWallet.fromId(
+      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
+    );
+    const alice = await RegTestHDWallet.newRandom();
+    await fundingWallet.send({
+      cashaddr: alice.getDepositAddress(),
+      value: 100000n,
+    });
+    await alice.waitForUpdate({ depositIndex: 1 });
+
+    const genesisResponse = await alice.tokenGenesis({ amount: 550n });
+    const category = genesisResponse.categories![0];
+    await alice.waitForUpdate({ depositIndex: 2, changeIndex: 1 });
+
+    // ten coins of 10 to 100 tokens, each on an address of its own
+    await alice.send(
+      Array.from(
+        { length: 10 },
+        (_, i) =>
+          new TokenSendRequest({
+            cashaddr: alice.getTokenDepositAddress(2 + i),
+            category,
+            amount: BigInt(10 * (i + 1)),
+          }),
+      ),
+    );
+    await alice.waitForUpdate({ depositIndex: 12, changeIndex: 2 });
+    const coins = await alice.getTokenUtxos(category);
+    expect(coins.length).toBe(10);
+
+    const bob = await RegTestWallet.newRandom();
+    const tokenChangeAddress = alice.getTokenChangeAddress();
+    const response = await alice.send(
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        amount: 180n,
+      }),
+    );
+
+    // the two largest coins, so only their two addresses are linked (mainnet-js#246)
+    const tx = assertSuccess(
+      decodeTransaction(hexToBin(response.transaction!)),
+    );
+    const spentCoins = coins.filter((coin) =>
+      tx.inputs.some(
+        (input) =>
+          binToHex(input.outpointTransactionHash) === coin.txid &&
+          input.outpointIndex === coin.vout,
+      ),
+    );
+    expect(spentCoins.map((coin) => coin.address).sort()).toEqual(
+      [alice.getDepositAddress(10), alice.getDepositAddress(11)].sort(),
+    );
+    expect(
+      spentCoins
+        .map((coin) => coin.token!.amount)
+        .sort((a, b) => Number(a - b)),
+    ).toEqual([90n, 100n]);
+    // and no implicit burn: the 10 tokens over what was sent come back as change
+    expect(
+      outputAddresses(alice, response.transaction!)
+        .filter((output) => output.token)
+        .map((output) => ({
+          address: output.address,
+          amount: output.token!.amount,
+        })),
+    ).toEqual([
+      { address: bob.tokenaddr, amount: 180n },
+      { address: tokenChangeAddress, amount: 10n },
+    ]);
+
+    await alice.waitForUpdate({ changeIndex: 3 });
+    expect((await alice.getTokenUtxos(category)).length).toBe(9);
+    expect(await alice.getTokenBalance(category)).toBe(370n);
+    expect(await bob.getTokenBalance(category)).toBe(180n);
   });
 
   test("Test enforcing token addresses", async () => {

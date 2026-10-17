@@ -7,7 +7,7 @@ import {
   utf8ToBin,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
-import { NFTCapability } from "../interface.js";
+import { NFTCapability, Utxo } from "../interface.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import json from "../test/json.test.js";
 import { convert, delay } from "../util/index.js";
@@ -905,23 +905,84 @@ describe(`Test cashtokens`, () => {
     const tokenUtxos3 = await charlie.getTokenUtxos(category);
     expect(tokenUtxos3.length).toBe(5);
 
-    // charlie sends some from one of this utxos
-    await charlie.send([
+    // charlie sends some: the largest coin covers it, the others are not spent (mainnet-js#246)
+    const coinAmounts = (coins: { token?: { amount: bigint } }[]) =>
+      coins.map((val) => val.token!.amount).sort((a, b) => Number(a - b));
+    const spentTokenAmounts = (transactionHex: string, coins: Utxo[]) => {
+      const spent = inputOutpoints(transactionHex);
+      return coinAmounts(
+        coins.filter((val) => spent.includes(`${val.txid}:${val.vout}`)),
+      );
+    };
+    const tokenOutputs = (transactionHex: string) =>
+      decodeOutputs(transactionHex)
+        .filter((val) => val.token)
+        .map((val) => ({
+          lockingBytecode: val.lockingBytecode,
+          amount: val.token!.amount,
+        }));
+
+    const response4 = await charlie.send([
       {
         cashaddr: bob.cashaddr!,
         category: category,
         amount: 50n,
       },
     ]);
-    const tokenBalance4 = await charlie.getTokenBalance(category);
-    expect(tokenBalance4).toBe(951n);
+    expect(spentTokenAmounts(response4.transaction!, tokenUtxos3)).toEqual([
+      501n,
+    ]);
+    // no implicit burn: what the coin carried minus what was sent comes back as change
+    expect(tokenOutputs(response4.transaction!)).toEqual([
+      { lockingBytecode: lockingBytecodeOf(bob.cashaddr!), amount: 50n },
+      { lockingBytecode: lockingBytecodeOf(charlie.cashaddr!), amount: 451n },
+    ]);
+    expect(await charlie.getTokenBalance(category)).toBe(951n);
     const tokenUtxos4 = await charlie.getTokenUtxos(category);
-    expect(tokenUtxos4.length).toBe(1);
+    expect(coinAmounts(tokenUtxos4)).toEqual([5n, 95n, 100n, 300n, 451n]);
+    expect(await bob.getTokenBalance(category)).toBe(50n);
+    expect((await bob.getTokenUtxos(category)).length).toBe(1);
 
-    const tokenBalance5 = await bob.getTokenBalance(category);
-    expect(tokenBalance5).toBe(50n);
-    const tokenUtxos5 = await bob.getTokenUtxos(category);
-    expect(tokenUtxos5.length).toBe(1);
+    // an amount over several coins takes the largest ones until it is covered
+    const response5 = await charlie.send([
+      { cashaddr: bob.cashaddr!, category: category, amount: 600n },
+      { cashaddr: bob.cashaddr!, category: category, amount: 200n },
+    ]);
+    expect(spentTokenAmounts(response5.transaction!, tokenUtxos4)).toEqual([
+      100n,
+      300n,
+      451n,
+    ]);
+    expect(tokenOutputs(response5.transaction!)).toEqual([
+      { lockingBytecode: lockingBytecodeOf(bob.cashaddr!), amount: 600n },
+      { lockingBytecode: lockingBytecodeOf(bob.cashaddr!), amount: 200n },
+      { lockingBytecode: lockingBytecodeOf(charlie.cashaddr!), amount: 51n },
+    ]);
+    const tokenUtxos5 = await charlie.getTokenUtxos(category);
+    expect(coinAmounts(tokenUtxos5)).toEqual([5n, 51n, 95n]);
+
+    // a coin in ensureUtxos counts first, no other coin is added when it covers the amount
+    const small = tokenUtxos5.find((val) => val.token!.amount === 5n)!;
+    const response6 = await charlie.send(
+      [{ cashaddr: bob.cashaddr!, category: category, amount: 5n }],
+      { ensureUtxos: [small] },
+    );
+    expect(spentTokenAmounts(response6.transaction!, tokenUtxos5)).toEqual([
+      5n,
+    ]);
+    expect(tokenOutputs(response6.transaction!)).toEqual([
+      { lockingBytecode: lockingBytecodeOf(bob.cashaddr!), amount: 5n },
+    ]);
+
+    // more than the wallet holds throws, nothing is sent
+    await expect(
+      charlie.send([
+        { cashaddr: bob.cashaddr!, category: category, amount: 147n },
+      ]),
+    ).rejects.toThrow("Not enough token amount to send");
+
+    expect(await charlie.getTokenBalance(category)).toBe(146n);
+    expect(await bob.getTokenBalance(category)).toBe(855n);
   });
 
   test("Test minting NFTs not burn tokens", async () => {
@@ -1712,13 +1773,19 @@ describe("token change", () => {
       }),
     ]);
 
-    // the hybrid keeps its own amount, the rest of the change is a fungible coin
+    // the fungible-only coin covers the amount, the hybrid is not spent (mainnet-js#246)
+    const hybrid = (await bob.getTokenUtxos(category)).find(
+      (val) => val.token!.nft,
+    )!;
     const first = await bob.send(
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
         category,
         amount: 50n,
       }),
+    );
+    expect(inputOutpoints(first.transaction!)).not.toContain(
+      `${hybrid.txid}:${hybrid.vout}`,
     );
     expect(decodeOutputs(first.transaction!)).toEqual([
       {
@@ -1729,29 +1796,52 @@ describe("token change", () => {
       {
         lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
         value: 1000n,
-        token: { category, amount: 900n, nft: minting },
-      },
-      {
-        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
-        value: 1000n,
         token: { category, amount: 50n, nft: undefined },
       },
       bchChange(bob),
     ]);
 
-    // sending every fungible token leaves the minting NFT on its own
+    // a spent hybrid keeps its own amount, the rest of the change is a fungible coin
     const second = await bob.send(
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
         category,
-        amount: 950n,
+        amount: 10n,
       }),
+      { ensureUtxos: await bob.getTokenUtxos(category) },
     );
     expect(decodeOutputs(second.transaction!)).toEqual([
       {
         lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
         value: 1000n,
-        token: { category, amount: 950n, nft: undefined },
+        token: { category, amount: 10n, nft: undefined },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 900n, nft: minting },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 40n, nft: undefined },
+      },
+      bchChange(bob),
+    ]);
+
+    // an amount the fungible-only coins fall short of takes the hybrid, its NFT comes back
+    const third = await bob.send(
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        amount: 940n,
+      }),
+    );
+    expect(decodeOutputs(third.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 940n, nft: undefined },
       },
       {
         lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
@@ -1783,13 +1873,19 @@ describe("token change", () => {
       }),
     ]);
 
-    const response = await bob.send(
+    // a fungible request with it, as a send of the NFT alone does not spend the fungible coin
+    const response = await bob.send([
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
         category,
         nft: minting,
       }),
-    );
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        amount: 10n,
+      }),
+    ]);
     expect(decodeOutputs(response.transaction!)).toEqual([
       {
         lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
@@ -1797,14 +1893,19 @@ describe("token change", () => {
         token: { category, amount: 0n, nft: minting },
       },
       {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 10n, nft: undefined },
+      },
+      {
         lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
         value: 1000n,
-        token: { category, amount: 1000n, nft: undefined },
+        token: { category, amount: 990n, nft: undefined },
       },
       bchChange(bob),
     ]);
     expect(await bob.getNftTokenBalance(category)).toBe(0);
-    expect(await bob.getTokenBalance(category)).toBe(1000n);
+    expect(await bob.getTokenBalance(category)).toBe(990n);
   });
 
   test("an immutable NFT is sendable while the wallet holds fungible tokens of its category", async () => {
@@ -1822,6 +1923,7 @@ describe("token change", () => {
       }),
     ]);
 
+    // the fungible coin is not spent (mainnet-js#246)
     const response = await bob.send(
       new TokenSendRequest({ cashaddr: carol.tokenaddr!, category, nft }),
     );
@@ -1831,13 +1933,9 @@ describe("token change", () => {
         value: 1000n,
         token: { category, amount: 0n, nft },
       },
-      {
-        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
-        value: 1000n,
-        token: { category, amount: 1000n, nft: undefined },
-      },
       bchChange(bob),
     ]);
+    expect(await bob.getTokenBalance(category)).toBe(1000n);
   });
 
   test("a send over several categories returns each category's own change", async () => {
@@ -1878,7 +1976,8 @@ describe("token change", () => {
       }),
     ]);
 
-    // fungible tokens off the hybrid, the minting NFT, and the mutable NFT with a new commitment
+    // fungible tokens off the hybrid, the minting NFT without the fungible coin of its category,
+    // and the mutable NFT with a new commitment
     const mutated = { capability: NFTCapability.mutable, commitment: "02" };
     const response = await bob.send([
       new TokenSendRequest({
@@ -1916,17 +2015,12 @@ describe("token change", () => {
       {
         lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
         value: 1000n,
-        token: { category: hybridCategory, amount: 300n, nft: immutable },
-      },
-      {
-        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
-        value: 1000n,
-        token: { category: mintingCategory, amount: 300n, nft: undefined },
-      },
-      {
-        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
-        value: 1000n,
         token: { category: mutableCategory, amount: 200n, nft: undefined },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category: hybridCategory, amount: 300n, nft: immutable },
       },
       bchChange(bob),
     ]);

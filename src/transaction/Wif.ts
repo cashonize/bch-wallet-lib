@@ -542,6 +542,72 @@ export async function getSuitableUtxos(
 }
 
 /**
+ * selectFungibleTokenUtxos - the token coins a send adds to cover the fungible amounts it sends
+ * (mainnet-js#246)
+ *
+ * Per category, the fungible tokens on the coins the send spends anyway count first; the rest is
+ * covered by fungible-only coins, largest first, then by NFT coins holding fungible tokens, largest
+ * first, so that an NFT moves only when the fungible-only coins fall short.
+ *
+ * @param inputs  The utxos the send may spend
+ * @param pinned  The utxos the send spends anyway: ensureUtxos and the inputs of its NFT requests
+ * @param requests  The requested token outputs
+ */
+export function selectFungibleTokenUtxos(
+  inputs: Utxo[],
+  pinned: Utxo[],
+  requests: TokenSendRequest[],
+): Utxo[] {
+  const utxoKey = (u: Utxo) => `${u.txid}:${u.vout}`;
+  const pinnedKeys = new Set(pinned.map(utxoKey));
+  const selected: Utxo[] = [];
+
+  const categories = requests
+    .map((val) => val.category)
+    .filter((val, idx, arr) => arr.indexOf(val) === idx);
+  for (const category of categories) {
+    const requested = requests
+      .filter((val) => val.category === category)
+      .reduce((sum, val) => sum + val.amount, 0n);
+    let available = pinned
+      .filter((val) => val.token?.category === category)
+      .reduce((sum, val) => sum + val.token!.amount, 0n);
+
+    const candidates = inputs
+      .filter(
+        (val) =>
+          val.token?.category === category &&
+          val.token.amount > 0n &&
+          !pinnedKeys.has(utxoKey(val)),
+      )
+      .sort((a, b) => {
+        const aHasNft = !!a.token!.nft;
+        const bHasNft = !!b.token!.nft;
+        if (aHasNft !== bHasNft) {
+          return aHasNft ? 1 : -1;
+        }
+        if (a.token!.amount === b.token!.amount) {
+          return 0;
+        }
+        return a.token!.amount > b.token!.amount ? -1 : 1;
+      });
+    for (const candidate of candidates) {
+      if (available >= requested) break;
+      selected.push(candidate);
+      available += candidate.token!.amount;
+    }
+
+    if (available < requested) {
+      throw new InsufficientFundsError("Not enough token amount to send", {
+        asset: "token",
+        category,
+      });
+    }
+  }
+  return selected;
+}
+
+/**
  * getTokenChangeRequests - the token change of a send: what the spent token inputs carry minus
  * what the requests send, per category and per NFT (mainnet-js#247)
  *

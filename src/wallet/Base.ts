@@ -22,6 +22,7 @@ import {
   getSuitableUtxos,
   getTokenChangeRequests,
   placeholderPrivateKeyBin,
+  selectFungibleTokenUtxos,
 } from "../transaction/Wif.js";
 import { checkUtxos } from "../util/checkUtxos.js";
 import {
@@ -55,6 +56,7 @@ import {
   TokenGenesisRequest,
   TokenMintRequest,
   TokenSendRequest,
+  toUtxoId,
 } from "./model.js";
 
 export const placeholderCashAddr =
@@ -996,61 +998,6 @@ export class BaseWallet implements WalletI {
       utxos = utxos.filter((val) => !val.token);
     }
 
-    // the fungible token utxos of each requested category are spent in full
-    const ensureTokenInputs = (inputs: Utxo[], outputs: SendRequestType[]) => {
-      // Allow for implicit token burn if the total amount sent is less than user had
-      // allow for token genesis, creating more tokens than we had before (0)
-      if (!checkTokenQuantities) {
-        return;
-      }
-      const allTokenInputs = inputs.filter((val) => val.token);
-      const allTokenOutputs = outputs.filter(
-        (val) => val instanceof TokenSendRequest,
-      ) as TokenSendRequest[];
-      const categories = allTokenOutputs
-        .map((val) => val.category)
-        .filter((val, idx, arr) => arr.indexOf(val) === idx);
-      for (let category of categories) {
-        const tokenInputs = allTokenInputs.filter(
-          (val) => val.token?.category === category,
-        );
-        const inputAmountSum = tokenInputs.reduce(
-          (prev, cur) => prev + cur.token!.amount,
-          0n,
-        );
-        const tokenOutputs = allTokenOutputs.filter(
-          (val) => val.category === category,
-        );
-        const outputAmountSum = tokenOutputs.reduce(
-          (prev, cur) => prev + cur.amount,
-          0n,
-        );
-
-        const diff = inputAmountSum - outputAmountSum;
-        if (diff < 0) {
-          throw new InsufficientFundsError("Not enough token amount to send", {
-            asset: "token",
-            category,
-          });
-        }
-        const ensureUtxos = tokenInputs.filter((val) => val.token?.amount);
-        if (ensureUtxos.length) {
-          // a copy: the caller's options stay as they were, e.g. for a retry
-          options = { ...options };
-          options.ensureUtxos = [
-            ...(options.ensureUtxos ?? []),
-            ...ensureUtxos,
-          ].filter(
-            (val, index, array) =>
-              array.findIndex(
-                (other) => other.txid === val.txid && other.vout === val.vout,
-              ) === index,
-          );
-        }
-      }
-    };
-    ensureTokenInputs(utxos, sendRequests);
-
     const bestHeight = await this.provider.getBlockHeight();
     if (utxos.length === 0) {
       throw new InsufficientFundsError("There were no Unspent Outputs", {
@@ -1058,23 +1005,41 @@ export class BaseWallet implements WalletI {
       });
     }
 
-    // The token change is derived from the token inputs this send spends: the selection below
-    // takes the same ones, as its token matching does not depend on the amount required, and it
-    // is given the requests without the change so that the change cannot pull in other coins
+    // The token inputs are chosen here and pinned through ensureUtxos: the inputs of the NFT
+    // requests as the selection's token matching finds them, then only the fungible coins the
+    // requested amounts need (mainnet-js#246). The token change is derived from exactly these
+    // inputs, and the selection below gets the requests without the change and without the
+    // fungible-only ones, so that it cannot pull in other token coins.
     const requestedOutputs = [...sendRequests];
+    let selectionRequests = requestedOutputs;
+    let tokenInputs: Utxo[] = [];
     if (checkTokenQuantities) {
-      const tokenInputs = await getSuitableUtxos(
+      const tokenRequests = requestedOutputs.filter(
+        (val) => val instanceof TokenSendRequest,
+      );
+      selectionRequests = requestedOutputs.filter(
+        (val) =>
+          !(val instanceof TokenSendRequest) ||
+          val.nft?.capability !== undefined ||
+          val.nft?.commitment !== undefined,
+      );
+      const pinned = await getSuitableUtxos(
         utxos,
         0n,
         bestHeight,
         feePaidBy,
-        requestedOutputs,
+        selectionRequests,
         options?.ensureUtxos || [],
         options?.tokenOperation,
       );
-      const tokenRequests = requestedOutputs.filter(
-        (val) => val instanceof TokenSendRequest,
+      const fungibleInputs = selectFungibleTokenUtxos(
+        utxos,
+        pinned,
+        tokenRequests,
       );
+      // a copy: the caller's options stay as they were, e.g. for a retry
+      options = { ...options, ensureUtxos: [...pinned, ...fungibleInputs] };
+      tokenInputs = options.ensureUtxos!.filter((val) => val.token);
       sendRequests.push(
         ...getTokenChangeRequests(
           tokenInputs,
@@ -1104,7 +1069,7 @@ export class BaseWallet implements WalletI {
       spendAmount + feeEstimate,
       bestHeight,
       feePaidBy,
-      requestedOutputs,
+      selectionRequests,
       options?.ensureUtxos || [],
       options?.tokenOperation,
       {
@@ -1116,6 +1081,18 @@ export class BaseWallet implements WalletI {
       throw new InsufficientFundsError(
         "The available inputs couldn't satisfy the request with fees",
         { asset: "bch" },
+      );
+    }
+    // a token coin the change was not computed from would be burned
+    const tokenInputIds = new Set(tokenInputs.map(toUtxoId));
+    if (
+      checkTokenQuantities &&
+      selectedUtxos.some(
+        (val) => val.token && !tokenInputIds.has(toUtxoId(val)),
+      )
+    ) {
+      throw new Error(
+        "Token selection picked a coin the change does not cover",
       );
     }
     const fundingUtxos = options?.inputOrdering

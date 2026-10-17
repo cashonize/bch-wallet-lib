@@ -17,7 +17,7 @@ import {
   deriveWalletCacheId,
   HDWalletCache,
   WalletCacheI,
-} from "../cache/index.js";
+} from "../cache/walletCache.js";
 import { Config } from "../config.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import { NetworkType, prefixFromNetworkMap, UnitEnum } from "../enum.js";

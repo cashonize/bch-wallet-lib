@@ -91,15 +91,6 @@ export default class ElectrumNetworkProvider {
     }));
   }
 
-  async getBalance(cashaddr: string): Promise<bigint> {
-    const result = await this.performRequest<{
-      confirmed: number;
-      unconfirmed: number;
-    }>("blockchain.address.get_balance", [cashaddr]);
-
-    return BigInt(result.confirmed) + BigInt(result.unconfirmed);
-  }
-
   /**
    * Batch retrieve raw transactions by their hashes.
    * @param hashes Array of transaction hashes.
@@ -384,16 +375,15 @@ export default class ElectrumNetworkProvider {
     return txHash;
   }
 
-  /** The confirmed and unconfirmed history of an address, in the server's order. */
-  async getHistory(
-    cashaddr: string,
-    fromHeight: number = 0,
-    toHeight: number = -1,
-  ): Promise<TxI[]> {
+  /**
+   * The confirmed and unconfirmed history of an address, in the server's order.
+   * @param fromHeight @internal Only the transactions from this height on, and the unconfirmed ones; the wallets' incremental refresh.
+   */
+  async getHistory(cashaddr: string, fromHeight: number = 0): Promise<TxI[]> {
     return this.performRequest<TxI[]>("blockchain.address.get_history", [
       cashaddr,
       fromHeight,
-      toHeight,
+      -1,
     ]);
   }
 

@@ -882,7 +882,7 @@ describe("HDWallet", () => {
     });
     await hdWallet.waitForUpdate({ depositIndex: 1 });
 
-    const history = await hdWallet.getHistory({ unit: "sat" });
+    const history = await hdWallet.getHistory();
     expect(history.length).toBe(1);
     expect(history[0].valueChange).toBe(100000);
   });

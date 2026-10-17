@@ -1383,10 +1383,7 @@ export class BaseWallet implements WalletI {
   }
 
   // gets transaction history of this wallet
-  public async getRawHistory(
-    _fromHeight: number = 0,
-    _toHeight: number = -1,
-  ): Promise<TxI[]> {
+  public async getRawHistory(_fromHeight: number = 0): Promise<TxI[]> {
     throw Error("getRawHistory not implemented in BaseWallet");
   }
 

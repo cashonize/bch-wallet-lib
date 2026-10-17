@@ -18,7 +18,6 @@ import {
   NetworkType,
   networkPrefixMap,
   prefixFromNetworkMap,
-  UnitEnum,
 } from "../enum.js";
 import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
@@ -470,56 +469,36 @@ export class WatchWallet extends BaseWallet {
   }
 
   // gets transaction history of this wallet
-  public async getRawHistory(
-    fromHeight: number = 0,
-    toHeight: number = -1,
-  ): Promise<TxI[]> {
+  public async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
     await this.watched();
     await this.updatePromise;
 
     let history = this.rawHistory;
 
-    if (fromHeight > 0 || toHeight !== -1) {
-      history = history.filter((tx) => {
-        if (tx.height <= 0) {
-          return toHeight === -1;
-        }
-        const aboveFrom = tx.height >= fromHeight;
-        const belowTo = toHeight === -1 || tx.height <= toHeight;
-        return aboveFrom && belowTo;
-      });
+    // unconfirmed transactions (height <= 0) are always included
+    if (fromHeight > 0) {
+      history = history.filter(
+        (tx) => tx.height <= 0 || tx.height >= fromHeight,
+      );
     }
 
     return history;
   }
 
   /**
-   * getHistory gets transaction history of this wallet with most data decoded and ready to present to user
-   * @note balance calculations are valid only if querying to the blockchain tip (`toHeight` === -1, `count` === -1)
+   * getHistory gets transaction history of this wallet with most data decoded and ready to present to user, newest first
    * @note this method is heavy on network calls, if invoked in browser use of cache is advised, @see `Config.UseIndexedDBCache`
    * @note this method tries to recreate the history tab view of Electron Cash wallet, however, it may not be 100% accurate if the tnransaction value changes are the same in the same block (ordering)
    *
-   * @param unit optional, BCH or currency unit to present balance and balance changes. If unit is currency like USD or EUR, balances will be subject to possible rounding errors. Default 0
-   * @param fromHeight optional, if set, history will be limited. Default 0
-   * @param toHeight optional, if set, history will be limited. Default -1, meaning that all history items will be returned, including mempool
-   * @param start optional, if set, the result set will be paginated with offset `start`
-   * @param count optional, if set, the result set will be paginated with `count`. Default -1, meaning that all history items will be returned
+   * @param count optional, the newest `count` items. Default -1, meaning that all history items will be returned
    * @param concurrency optional, requests in flight at most while loading. Default 10
    *
    * @returns an array of transaction history items, with input values and addresses encoded in cashaddress format. @see `TransactionHistoryItem` type
    */
   public async getHistory({
-    unit = "sat",
-    fromHeight = 0,
-    toHeight = -1,
-    start = 0,
     count = -1,
     concurrency,
   }: {
-    unit?: UnitEnum;
-    fromHeight?: number;
-    toHeight?: number;
-    start?: number;
     count?: number;
     concurrency?: number;
   } = {}): Promise<TransactionHistoryItem[]> {
@@ -529,10 +508,6 @@ export class WatchWallet extends BaseWallet {
     return getHistory({
       addresses: [this.cashaddr],
       provider: this.provider,
-      unit,
-      fromHeight,
-      toHeight,
-      start,
       count,
       // all of them, as getBalance: the dust filter of getUtxos would change the balance
       utxos: this.utxos,

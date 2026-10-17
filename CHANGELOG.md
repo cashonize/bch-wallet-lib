@@ -89,6 +89,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `SignedMessage.sign(message, privateKey)` returns `{ signature }` only and no longer computes a DER or Schnorr signature; `SignedMessage.verify(message, signature, address)` takes the address as a required argument and returns `{ valid }` only. Only the static methods remain; `new SignedMessage()` has no methods.
 - `getNetworkProvider` and `setGlobalProvider` take and return `ElectrumNetworkProvider` instead of the removed interface; nothing changes for a caller that passed one.
 - `ElectrumNetworkProvider.getRawTransaction(hash)` takes only the hash and returns the hex. The `verbose` and `loadInputValues` overloads are gone: `getRawTransaction(hash, true)` becomes `getRawTransactionObject(hash)`, and `getRawTransaction(hash, true, true)` becomes `getRawTransactionObject(hash, true)`. Both read and write the same `txraw-` and `tx-` cache entries as before.
+- The `utxos` option of the free `getHistory` is required: the running balances are backfilled from it, and the balance is no longer read per address from the server when it is missing. Pass the current utxos of `addresses`, token coins included (Cashonize's `test/bchWalletLib.test.ts` already does). The wallet methods pass their own. `rawHistory` is marked `@internal`.
 
 ### Removed
 
@@ -116,3 +117,6 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - The `NetworkProvider` interface, which only `ElectrumNetworkProvider` implemented. Type a provider as `ElectrumNetworkProvider` instead (Cashonize: `test/bchWalletLib.test.ts`). `ConcurrencyOptions` moved next to the class.
 - `ElectrumNetworkProvider.getHeader(height, verbose)`. Use `(await provider.getHeaders([height])).get(height)`, the decoded header; the hex form has no replacement. The `header-<network>-<height>-false` cache entries of mainnet-js are left in place and no longer read or written; the decoded headers keep their `…-true` entries.
 - `ElectrumNetworkProvider.ready()`, which only called `connect()`. Call `connect()` instead; the provider still connects on its first request by itself.
+- The `unit`, `start`, `fromHeight` and `toHeight` options of `getHistory`, `WatchWallet.getHistory` and `HDWallet.getHistory`. History values are always satoshis: convert them with `convert` or `ExchangeRate.getQuote`. Page with `count` (the newest `count` items) and filter by `blockHeight` on the result. `count` and `concurrency` stay.
+- `ElectrumNetworkProvider.getBalance`, and the `ElectrumBalanceI` type. Sum `provider.getUtxos(address)` with their satoshis instead, which counts the token coins as `blockchain.address.get_balance` did.
+- The `toHeight` parameter of `ElectrumNetworkProvider.getHistory(cashaddr, fromHeight?)`, and of `getRawHistory(fromHeight?)` on the wallets, with the `branches` option of `HDWallet.getRawHistory`. The history always runs to the tip, mempool included.

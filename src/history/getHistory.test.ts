@@ -11,6 +11,7 @@ import { countRequests } from "#test/countRequests.js";
 import { mine } from "../mine/index.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { Utxo } from "../interface.js";
 import { sumUtxoValue } from "../util/index.js";
 import { createWallet } from "../wallet/createWallet.js";
 import { WalletTypeEnum } from "../wallet/enum.js";
@@ -231,11 +232,7 @@ test("Should cut results with a longer history to given count", async () => {
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.
-    const bobHistory = await bob.getHistory({
-      unit: "sat",
-      start: 0,
-      count: 2,
-    });
+    const bobHistory = await bob.getHistory({ count: 2 });
     expect(bobHistory.length).toBe(2);
 
     expect(bobHistory[0].valueChange).toBe(-6588);
@@ -294,9 +291,7 @@ test("Should handle input and fee from many utxos", async () => {
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.
-    const bobHistory = await bob.getHistory({
-      unit: "sat",
-    });
+    const bobHistory = await bob.getHistory();
 
     expect(bobHistory[0].valueChange).toBeLessThan(-1700);
     expect(
@@ -426,14 +421,16 @@ test("Should report outpoints and locking bytecode, and give scripts without an 
 });
 
 describe("history load", () => {
-  // the balance per address as before: get_balance, which counts the satoshis of token coins too
-  const balanceFromServer = async (
+  // the server's utxos of the addresses, token coins included
+  const utxosFromServer = async (
     provider: ElectrumNetworkProvider,
     addresses: string[],
   ) => {
-    let sum = 0n;
-    for (const address of addresses) sum += await provider.getBalance(address);
-    return sum;
+    const utxos: Utxo[] = [];
+    for (const address of addresses) {
+      utxos.push(...(await provider.getUtxos(address)));
+    }
+    return utxos;
   };
 
   test("an HD wallet's history takes its balance from the utxos, with the concurrency asked for", async () => {
@@ -480,17 +477,20 @@ describe("history load", () => {
     ).getUsedAddresses();
     // 13 deposit addresses and the change of the genesis and the send
     expect(addresses.length).toBe(15);
-    const serverBalance = await balanceFromServer(provider, addresses);
+    const serverUtxos = await utxosFromServer(provider, addresses);
+    const serverBalance = sumUtxoValue(serverUtxos);
     expect(sumUtxoValue(utxos)).toBe(serverBalance);
     expect(history.length).toBe(14);
     expect(history[0].blockHeight).toBe(0);
     expect(history[0].balance).toBe(Number(serverBalance));
 
-    // the same items as the balance read per address from the server, as before
+    // the same items as from the server's utxos
+    const rawHistory = await hd.getRawHistory();
     const reference = await getHistory({
       addresses,
       provider,
-      rawHistory: await hd.getRawHistory(),
+      rawHistory,
+      utxos: serverUtxos,
     });
     expect(history).toEqual(reference);
   });
@@ -529,14 +529,17 @@ describe("history load", () => {
     restore();
 
     expect(counts.byMethod["blockchain.address.get_balance"]).toBeUndefined();
-    const serverBalance = await balanceFromServer(provider, [bob.cashaddr!]);
-    expect(history[0].balance).toBe(Number(serverBalance));
-    expect(history).toEqual(
-      await getHistory({ addresses: [bob.cashaddr!], provider }),
-    );
+    const serverUtxos = await utxosFromServer(provider, [bob.cashaddr!]);
+    expect(history[0].balance).toBe(Number(sumUtxoValue(serverUtxos)));
+    const reference = await getHistory({
+      addresses: [bob.cashaddr!],
+      provider,
+      utxos: serverUtxos,
+    });
+    expect(history).toEqual(reference);
   });
 
-  test("without utxos the balance and history are read per address, bounded", async () => {
+  test("the history of several addresses is read per address, bounded", async () => {
     const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
     const wallets = await Promise.all(
       Array.from({ length: 6 }, () => RegTestWallet.newRandom()),
@@ -546,13 +549,19 @@ describe("history load", () => {
     }
     const addresses = wallets.map((wallet) => wallet.cashaddr!);
     const provider = wallets[0].provider as ElectrumNetworkProvider;
+    const utxos = await utxosFromServer(provider, addresses);
 
     const { counts, restore } = countRequests(provider);
-    const history = await getHistory({ addresses, provider, concurrency: 3 });
+    const history = await getHistory({
+      addresses,
+      provider,
+      utxos,
+      concurrency: 3,
+    });
     restore();
 
     expect(counts.byMethod["blockchain.address.get_history"]).toBe(6);
-    expect(counts.byMethod["blockchain.address.get_balance"]).toBe(6);
+    expect(counts.byMethod["blockchain.address.get_balance"]).toBeUndefined();
     expect(counts.maxInFlight).toBe(3);
     expect(history[0].balance).toBe(30000);
   });
@@ -593,6 +602,7 @@ describe("a transaction the server sends that does not decode", () => {
       addresses: [address],
       provider: provider({ [txid]: "00" }),
       rawHistory: [{ tx_hash: txid, height: 0 }],
+      utxos: [],
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     expect(error).toMatchObject({
@@ -605,6 +615,7 @@ describe("a transaction the server sends that does not decode", () => {
       addresses: [address],
       provider: provider({ ["44".repeat(32)]: spending, [txid]: "00" }),
       rawHistory: [{ tx_hash: "44".repeat(32), height: 0 }],
+      utxos: [],
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     expect(error).toMatchObject({

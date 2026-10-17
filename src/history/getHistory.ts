@@ -9,13 +9,9 @@ import {
   Opcodes,
   TransactionCommon,
 } from "@bitauth/libauth";
-import { bchParam } from "../chain.js";
-import { UnitEnum } from "../enum.js";
 import { HeaderI, TxI, Utxo } from "../interface.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
-import { ExchangeRate } from "../rate/ExchangeRate.js";
 import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
-import { sanitizeUnit } from "../util/sanitizeUnit.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
 
@@ -44,10 +40,6 @@ type Transaction = TransactionCommon & {
 export const getHistory = async ({
   addresses,
   provider,
-  unit = "sat",
-  fromHeight = 0,
-  toHeight = -1,
-  start = 0,
   count = -1,
   rawHistory,
   utxos,
@@ -55,14 +47,12 @@ export const getHistory = async ({
 }: {
   addresses: string[];
   provider: ElectrumNetworkProvider;
-  unit?: UnitEnum;
-  fromHeight?: number;
-  toHeight?: number;
-  start?: number;
+  /** The newest `count` items; default -1, all of them */
   count?: number;
+  /** @internal The wallet's raw history of `addresses`, instead of fetching it */
   rawHistory?: TxI[];
-  /** The current utxos of `addresses`, token coins included; without them the balance is read per address */
-  utxos?: Utxo[];
+  /** The current utxos of `addresses`, token coins included, which the running balances are backfilled from */
+  utxos: Utxo[];
   /** Requests in flight at most, for each step of the load */
   concurrency?: number;
 }): Promise<TransactionHistoryItem[]> => {
@@ -76,11 +66,11 @@ export const getHistory = async ({
 
   let history: TxI[];
   if (rawHistory) {
-    history = rawHistory.slice(start, start + count);
+    history = rawHistory.slice(0, count);
   } else {
     const allHistory = (
       await mapConcurrent(addresses, concurrency, (address) =>
-        provider.getHistory(address, fromHeight, toHeight),
+        provider.getHistory(address),
       )
     ).flat();
 
@@ -100,7 +90,7 @@ export const getHistory = async ({
           ? a.height - b.height
           : b.height - a.height,
       )
-      .slice(start, start + count);
+      .slice(0, count);
   }
 
   // Collect unique heights for header fetch
@@ -383,17 +373,8 @@ export const getHistory = async ({
         : b.blockHeight - a.blockHeight) || a.valueChange - b.valueChange,
   );
 
-  // backfill the balances from the current one: get_balance counts the satoshis of token coins too
-  let currentBalance: bigint;
-  if (utxos) {
-    currentBalance = sumUtxoValue(utxos);
-  } else {
-    const balances = await mapConcurrent(addresses, concurrency, (address) =>
-      provider.getBalance(address),
-    );
-    currentBalance = balances.reduce((a, b) => a + b, 0n);
-  }
-  let prevBalance = Number(currentBalance);
+  // backfill the balances from the current one, the satoshis of token coins included
+  let prevBalance = Number(sumUtxoValue(utxos));
 
   let prevValueChange = 0;
   historyItems.forEach((tx) => {
@@ -401,38 +382,6 @@ export const getHistory = async ({
     prevBalance = tx.balance;
     prevValueChange = tx.valueChange;
   });
-
-  // convert units if needed - fetch exchange rate once
-  if (!(unit as string).includes("sat")) {
-    const sanitizedUnit = sanitizeUnit(unit);
-    let rate: number = 0;
-    if (sanitizedUnit !== UnitEnum.BCH && sanitizedUnit !== UnitEnum.SAT) {
-      rate = await ExchangeRate.get(unit);
-    }
-
-    const subUnits = Number(bchParam.subUnits);
-    const convertSatToUnit = (satValue: number): number => {
-      if (sanitizedUnit === UnitEnum.BCH) {
-        return satValue / subUnits;
-      }
-      // currency conversion matching satoshiToAmount behavior
-      const currencyValue = Number((satValue * (rate / subUnits)).toFixed(2));
-      return currencyValue;
-    };
-
-    for (const tx of historyItems) {
-      for (const input of tx.inputs) {
-        input.value = convertSatToUnit(input.value);
-      }
-
-      for (const output of tx.outputs) {
-        output.value = convertSatToUnit(output.value);
-      }
-
-      tx.valueChange = convertSatToUnit(tx.valueChange);
-      tx.balance = convertSatToUnit(tx.balance);
-    }
-  }
 
   return historyItems;
 };

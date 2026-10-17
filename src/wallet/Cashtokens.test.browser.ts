@@ -558,7 +558,7 @@ describe(`Cashtokens should function in the browser`, () => {
         binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
       ).toBe(true);
       expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-      expect(binToHex(decoded.outputs[0].token?.nft?.commitment!)).toBe("00");
+      expect(binToHex(decoded.outputs[0].token!.nft!.commitment)).toBe("00");
 
       const signed = await aliceWallet.signUnsignedTransaction(
         unsignedTransaction!,
@@ -608,9 +608,9 @@ describe(`Cashtokens should function in the browser`, () => {
         binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
       ).toBe(true);
       expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-      expect(binToHex(sourceOutputs![0].token?.nft?.commitment!)).toBe("00");
-      expect(binToHex(decoded.outputs[0].token?.nft?.commitment!)).toBe("00");
-      expect(binToHex(decoded.outputs[1].token?.nft?.commitment!)).toBe("0a");
+      expect(binToHex(sourceOutputs![0].token!.nft!.commitment)).toBe("00");
+      expect(binToHex(decoded.outputs[0].token!.nft!.commitment)).toBe("00");
+      expect(binToHex(decoded.outputs[1].token!.nft!.commitment)).toBe("0a");
 
       const signed = await aliceWallet.signUnsignedTransaction(
         unsignedTransaction!,
@@ -669,8 +669,8 @@ describe(`Cashtokens should function in the browser`, () => {
         binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
       ).toBe(true);
       expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-      expect(binToHex(sourceOutputs![0].token?.nft?.commitment!)).toBe("0a");
-      expect(binToHex(decoded.outputs[0].token?.nft?.commitment!)).toBe("0a");
+      expect(binToHex(sourceOutputs![0].token!.nft!.commitment)).toBe("0a");
+      expect(binToHex(decoded.outputs[0].token!.nft!.commitment)).toBe("0a");
 
       const signed = await aliceWallet.signUnsignedTransaction(
         unsignedTransaction!,

@@ -49,7 +49,6 @@ describe("Rpc tests", () => {
         async (data) => {
           // console.log("First", data);
           expect(data).not.toBe("");
-          data;
         },
       );
 
@@ -58,7 +57,6 @@ describe("Rpc tests", () => {
         async (data) => {
           // console.log("Second", data);
           expect(data).not.toBe("");
-          data;
         },
       );
 

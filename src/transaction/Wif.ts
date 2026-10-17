@@ -168,9 +168,7 @@ export function prepareInputs({
         i.token.nft?.commitment !== undefined
           ? {
               capability: i.token.nft?.capability,
-              commitment:
-                i.token.nft?.commitment !== undefined &&
-                hexToBin(i.token.nft?.commitment!),
+              commitment: hexToBin(i.token.nft?.commitment ?? ""),
             }
           : undefined,
     };
@@ -285,9 +283,7 @@ export function prepareTokenOutputs(request: TokenSendRequest): Output {
       token.nft?.capability !== undefined || token.nft?.commitment !== undefined
         ? {
             capability: token.nft?.capability,
-            commitment:
-              token.nft?.commitment !== undefined &&
-              hexToBin(token.nft?.commitment!),
+            commitment: hexToBin(token.nft?.commitment ?? ""),
           }
         : undefined,
   };

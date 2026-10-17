@@ -606,7 +606,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     };
   }
 
-  async ready(): Promise<boolean | unknown> {
+  async ready(): Promise<void> {
     return this.connect();
   }
 

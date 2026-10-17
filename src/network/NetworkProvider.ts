@@ -170,9 +170,9 @@ export default interface NetworkProvider {
   /**
    * Function to wait for connection to be ready
    * @param timeout number of milliseconds to wait before throwing error
-   * @returns true when ready, or an error
+   * @returns resolves when ready, rejects when the connection cannot be made
    */
-  ready(timeout?: number): Promise<boolean | unknown>;
+  ready(timeout?: number): Promise<unknown>;
 
   /**
    * Function to connect manually if using persistent connection

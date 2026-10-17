@@ -1322,10 +1322,13 @@ export class BaseWallet {
     const tokenBurns: Required<TokenBurnAllowance> = { fungible: {}, nfts: [] };
     const cashaddr = toTokenaddr(this.getChangeAddress());
 
+    // a coin an earlier request spends is not there for the next one
+    const spentIds = new Set<string>();
     for (const burnRequest of burnRequests) {
       const { category, nft } = burnRequest;
       const tokenUtxos = utxos.filter(
         (val) =>
+          !spentIds.has(toUtxoId(val)) &&
           val.token?.category === category &&
           val.token?.nft?.capability === nft?.capability &&
           val.token?.nft?.commitment === nft?.commitment,
@@ -1344,6 +1347,7 @@ export class BaseWallet {
         const coin =
           tokenUtxos.find((val) => val.token!.amount === 0n) ?? tokenUtxos[0];
         ensureUtxos.push(coin);
+        spentIds.add(toUtxoId(coin));
         tokenBurns.nfts.push({
           category,
           capability: coin.token!.nft!.capability,
@@ -1380,6 +1384,7 @@ export class BaseWallet {
         if (toBurn === 0n) break;
         if (coin.token!.amount === 0n) continue;
         ensureUtxos.push(coin);
+        spentIds.add(toUtxoId(coin));
         let burned = coin.token!.amount;
         if (burned > toBurn) burned = toBurn;
         toBurn -= burned;

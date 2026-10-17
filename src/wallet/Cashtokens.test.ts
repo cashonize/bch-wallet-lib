@@ -2314,10 +2314,12 @@ describe("NFT requests backed by a minting NFT", () => {
 });
 
 describe("tokenBurn inputs and outputs", () => {
-  const fundedWallet = async () => {
+  const fundedWallet = async (coins = 1) => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
-    await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+    for (let i = 0; i < coins; i++) {
+      await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+    }
     return bob;
   };
 
@@ -2339,6 +2341,9 @@ describe("tokenBurn inputs and outputs", () => {
 
   const sumValue = (coins: Utxo[]) =>
     coins.reduce((sum, coin) => sum + coin.satoshis, 0n);
+
+  const outpointsOf = (...coins: Utxo[]) =>
+    coins.map((coin) => `${coin.txid}:${coin.vout}`).sort();
 
   const feeOf = async (wallet: RegTestWallet, transactionHex: string) => {
     const rate = await getRelayFeeCache(wallet.provider);
@@ -2520,5 +2525,72 @@ describe("tokenBurn inputs and outputs", () => {
       bob.tokenBurn({ category, nft: minting, amount: 1n }),
     ).rejects.toThrow(InsufficientFundsError);
     expect(await bob.getUtxos()).toEqual(coins);
+  });
+
+  test("requests for the same NFT or category each spend their own coins", async () => {
+    // a vout 0 coin for each genesis
+    const bob = await fundedWallet(2);
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const nft = { capability: NFTCapability.none, commitment: "01" };
+    const nftCategory = (await bob.tokenGenesis({ nft: minting }))
+      .categories![0];
+    const category = await fungibleCoins(bob, [
+      { amount: 60n, value: 1000n },
+      { amount: 40n, value: 1000n },
+    ]);
+    await bob.tokenMint([
+      new TokenMintRequest({ category: nftCategory, nft }),
+      new TokenMintRequest({ category: nftCategory, nft }),
+    ]);
+    const coins = [...(await bob.getUtxos())];
+    const copies = coins.filter(
+      (coin) => coin.token?.nft?.capability === NFTCapability.none,
+    );
+    expect(copies).toHaveLength(2);
+
+    const response = await bob.tokenBurn([
+      { category: nftCategory, nft },
+      { category: nftCategory, nft },
+      { category, amount: 10n },
+      { category, amount: 20n },
+    ]);
+    const spent = spentCoins(response.transaction!, coins);
+    const fungible = coins.filter((coin) => coin.token?.category === category);
+    expect(outpointsOf(...spent.filter((coin) => coin.token))).toEqual(
+      outpointsOf(...copies, ...fungible),
+    );
+    const fee = await feeOf(bob, response.transaction!);
+    const outputs = decodeOutputs(response.transaction!);
+    // one fungible change per request, from the coin it spent
+    expect(
+      outputs
+        .slice(1, 3)
+        .map((output) => output.token!.amount)
+        .sort((a, b) => Number(a - b)),
+    ).toEqual(
+      [fungible[0].token!.amount - 10n, fungible[1].token!.amount - 20n].sort(
+        (a, b) => Number(a - b),
+      ),
+    );
+    expect(outputs).toEqual([
+      opReturn,
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: expect.any(BigInt) },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: expect.any(BigInt) },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.cashaddr!),
+        value: sumValue(spent) - 2000n - fee,
+        token: undefined,
+      },
+    ]);
+    expect(await getTokenBalance(bob, category)).toBe(70n);
+    expect(await getNftTokenBalance(bob, nftCategory)).toBe(1);
   });
 });

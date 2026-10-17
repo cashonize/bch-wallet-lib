@@ -1509,7 +1509,6 @@ export class BaseWallet implements WalletI {
    *   @param  {string} category category of a token to burn
    *   @param  {object?} nft NFT capability and commitment to match, optional
    *   @param  {bigint?} amount amount of fungible tokens to burn, optional
-   *   @param  {string?} cashaddr address to return token and satoshi change to
    * @param  {string?} message optional message to include in OP_RETURN
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
@@ -1580,8 +1579,7 @@ export class BaseWallet implements WalletI {
           const safeNewAmount = newAmount < 0n ? 0n : newAmount;
           changeSendRequests.push(
             new TokenSendRequest({
-              cashaddr:
-                burnRequest.cashaddr || toTokenaddr(this.getChangeAddress()),
+              cashaddr: toTokenaddr(this.getChangeAddress()),
               category: burnRequest.category,
               nft: burnRequest.nft,
               amount: safeNewAmount,
@@ -1603,8 +1601,7 @@ export class BaseWallet implements WalletI {
           }
 
           const newAmount = available - fungibleBurnAmount;
-          const cashaddr =
-            burnRequest.cashaddr || toTokenaddr(this.getChangeAddress());
+          const cashaddr = toTokenaddr(this.getChangeAddress());
           const value = tokenUtxos.reduce((a, c) => a + c.satoshis, 0n);
           if (newAmount > 0n) {
             changeSendRequests.push(

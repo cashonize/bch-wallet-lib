@@ -171,17 +171,14 @@ export class TokenBurnRequest {
     capability: NFTCapability;
     commitment: string;
   };
-  cashaddr?: string;
 
   constructor({
     category,
     amount,
     nft,
-    cashaddr,
   }: {
     category: string;
     amount?: number | bigint;
-    cashaddr?: string;
     nft?: {
       capability: NFTCapability;
       commitment: string;
@@ -190,7 +187,6 @@ export class TokenBurnRequest {
     this.category = category;
     this.amount = toTokenAmount(amount);
     this.nft = nft;
-    this.cashaddr = cashaddr;
     checkBurnRequest(this);
   }
 }

@@ -1,0 +1,102 @@
+import { randomUtxo } from "@paryonusd/mem-cash";
+import { Network } from "../interface.js";
+import {
+  createProvider,
+  removeGlobalProvider,
+  setGlobalProvider,
+} from "../network/default.js";
+import { MockNetworkProvider } from "../network/MockNetworkProvider.js";
+import { delay } from "../util/delay.js";
+import { RegTestHDWallet } from "./HDWallet.js";
+import { RegTestWallet } from "./Wif.js";
+
+// Two mock chains, so a wallet still listening on the old one would see its coins there
+const miner = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
+let oldProvider: MockNetworkProvider;
+let newProvider: MockNetworkProvider;
+
+beforeEach(async () => {
+  oldProvider = new MockNetworkProvider();
+  newProvider = new MockNetworkProvider();
+  await oldProvider.ready();
+  await newProvider.ready();
+  setGlobalProvider(Network.REGTEST, oldProvider);
+});
+afterEach(() => {
+  removeGlobalProvider(Network.REGTEST);
+});
+
+async function fund(
+  provider: MockNetworkProvider,
+  address: string,
+  satoshis: bigint,
+) {
+  await provider.addUtxo(address, {
+    ...randomUtxo({ vout: 0, satoshis }),
+    height: 100,
+  });
+}
+
+describe("setProvider", () => {
+  test("moves a single-address wallet's watches to the new provider", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    const balances: bigint[] = [];
+    await wallet.watchBalance((balance) => balances.push(balance));
+    const headers: number[] = [];
+    await wallet.watchBlocks((header) => headers.push(header.height));
+    const before = oldProvider.subscriptions;
+
+    await wallet.setProvider(newProvider);
+    expect(wallet.provider).toBe(newProvider);
+    expect(oldProvider.subscriptions).toBe(before - 2);
+
+    await fund(oldProvider, wallet.cashaddr, 5_000n);
+    await oldProvider.mine(miner, 2);
+    await fund(newProvider, wallet.cashaddr, 10_000n);
+    await newProvider.mine(miner, 1);
+    await delay(200);
+
+    expect(await wallet.getBalance()).toBe(10_000n);
+    expect(balances.at(-1)).toBe(10_000n);
+    expect(balances).not.toContain(5_000n);
+    expect(headers).toEqual([201]);
+
+    await wallet.stop();
+    expect(newProvider.subscriptions).toBe(0);
+  });
+
+  test("moves an HD wallet's address discovery to the new provider", async () => {
+    const wallet = await RegTestHDWallet.newRandom();
+    await wallet.watchPromise;
+    const subscribed = oldProvider.subscriptions;
+    expect(subscribed).toBeGreaterThanOrEqual(40);
+
+    await wallet.setProvider(newProvider);
+    expect(oldProvider.subscriptions).toBe(0);
+    expect(newProvider.subscriptions).toBe(subscribed);
+
+    const first = wallet.getDepositAddress();
+    await fund(oldProvider, wallet.getDepositAddress(), 5_000n);
+    await fund(newProvider, first, 10_000n);
+    await wallet.waitForUpdate({ depositIndex: 1, timeout: 1000 });
+
+    // discovery ran on the new chain: index 0 counts as used, and the gap is watched there
+    expect(wallet.getDepositAddress()).not.toBe(first);
+    expect(await wallet.getBalance()).toBe(10_000n);
+    expect(newProvider.subscriptions).toBe(subscribed + 1);
+    expect(oldProvider.subscriptions).toBe(0);
+
+    await wallet.stop();
+    expect(newProvider.subscriptions).toBe(0);
+  });
+
+  test("refuses a provider of another network", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    const mainnet = await createProvider(Network.MAINNET, "wss://127.0.0.1:1");
+    await expect(wallet.setProvider(mainnet)).rejects.toThrow(
+      "a mainnet provider cannot serve a regtest wallet",
+    );
+    expect(wallet.provider).toBe(oldProvider);
+    await wallet.stop();
+  });
+});

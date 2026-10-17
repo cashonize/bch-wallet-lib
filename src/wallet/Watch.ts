@@ -205,23 +205,25 @@ export class WatchWallet extends BaseWallet {
     let resolved = false;
 
     return new Promise<void>(async (resolve) => {
-      this.baseCancelFn = await this.provider.subscribeToAddress(
-        addr,
-        async (args: [address: string, status: string | null]) => {
-          const [address, status] = args;
-          if (address !== addr) return;
+      this.baseCancelFn = await this.subscribe((provider) =>
+        provider.subscribeToAddress(
+          addr,
+          async (args: [address: string, status: string | null]) => {
+            const [address, status] = args;
+            if (address !== addr) return;
 
-          if (status !== null && status !== this.status) {
-            this.updatePromise = this.fetchData(status).catch(() => {});
-          }
-          this.status = status;
-          this.notifyWatchCallbacks(status, addr);
+            if (status !== null && status !== this.status) {
+              this.updatePromise = this.fetchData(status).catch(() => {});
+            }
+            this.status = status;
+            this.notifyWatchCallbacks(status, addr);
 
-          if (!resolved) {
-            resolved = true;
-            resolve();
-          }
-        },
+            if (!resolved) {
+              resolved = true;
+              resolve();
+            }
+          },
+        ),
       );
     });
   }

@@ -18,7 +18,6 @@ import {
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
-import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { signUnsignedTransaction } from "../transaction/Wif.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
 import { checkWifNetwork } from "../util/checkWifNetwork.js";
@@ -51,8 +50,6 @@ export interface WalletOptions {
  * Class to manage a bitcoin cash wallet.
  */
 export class Wallet extends WatchWallet {
-  declare provider: ElectrumNetworkProvider;
-
   readonly derivationPath: string = Config.DefaultParentDerivationPath + "/0/0";
   readonly parentDerivationPath: string = Config.DefaultParentDerivationPath;
   readonly mnemonic!: string;

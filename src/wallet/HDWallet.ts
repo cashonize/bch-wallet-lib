@@ -472,9 +472,8 @@ export class HDWallet extends BaseWallet {
               resolve();
             };
 
-            watchCancels[index] = await this.provider.subscribeToAddress(
-              addr,
-              callback as any,
+            watchCancels[index] = await this.subscribe((provider) =>
+              provider.subscribeToAddress(addr, callback as any),
             );
           }),
       ),

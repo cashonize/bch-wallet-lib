@@ -59,6 +59,17 @@ export const placeholderCashAddr =
 export const placeholderTokenAddr =
   "bitcoincash:zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqweyg7usz";
 
+interface WalletSubscription {
+  subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>;
+  cancel: CancelFn;
+}
+
+// a provider's cancel may be reached twice when a subscription is cancelled while it moves
+function once(cancel: CancelFn): CancelFn {
+  let done: Promise<void> | undefined;
+  return () => (done ??= cancel());
+}
+
 /**
  * A class to hold features used by all wallets
  * @class  BaseWallet
@@ -67,13 +78,19 @@ export class BaseWallet implements WalletI {
   public static StorageProvider?: typeof StorageProvider;
 
   readonly walletCache: WalletCache;
-  readonly provider: ElectrumNetworkProvider;
+  private _provider: ElectrumNetworkProvider;
   readonly network: NetworkType;
   readonly walletType: WalletTypeEnum;
   _slpSemiAware: boolean = false; // a flag which requires an utxo to have more than 546 sats to be spendable and counted in the balance
   readonly isTestnet: boolean;
   name: string = "";
-  protected cancelFns: CancelFn[] = [];
+  private subscriptions = new Set<WalletSubscription>();
+  private providerSwitch: Promise<void> = Promise.resolve();
+
+  /** The electrum provider this wallet talks to; change it with setProvider() */
+  public get provider(): ElectrumNetworkProvider {
+    return this._provider;
+  }
 
   public get networkPrefix(): CashAddressNetworkPrefix {
     return prefixFromNetworkMap[this.network];
@@ -164,7 +181,7 @@ export class BaseWallet implements WalletI {
   constructor(network = NetworkType.Mainnet) {
     this.network = network;
     this.walletType = WalletTypeEnum.Watch;
-    this.provider = this.getNetworkProvider(this.network);
+    this._provider = this.getNetworkProvider(this.network);
     this.isTestnet = this.network === NetworkType.Mainnet ? false : true;
     this.walletCache = new Map<string, { privateKey: Uint8Array }>();
   }
@@ -407,26 +424,71 @@ export class BaseWallet implements WalletI {
   }
 
   /**
-   * Track a cancel function so it can be cancelled by stop()
-   * Returns a wrapped cancel function that also removes itself from tracking
+   * Subscribe through the wallet's provider. The subscription follows the wallet to a new
+   * provider on setProvider() and ends on stop() or when the returned function is called.
    */
-  protected trackCancelFn(cancelFn: CancelFn): CancelFn {
-    this.cancelFns.push(cancelFn);
-    return async () => {
-      const index = this.cancelFns.indexOf(cancelFn);
-      if (index !== -1) {
-        this.cancelFns.splice(index, 1);
-      }
-      await cancelFn();
+  protected async subscribe(
+    subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>,
+  ): Promise<CancelFn> {
+    let provider = this.provider;
+    const subscription = {
+      subscribe,
+      cancel: once(await subscribe(provider)),
     };
+    // setProvider ran while subscribing
+    while (provider !== this.provider) {
+      await subscription.cancel();
+      provider = this.provider;
+      subscription.cancel = once(await subscribe(provider));
+    }
+    this.subscriptions.add(subscription);
+    return async () => {
+      if (this.subscriptions.delete(subscription)) {
+        await subscription.cancel();
+      }
+    };
+  }
+
+  /**
+   * Switch the wallet to another electrum provider of the same network: its subscriptions (an
+   * HD wallet's address discovery included) are made again on the new provider and ended on
+   * the old one. The old provider is left connected, as other wallets may still use it.
+   */
+  public async setProvider(provider: ElectrumNetworkProvider): Promise<void> {
+    if ((provider.network as string) !== this.network) {
+      throw new Error(
+        `a ${provider.network} provider cannot serve a ${this.network} wallet`,
+      );
+    }
+    const move = this.providerSwitch.then(() =>
+      this.moveSubscriptions(provider),
+    );
+    this.providerSwitch = move.catch(() => {});
+    await move;
+  }
+
+  private async moveSubscriptions(provider: ElectrumNetworkProvider) {
+    if (provider === this.provider) return;
+    this._provider = provider;
+    await Promise.all(
+      [...this.subscriptions].map(async (subscription) => {
+        await subscription.cancel();
+        subscription.cancel = once(await subscription.subscribe(provider));
+        // cancelled while moving
+        if (!this.subscriptions.has(subscription)) {
+          await subscription.cancel();
+        }
+      }),
+    );
   }
 
   /**
    * Stop all active subscriptions on this wallet
    */
   public async stop(): Promise<void> {
-    const fns = this.cancelFns.splice(0);
-    await Promise.all(fns.map((fn) => fn()));
+    const subscriptions = [...this.subscriptions];
+    this.subscriptions.clear();
+    await Promise.all(subscriptions.map((s) => s.cancel()));
   }
 
   /**
@@ -438,11 +500,11 @@ export class BaseWallet implements WalletI {
   public async watchStatus(
     callback: (status: string | null, address: string) => void,
   ): Promise<CancelFn> {
-    const cancelFn = await this.provider.watchAddressStatus(
-      this.getDepositAddress(),
-      (status) => callback(status, this.getDepositAddress()),
+    return this.subscribe((provider) =>
+      provider.watchAddressStatus(this.getDepositAddress(), (status) =>
+        callback(status, this.getDepositAddress()),
+      ),
     );
-    return this.trackCancelFn(cancelFn);
   }
 
   /**
@@ -602,13 +664,12 @@ export class BaseWallet implements WalletI {
     window: number = 5000,
   ): Promise<CancelFn> {
     return this.watchTransactionHashes(async (txHash: string) => {
-      const cancel = await this.provider.subscribeToDsproof(
-        txHash,
-        ([proofTxHash, dsproof]) => {
+      const cancel = await this.subscribe((provider) =>
+        provider.subscribeToDsproof(txHash, ([proofTxHash, dsproof]) => {
           if (txHash === proofTxHash && dsproof !== null) {
             callback(dsproof);
           }
-        },
+        }),
       );
 
       setTimeout(() => cancel(), window);
@@ -1124,9 +1185,11 @@ export class BaseWallet implements WalletI {
           }
         };
 
-        cancel = await this.provider.subscribeToTransaction(
-          options.txHash,
-          waitForTransactionCallback,
+        cancel = await this.subscribe((provider) =>
+          provider.subscribeToTransaction(
+            options.txHash!,
+            waitForTransactionCallback,
+          ),
         );
         return;
       }
@@ -1152,7 +1215,9 @@ export class BaseWallet implements WalletI {
     callback: (header: HexHeaderI) => void,
     skipCurrentHeight: boolean = true,
   ): Promise<CancelFn> {
-    return this.provider.watchBlocks(callback, skipCurrentHeight);
+    return this.subscribe((provider) =>
+      provider.watchBlocks(callback, skipCurrentHeight),
+    );
   }
 
   /**

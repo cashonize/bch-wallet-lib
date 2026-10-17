@@ -281,6 +281,34 @@ describe("ElectrumTransport subscriptions", () => {
     ]);
   });
 
+  test("ends the server subscription after a joining listener threw on its replay", async () => {
+    const fake = new FakeServer();
+    serveStatuses(fake);
+    transport = new ElectrumTransport(asServer(fake));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const unsubscribeFirst = await transport.subscribe(
+      "blockchain.address.subscribe",
+      [addressA],
+      () => {},
+    );
+    const unsubscribeSecond = await transport.subscribe(
+      "blockchain.address.subscribe",
+      [addressA],
+      () => {
+        throw new Error("listener failed");
+      },
+    );
+    expect(logged).toHaveBeenCalledTimes(1);
+    logged.mockRestore();
+
+    await unsubscribeFirst();
+    await unsubscribeSecond();
+    await vi.waitFor(() =>
+      expect(fake.calls("blockchain.address.unsubscribe")).toHaveLength(1),
+    );
+  });
+
   test("keeps a subscription across a reconnect", async () => {
     const fake = new FakeServer();
     serveStatuses(fake);

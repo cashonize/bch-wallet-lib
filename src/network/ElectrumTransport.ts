@@ -138,7 +138,14 @@ export class ElectrumTransport implements Transport {
         return this.subscribe(method, params, onData);
       }
       subscription.listeners.add(listener);
-      if (subscription.latest) listener(subscription.latest);
+      if (subscription.latest) {
+        // As in route(): a throwing listener stays subscribed, and the caller gets its Unsubscribe
+        try {
+          listener(subscription.latest);
+        } catch (error) {
+          console.error(error);
+        }
+      }
     } else {
       subscription = {
         method,

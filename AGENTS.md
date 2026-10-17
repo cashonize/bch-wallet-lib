@@ -8,6 +8,8 @@ bch-wallet-lib is a Bitcoin Cash wallet library, continued from mainnet-js `4.0.
 
 `docs/consumer-notes.md` lists where Cashonize reimplements or works around library helpers, and the API rules that follow from it (pure functions over one utxo snapshot, caller-controlled concurrency, explicit coin choices, no side effects from reads, typed errors). Read it before adding or changing public API.
 
+`docs/testing.md` describes the test layers, what each cannot catch, and what is still to build.
+
 ## Commands
 
 ```bash

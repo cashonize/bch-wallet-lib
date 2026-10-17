@@ -29,4 +29,10 @@ export class MemoryCache implements CacheProvider {
   async clear() {
     cache = {};
   }
+  async keys() {
+    return Object.keys(cache);
+  }
+  async close() {
+    return;
+  }
 }

@@ -7,10 +7,9 @@ import {
   encodeCashAddress,
   hash160,
   secp256k1,
-  sha256,
-  utf8ToBin,
 } from "@bitauth/libauth";
 import {
+  deriveWalletCacheId,
   SingleAddressWalletCache,
   WalletCacheEntry,
   WalletCacheI,
@@ -178,7 +177,7 @@ export class WatchWallet extends BaseWallet {
   }
 
   protected deriveWalletId(): string {
-    return binToHex(sha256.hash(utf8ToBin(`${this.cashaddr}-${this.network}`)));
+    return deriveWalletCacheId(this.cashaddr, this.network);
   }
 
   protected async initWalletCache(): Promise<void> {

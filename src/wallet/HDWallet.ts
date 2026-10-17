@@ -1,6 +1,5 @@
 import {
   assertSuccess,
-  binToHex,
   CashAddressNetworkPrefix,
   decodeHdPrivateKey,
   decodeHdPublicKey,
@@ -13,10 +12,12 @@ import {
   generateBip39Mnemonic,
   HdPrivateNodeValid,
   HdPublicNodeValid,
-  sha256,
-  utf8ToBin,
 } from "@bitauth/libauth";
-import { HDWalletCache, WalletCacheI } from "../cache/index.js";
+import {
+  deriveWalletCacheId,
+  HDWalletCache,
+  WalletCacheI,
+} from "../cache/index.js";
 import { Config } from "../config.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import { NetworkType, prefixFromNetworkMap, UnitEnum } from "../enum.js";
@@ -258,16 +259,11 @@ export class HDWallet extends BaseWallet {
     this.name = name;
 
     // @ts-ignore
-    this.walletId = binToHex(
-      sha256.hash(
-        utf8ToBin(
-          `${
-            (this.mnemonic ? this.mnemonic + this.derivation : undefined) ??
-            this.xPriv ??
-            this.xPub
-          }-${this.network}`,
-        ),
-      ),
+    this.walletId = deriveWalletCacheId(
+      (this.mnemonic ? this.mnemonic + this.derivation : undefined) ??
+        this.xPriv ??
+        this.xPub,
+      this.network,
     );
     // Resolve the effective branches.
     const cacheNode = this.xPrivNode ?? this.xPubNode;

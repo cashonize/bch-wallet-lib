@@ -47,14 +47,23 @@ export class WebStorageCache implements CacheProvider {
   }
 
   async clear(): Promise<void> {
-    // collected first, since removing while indexing shifts the indices
+    // keys() collects them first, since removing while indexing shifts the indices
+    for (const key of await this.keys()) {
+      localStorage.removeItem(KEY_PREFIX + key);
+    }
+  }
+
+  async keys(): Promise<string[]> {
     const ownKeys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key?.startsWith(KEY_PREFIX)) ownKeys.push(key);
+      if (key?.startsWith(KEY_PREFIX))
+        ownKeys.push(key.slice(KEY_PREFIX.length));
     }
-    for (const key of ownKeys) {
-      localStorage.removeItem(key);
-    }
+    return ownKeys;
+  }
+
+  async close(): Promise<void> {
+    return;
   }
 }

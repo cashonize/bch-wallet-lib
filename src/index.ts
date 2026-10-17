@@ -1,6 +1,8 @@
 // config
 export { Config } from "./config.js";
 export type { WalletDbEntryI } from "./db/interface.js";
+// cache
+export { pruneWalletCaches, purgeWalletCache } from "./cache/walletCache.js";
 // db
 export { default as StorageProvider } from "./db/StorageProvider.js";
 // EncryptedStorageProvider is available via the sub-entry "mainnet-js/encrypted-storage"

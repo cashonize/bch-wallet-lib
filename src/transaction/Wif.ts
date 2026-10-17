@@ -16,7 +16,7 @@ import {
   walletTemplateToCompilerBch,
 } from "@bitauth/libauth";
 import { WalletCache } from "../cache/walletCache.js";
-import { DUST_UTXO_THRESHOLD } from "../constant.js";
+import { DUST_UTXO_THRESHOLD, MAX_OP_RETURN_BYTES } from "../constant.js";
 import { NFTCapability, TokenI, Utxo } from "../interface.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
@@ -222,6 +222,15 @@ export function prepareInputs({
 export async function prepareOutputs(
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>,
 ) {
+  const opReturnBytes = outputs
+    .filter((output) => output instanceof OpReturnData)
+    .reduce((sum, output) => sum + output.buffer.length, 0);
+  if (opReturnBytes > MAX_OP_RETURN_BYTES) {
+    throw new Error(
+      `OP_RETURN outputs can not exceed ${MAX_OP_RETURN_BYTES} bytes in total, got ${opReturnBytes}`,
+    );
+  }
+
   const lockedOutputs: Output[] = [];
   for (const output of outputs) {
     if (output instanceof TokenSendRequest) {

@@ -1007,6 +1007,32 @@ describe(`Wallet extrema behavior regression testing`, () => {
     ]);
   });
 
+  test("Send op_return outputs up to 223 bytes in total", async () => {
+    const wallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
+
+    // one 223-byte script: OP_RETURN, OP_PUSHDATA1 <220>, 220 bytes
+    const full = OpReturnData.from(new Uint8Array(220).fill(1));
+    let result = await wallet.send([full]);
+    let transaction = await wallet.provider!.getRawTransactionObject(
+      result.txId!,
+    );
+    expect(transaction.vout[0].scriptPubKey.hex).toBe(binToHex(full.buffer));
+
+    // 223 bytes over two outputs: 1 + 2 + 100 and 1 + 2 + 117
+    const first = OpReturnData.from(new Uint8Array(100).fill(2));
+    const second = OpReturnData.from(new Uint8Array(117).fill(3));
+    result = await wallet.send([first, second]);
+    transaction = await wallet.provider!.getRawTransactionObject(result.txId!);
+    expect(transaction.vout[0].scriptPubKey.hex).toBe(binToHex(first.buffer));
+    expect(transaction.vout[1].scriptPubKey.hex).toBe(binToHex(second.buffer));
+
+    // one byte more over the two is refused before anything is sent
+    const third = OpReturnData.from(new Uint8Array(118).fill(3));
+    await expect(wallet.send([first, third])).rejects.toThrow(
+      "OP_RETURN outputs can not exceed 223 bytes in total, got 224",
+    );
+  });
+
   test("Test slpSemiAware", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();

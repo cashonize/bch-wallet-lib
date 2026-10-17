@@ -7,7 +7,7 @@ import {
   utf8ToBin,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
-import { DELIMITER } from "../constant.js";
+import { DELIMITER, MAX_OP_RETURN_BYTES } from "../constant.js";
 import { NFTCapability, UtxoId } from "../interface.js";
 import { checkTokenaddr } from "../util/deriveCashaddr.js";
 
@@ -227,20 +227,23 @@ export class OpReturnData {
       }
 
       if (length < 76) {
-        // OP_PUSHDATA_1
+        // direct push, OP_0 for empty data
         lengthData = [length];
-      } else if (length < 223) {
-        // default max `-datacarriersize`
-        lengthData = [0x4c, length];
+      } else if (length < 256) {
+        lengthData = [0x4c, length]; // OP_PUSHDATA1
       } else {
-        throw new Error("OP_RETURN data can not exceed 220 bytes in size");
+        throw new Error(
+          `OP_RETURN script can not exceed ${MAX_OP_RETURN_BYTES} bytes in size`,
+        );
       }
 
       data = Uint8Array.from([...data, ...lengthData, ...elementData]);
     }
 
-    if (data.length > 220) {
-      throw new Error("OP_RETURN data can not exceed 220 bytes in size");
+    if (data.length > MAX_OP_RETURN_BYTES) {
+      throw new Error(
+        `OP_RETURN script can not exceed ${MAX_OP_RETURN_BYTES} bytes in size`,
+      );
     }
 
     return new this(data);

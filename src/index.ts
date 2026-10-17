@@ -63,6 +63,7 @@ export {
 } from "./util/getAddrsByXpubKey.js";
 export { getXPubKey } from "./util/getXPubKey.js";
 export { deriveHdPaths, getXPubKeys } from "./util/hd.js";
+export { MAX_OP_RETURN_BYTES } from "./constant.js";
 // utils
 export * from "./util/index.js";
 // wallets - explicit exports for tree-shaking

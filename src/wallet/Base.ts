@@ -89,28 +89,6 @@ function once(cancel: CancelFn): CancelFn {
   return () => (done ??= cancel());
 }
 
-// The coins an inputOrdering returns, as the selected coins themselves: it may only reorder them
-function orderedInputs(selected: Utxo[], ordered: Utxo[]): Utxo[] {
-  const notPermutation = (utxoId: string) =>
-    new InvalidRequestError(
-      `inputOrdering must return a permutation of its inputs: ${utxoId}`,
-      { field: "inputOrdering", value: utxoId },
-    );
-  const remaining = new Map(selected.map((utxo) => [toUtxoId(utxo), utxo]));
-  const result: Utxo[] = [];
-  for (const utxo of ordered) {
-    const utxoId = toUtxoId(utxo);
-    const coin = remaining.get(utxoId);
-    // a coin it was not given, or one it returned already
-    if (!coin) throw notPermutation(utxoId);
-    remaining.delete(utxoId);
-    result.push(coin);
-  }
-  const [dropped] = remaining.keys();
-  if (dropped !== undefined) throw notPermutation(dropped);
-  return result;
-}
-
 /**
  * A class to hold features used by all wallets
  * @class  BaseWallet
@@ -892,9 +870,6 @@ export class BaseWallet implements WalletI {
       utxos = pool.filter((utxo) => !utxo.token);
     }
 
-    // Get current height to assure recently mined coins are not spent.
-    const bestHeight = await this.provider.getBlockHeight();
-
     // simulate outputs using the sender's address
     const sendRequest = new SendRequest({
       cashaddr: placeholderCashAddr,
@@ -904,19 +879,13 @@ export class BaseWallet implements WalletI {
       .fill(0)
       .map(() => sendRequest);
 
-    const fundingUtxos = await getSuitableUtxos(
-      utxos,
-      undefined,
-      bestHeight,
-      sendRequests,
-    );
+    const fundingUtxos = await getSuitableUtxos(utxos, undefined, sendRequests);
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
     const fee = await getFeeAmountSimple({
       utxos: fundingUtxos,
       sendRequests: sendRequests,
       sourceAddress: placeholderCashAddr,
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      fee: params.options?.fee,
     });
     const spendableAmount = sumUtxoValue(fundingUtxos);
 
@@ -1117,7 +1086,6 @@ export class BaseWallet implements WalletI {
       utxos = utxos.filter((val) => !val.token);
     }
 
-    const bestHeight = await this.provider.getBlockHeight();
     if (utxos.length === 0) {
       throw new InsufficientFundsError("There were no Unspent Outputs", {
         asset: "bch",
@@ -1146,7 +1114,6 @@ export class BaseWallet implements WalletI {
       const pinned = await getSuitableUtxos(
         utxos,
         0n,
-        bestHeight,
         selectionRequests,
         options?.ensureUtxos || [],
         options?.tokenOperation,
@@ -1184,7 +1151,6 @@ export class BaseWallet implements WalletI {
         sendRequests: allOutputs,
         sourceAddress: this.getDepositAddress(),
         relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-        fee: options?.fee,
       });
     // Each round selects for the last round's estimate plus `margin` until the selected coins
     // cover their own fee, the precise one included; the estimate only grows.
@@ -1193,14 +1159,9 @@ export class BaseWallet implements WalletI {
         const selectedUtxos = await getSuitableUtxos(
           utxos,
           spendAmount + feeEstimate + margin,
-          bestHeight,
           selectionRequests,
           ensureUtxos,
           options?.tokenOperation,
-          {
-            coinSelection: options?.coinSelection,
-            feePerByte: relayFeePerByteInSatoshi,
-          },
         );
         if (selectedUtxos.length === 0) {
           throw new InsufficientFundsError(
@@ -1210,26 +1171,18 @@ export class BaseWallet implements WalletI {
         }
         let feeNeeded = await estimateFee(selectedUtxos);
         if (feeNeeded <= feeEstimate) {
-          let fundingUtxos = selectedUtxos;
-          if (options?.inputOrdering) {
-            fundingUtxos = orderedInputs(
-              selectedUtxos,
-              options.inputOrdering({ inputs: selectedUtxos }),
-            );
-          }
           const fee = await getFeeAmount({
-            utxos: fundingUtxos,
+            utxos: selectedUtxos,
             sendRequests: sendRequests,
             sourceAddress: this.getDepositAddress(),
             relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
             walletCache: this.walletCache,
-            fee: options?.fee,
             tokenChange,
           });
-          if (fee <= feeEstimate) return { selectedUtxos, fundingUtxos, fee };
+          if (fee <= feeEstimate) return { selectedUtxos, fee };
           feeNeeded = fee;
         }
-        // this cuts off a coinSelection that never settles
+        // a guard: the estimate only grows, and each round can only add coins
         if (round > utxos.length) {
           throw new Error("The fee estimate did not settle on a set of inputs");
         }
@@ -1268,7 +1221,7 @@ export class BaseWallet implements WalletI {
         if (!(e instanceof InsufficientFundsError)) throw e;
       }
     }
-    const { selectedUtxos, fundingUtxos, fee } = settled;
+    const { selectedUtxos, fee } = settled;
     // a token coin the change was not computed from would be burned
     const tokenInputIds = new Set(tokenInputs.map(toUtxoId));
     if (
@@ -1282,20 +1235,19 @@ export class BaseWallet implements WalletI {
       );
     }
     const encodedTransaction = await buildEncodedTransaction({
-      inputs: fundingUtxos,
+      inputs: selectedUtxos,
       outputs: sendRequests,
       signingKey: privateKey ?? placeholderPrivateKeyBin,
       fee,
       discardChange,
       changeAddress,
       walletCache: this.walletCache,
-      outputOrdering: options?.outputOrdering,
       tokenBurns,
       tokenChange,
     });
 
     const categories = [
-      ...fundingUtxos
+      ...selectedUtxos
         .filter((val) => val.token?.category)
         .map((val) => val.token!.category),
       ...sendRequests

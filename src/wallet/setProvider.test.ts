@@ -175,6 +175,8 @@ describe("waitForTransaction", () => {
     const { txId } = await wallet.send([
       { cashaddr: wallet.cashaddr, value: 1_000n },
     ]);
+    // the provider's own height subscription, which a send no longer opens, stays open
+    await oldProvider.getBlockHeight();
     const before = oldProvider.subscriptions;
 
     await wallet.waitForTransaction({ txHash: txId! });

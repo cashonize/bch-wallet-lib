@@ -25,7 +25,7 @@ Run one file: `USE_MOCK_PROVIDER=1 pnpm exec vitest run --config test/vitest.con
 ## Layout
 
 - `src/wallet/`: the wallet classes. `Base.ts` (`BaseWallet`: sending, token operations, history, watching), `Watch.ts` (watch-only), `Wif.ts` (single-address), `HDWallet.ts` (HD, address discovery over subscriptions, multiple derivation branches).
-- `src/transaction/`: transaction building (`Wif.ts`), fee allocation, and `coin-control/` (selection, input/output order, fee strategies; the `bch-wallet-lib/coin-control` entry).
+- `src/transaction/`: transaction building, coin selection and fees (`Wif.ts`), and the token conservation check (`tokenConservation.ts`).
 - `src/network/`: `ElectrumNetworkProvider` (the provider wallets talk to) over a `Transport`, `ElectrumTransport` (that transport over electrum-cash), `default.ts` (global providers per network), `MockNetworkProvider` (the in-memory chain used by `pnpm test`, test infrastructure left out of the build; tests set up providers through `test/providers.ts`).
 - `src/cache/`: the IndexedDB cache (`Config.UseIndexedDBCache`), and `walletCache` (HD address and key cache).
 - `src/db/`: `StorageProvider` (wallet persistence). `src/indexeddb/`: the browser `IndexedDBProvider`.
@@ -57,7 +57,7 @@ Cashonize is a live wallet: its users' browsers hold data written by mainnet-js 
 
 - **Errors**: throw exported `Error` subclasses (in `src/wallet/errors.ts`, or next to the transport for network errors) with `name` set, structured fields for what a caller branches on (`asset`, `category`, `utxoId`, `reason`, …) and the underlying error as `cause`. Callers tell errors apart with `instanceof` and fields, never by matching the message. Never throw strings or reject with non-Errors.
 - **Options**: per-call options go in an options object, the last parameter; the library never mutates it. A per-call option overrides `Config`. `Config` is for app-wide defaults only; new behavior gets a per-call option first. Values that are fixed for a wallet's life (provider, derivation) are factory options.
-- **Which coins a spend uses**: the pool is the wallet's current coins, narrowed to `utxoIds` when given, minus `excludeUtxoIds`. Every coin a spend uses comes from that pool: `ensureUtxos`, the inputs a token operation picks itself, and what coin-control hooks see. A coin named in `ensureUtxos` that is not in the pool is an error before anything is built, never a silent addition. This holds for `send`, `sendMax`, `getMaxAmountToSend`, `tokenGenesis`, `tokenMint` and `tokenBurn`.
+- **Which coins a spend uses**: the pool is the wallet's current coins, narrowed to `utxoIds` when given, minus `excludeUtxoIds`. Every coin a spend uses comes from that pool: `ensureUtxos` and the inputs a token operation picks itself. A coin named in `ensureUtxos` that is not in the pool is an error before anything is built, never a silent addition. This holds for `send`, `sendMax`, `getMaxAmountToSend`, `tokenGenesis`, `tokenMint` and `tokenBurn`.
 - **Concurrency**: the caller decides how many requests run at once. Where the library fans out itself (history, raw transactions, headers), it is bounded, never one unbounded `Promise.all` over a list that grows with the wallet.
 - **Reads have no side effects**: existence checks and lookups construct no wallet, open no subscription and write nothing.
 

@@ -1,8 +1,6 @@
 import { binToHex, decodeTransaction, hexToBin } from "@bitauth/libauth";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { NFTCapability, Utxo } from "../interface.js";
-import { selectBranchAndBound } from "../transaction/coin-control/selection.js";
-import type { CoinSelectionContext } from "../transaction/coin-control/types.js";
 import {
   InsufficientFundsError,
   InvalidRequestError,
@@ -75,35 +73,6 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
       excludeUtxoIds: [spent],
     });
     expect(inputOutpoints(response.transaction!)).not.toContain(spent);
-  });
-
-  test("a coin-control selection is never given an excluded coin, the best fit included", async () => {
-    const bob = await fundedWallet(10_000n, 20_000n, 30_000n);
-    const carol = await RegTestWallet.newRandom();
-    const request = new SendRequest({
-      cashaddr: carol.cashaddr!,
-      value: 19_000n,
-    });
-
-    const plain = await bob.send(request, {
-      broadcast: false,
-      coinSelection: selectBranchAndBound,
-    });
-    const bestFit = inputOutpoints(plain.transaction!);
-    expect(bestFit).toHaveLength(1);
-
-    const seen: string[] = [];
-    const response = await bob.send(request, {
-      broadcast: false,
-      excludeUtxoIds: bestFit,
-      coinSelection: (ctx: CoinSelectionContext) => {
-        seen.push(...ctx.available.map(outpoint), ...ctx.pinned.map(outpoint));
-        return selectBranchAndBound(ctx);
-      },
-    });
-    expect(seen.length).toBeGreaterThan(0);
-    expect(seen).not.toContain(bestFit[0]);
-    expect(inputOutpoints(response.transaction!)).not.toContain(bestFit[0]);
   });
 
   test("a send the remaining coins cannot cover falls short", async () => {
@@ -405,84 +374,6 @@ describe("the pool is a set", () => {
     expect(inputOutpoints(twice.transaction!)).toEqual(
       inputOutpoints(plain.transaction!),
     );
-  });
-});
-
-describe("coin-control hooks cannot add a coin to the pool", () => {
-  test("a coinSelection pick it was not given", async () => {
-    const bob = await fundedWallet(10_000n, 20_000n);
-    const [reserved] = await bob.getUtxos();
-
-    const error = await bob
-      .send(new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n }), {
-        broadcast: false,
-        excludeUtxoIds: [reserved],
-        coinSelection: () => [reserved],
-      })
-      .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(InvalidRequestError);
-    expect((error as InvalidRequestError).field).toBe("coinSelection");
-    expect((error as InvalidRequestError).value).toBe(outpoint(reserved));
-  });
-
-  test("an inputOrdering that adds a coin", async () => {
-    const bob = await fundedWallet(10_000n, 20_000n);
-    const coins = await bob.getUtxos();
-    const reserved = coins.find((utxo) => utxo.satoshis === 10_000n)!;
-
-    const error = await bob
-      .send(new SendRequest({ cashaddr: bob.cashaddr!, value: 1000n }), {
-        broadcast: false,
-        excludeUtxoIds: [reserved],
-        inputOrdering: ({ inputs }) => [...inputs, reserved],
-      })
-      .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(InvalidRequestError);
-    expect((error as InvalidRequestError).field).toBe("inputOrdering");
-    expect((error as InvalidRequestError).value).toBe(outpoint(reserved));
-  });
-
-  test("an inputOrdering that drops or repeats a coin", async () => {
-    const bob = await fundedWallet(10_000n, 20_000n);
-    const request = new SendRequest({
-      cashaddr: bob.cashaddr!,
-      value: 25_000n,
-    });
-
-    for (const inputOrdering of [
-      ({ inputs }: { inputs: Utxo[] }) => inputs.slice(1),
-      ({ inputs }: { inputs: Utxo[] }) => [inputs[0], inputs[0]],
-    ]) {
-      const error = await bob
-        .send(request, { broadcast: false, inputOrdering })
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(InvalidRequestError);
-      expect((error as InvalidRequestError).field).toBe("inputOrdering");
-    }
-  });
-
-  test("an inputOrdering that reorders is followed", async () => {
-    const bob = await fundedWallet(10_000n, 20_000n);
-    const carol = await RegTestWallet.newRandom();
-    let order: string[] = [];
-
-    const response = await bob.send(
-      new SendRequest({ cashaddr: carol.cashaddr!, value: 25_000n }),
-      {
-        broadcast: false,
-        inputOrdering: ({ inputs }) => {
-          const reversed = [...inputs].reverse();
-          order = reversed.map(outpoint);
-          return reversed;
-        },
-      },
-    );
-    const inputs = decoded(response.transaction!).inputs.map(
-      (input) =>
-        `${binToHex(input.outpointTransactionHash)}:${input.outpointIndex}`,
-    );
-    expect(order).toHaveLength(2);
-    expect(inputs).toEqual(order);
   });
 });
 

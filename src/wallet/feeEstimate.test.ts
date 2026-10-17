@@ -2,11 +2,6 @@ import { binToHex, decodeTransaction, hexToBin } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
-import {
-  feeAbsolute,
-  feeFixedPerByte,
-  FeeFn,
-} from "../transaction/coin-control/index.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   SendRequest,
@@ -252,31 +247,30 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     expect(paid).toBe(6000n - 4950n);
   });
 
-  test("a fee strategy above the relay rate is funded by the selection", async () => {
+  test("a relay fee above 1 sat/byte is funded by the selection", async () => {
     const { alice, bob, coins } = await fund(10, 1000n);
-    const send = (fee: FeeFn) =>
-      bob.send(new SendRequest({ cashaddr: alice.cashaddr!, value: 3000n }), {
-        fee,
-        broadcast: false,
-      });
-    const paidOf = async (transactionHex: string) =>
-      (await feeCheck(bob, transactionHex, coins)).paid;
-
-    // four coins cover the relay-rate estimate, but at 2 sat/byte their 608 bytes ask for 1216
-    // sats; a check against the estimate alone built them paying 1000
-    const perByte = await send(feeFixedPerByte(2));
-    const perByteSize = perByte.transaction.length / 2;
-    expect(decode(perByte.transaction).inputs.length).toBe(6);
-    expect(await paidOf(perByte.transaction)).toBe(BigInt(perByteSize * 2));
-    expect(outputValues(perByte.transaction)).toEqual([
-      3000n,
-      6000n - 3000n - BigInt(perByteSize * 2),
-    ]);
-
-    const absolute = await send(feeAbsolute(4000n));
-    expect(decode(absolute.transaction).inputs.length).toBe(8);
-    expect(await paidOf(absolute.transaction)).toBe(4000n);
-    expect(outputValues(absolute.transaction)).toEqual([3000n, 1000n]);
+    const relayFeePerByte = Config.RelayFeePerByte;
+    Config.RelayFeePerByte = 2;
+    try {
+      const response = await bob.send(
+        new SendRequest({ cashaddr: alice.cashaddr!, value: 3000n }),
+        { broadcast: false },
+      );
+      const inputCount = decode(response.transaction).inputs.length;
+      const { paid, expected } = await feeCheck(
+        bob,
+        response.transaction,
+        coins,
+      );
+      expect(paid).toBe(expected);
+      expect(expected).toBeGreaterThan(BigInt(response.transaction.length));
+      expect(outputValues(response.transaction)).toEqual([
+        3000n,
+        BigInt(inputCount) * 1000n - 3000n - paid,
+      ]);
+    } finally {
+      Config.RelayFeePerByte = relayFeePerByte;
+    }
   });
 
   test("sendMax spends every coin, also those worth less than their input fee", async () => {
@@ -336,37 +330,5 @@ describe("a send's outputs", () => {
         (output) => output.token?.amount,
       ),
     ).toEqual([10n, undefined]);
-  });
-});
-
-describe("sendMax takes the fee options send takes", () => {
-  test("a fee strategy prices the max and the transaction", async () => {
-    const { alice, bob, coins } = await fund(5, 1000n);
-    const sendMax = (options: { fee: FeeFn }) =>
-      bob.sendMax(alice.cashaddr!, { ...options, broadcast: false });
-    const maxOf = (options: { fee: FeeFn }) =>
-      bob.getMaxAmountToSend({ outputCount: 1, options });
-
-    // the max was priced at the relay rate, and sendMax threw "Amount required was not met"
-    const absolute = { fee: feeAbsolute(1500n) };
-    expect(await maxOf(absolute)).toBe(3500n);
-    const absoluteSend = await sendMax(absolute);
-    expect(inputOutpoints(absoluteSend.transaction)).toEqual(
-      outpointsOf(coins),
-    );
-    expect(outputValues(absoluteSend.transaction)).toEqual([3500n]);
-
-    const perByte = { fee: feeFixedPerByte(3) };
-    const perByteMax = await maxOf(perByte);
-    const perByteSend = await sendMax(perByte);
-    expect(outputValues(perByteSend.transaction)).toEqual([perByteMax]);
-    expect(5000n - perByteMax).toBeGreaterThanOrEqual(
-      BigInt((perByteSend.transaction.length / 2) * 3),
-    );
-
-    // below the relay rate, which the selection's relay-rate estimate could not fit in the coins
-    const low = { fee: feeAbsolute(200n) };
-    expect(await maxOf(low)).toBe(4800n);
-    expect(outputValues((await sendMax(low)).transaction)).toEqual([4800n]);
   });
 });

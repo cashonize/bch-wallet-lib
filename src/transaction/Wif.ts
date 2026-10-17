@@ -18,10 +18,7 @@ import { DUST_UTXO_THRESHOLD, MAX_OP_RETURN_BYTES } from "../constant.js";
 import { NFTCapability, TokenI, Utxo } from "../interface.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
-import {
-  InsufficientFundsError,
-  InvalidRequestError,
-} from "../wallet/errors.js";
+import { InsufficientFundsError } from "../wallet/errors.js";
 import {
   OpReturnData,
   SendRequest,
@@ -32,11 +29,6 @@ import {
   checkTokenConservation,
   TokenBurnAllowance,
 } from "./tokenConservation.js";
-import type {
-  CoinSelectionFn,
-  FeeFn,
-  OutputOrderingFn,
-} from "./coin-control/types.js";
 
 export const placeholderPrivateKey =
   "0000000000000000000000000000000000000000000000000000000000000001";
@@ -51,7 +43,6 @@ export async function buildP2pkhNonHdTransaction({
   discardChange = false,
   changeAddress = "",
   walletCache,
-  outputOrdering,
   tokenBurns,
   tokenChange = [],
 }: {
@@ -62,7 +53,6 @@ export async function buildP2pkhNonHdTransaction({
   discardChange?: boolean;
   changeAddress?: string;
   walletCache: WalletCache;
-  outputOrdering?: OutputOrderingFn;
   /** when given, refuse outputs that destroy more of the inputs' tokens than this allows */
   tokenBurns?: TokenBurnAllowance;
   /** the token change, placed after the outputs */
@@ -93,10 +83,7 @@ export async function buildP2pkhNonHdTransaction({
     throw amountNotMetError(paidOutAmount + fee, inputAmount);
   }
 
-  // Append change as a SendRequest so user-supplied output ordering can act on
-  // the complete output list. Skipped when discardChange is set or the change
-  // would be below the dust threshold.
-  let changeOutputIndex: number | undefined;
+  // the change goes last, unless discardChange is set or it would be dust
   if (discardChange !== true && changeAmount > DUST_UTXO_THRESHOLD) {
     if (!changeAddress) {
       changeAddress = inputs[0].address;
@@ -105,11 +92,6 @@ export async function buildP2pkhNonHdTransaction({
       ...outputs,
       new SendRequest({ cashaddr: changeAddress, value: BigInt(changeAmount) }),
     ];
-    changeOutputIndex = outputs.length - 1;
-  }
-
-  if (outputOrdering) {
-    outputs = outputOrdering({ outputs, changeOutputIndex });
   }
 
   const lockedOutputs = await prepareOutputs(outputs);
@@ -332,14 +314,9 @@ export function prepareTokenOutputs(request: TokenSendRequest): Output {
 export async function getSuitableUtxos(
   inputs: Utxo[],
   amountRequired: bigint | undefined,
-  bestHeight: number,
   requests: SendRequestType[],
   ensureUtxos: Utxo[] = [],
   tokenOperation: "send" | "genesis" | "mint" | "burn" = "send",
-  coinControl: {
-    coinSelection?: CoinSelectionFn;
-    feePerByte?: number;
-  } = {},
 ): Promise<Utxo[]> {
   const utxoKey = (u: Utxo) => `${u.txid}:${u.vout}`;
   const selectedSet = new Set<string>();
@@ -510,63 +487,20 @@ export async function getSuitableUtxos(
     }
   }
 
-  // Find plain BCH outputs to top up the transaction. When the caller
-  // supplied a coin-selection strategy we delegate to it; otherwise we run
-  // the historical natural-order accumulation inline so the coin-control
-  // module isn't pulled into the bundle of consumers that never opt in.
+  // top up with plain BCH coins in the pool's order
   const alreadyEnough =
     amountRequired !== undefined && amountAvailable >= amountRequired;
   if (!alreadyEnough) {
-    if (coinControl.coinSelection) {
-      const available: Utxo[] = [];
-      for (let i = 0; i < inputs.length; i++) {
-        if (usedIndices.has(i)) continue;
-        const u = inputs[i];
-        if (u.token) continue;
-        const key = utxoKey(u);
-        if (selectedSet.has(key)) continue;
-        available.push(u);
-      }
-      const stillNeeded =
-        amountRequired === undefined
-          ? BigInt(Number.MAX_SAFE_INTEGER)
-          : amountRequired - amountAvailable;
-      const picked = coinControl.coinSelection({
-        available,
-        pinned: [...suitableUtxos],
-        amountRequired: stillNeeded,
-        feePerByte: coinControl.feePerByte ?? 1,
-        bestHeight,
-      });
-      // a pick counts only as one of the coins it was given, so that it cannot add a coin from
-      // outside the spend's pool, e.g. an excluded one, or a copy with other satoshis
-      const availableByKey = new Map(available.map((u) => [utxoKey(u), u]));
-      for (const u of picked) {
-        const key = utxoKey(u);
-        if (selectedSet.has(key)) continue;
-        const coin = availableByKey.get(key);
-        if (!coin) {
-          throw new InvalidRequestError(
-            `coinSelection picked a coin it was not given: ${key}`,
-            { field: "coinSelection", value: key },
-          );
-        }
-        selectedSet.add(key);
-        suitableUtxos.push(coin);
-        amountAvailable += BigInt(coin.satoshis);
-      }
-    } else {
-      for (let i = 0; i < inputs.length; i++) {
-        if (amountRequired && amountAvailable > amountRequired) break;
-        if (usedIndices.has(i)) continue;
-        const u = inputs[i];
-        if (u.token) continue;
-        const key = utxoKey(u);
-        if (selectedSet.has(key)) continue;
-        selectedSet.add(key);
-        suitableUtxos.push(u);
-        amountAvailable += BigInt(u.satoshis);
-      }
+    for (let i = 0; i < inputs.length; i++) {
+      if (amountRequired && amountAvailable > amountRequired) break;
+      if (usedIndices.has(i)) continue;
+      const u = inputs[i];
+      if (u.token) continue;
+      const key = utxoKey(u);
+      if (selectedSet.has(key)) continue;
+      selectedSet.add(key);
+      suitableUtxos.push(u);
+      amountAvailable += BigInt(u.satoshis);
     }
   }
 
@@ -790,14 +724,12 @@ export async function getFeeAmountSimple({
   sendRequests,
   relayFeePerByteInSatoshi,
   discardChange,
-  fee: feeStrategy,
 }: {
   utxos: Utxo[];
   sendRequests: Array<SendRequest | TokenSendRequest | OpReturnData>;
   sourceAddress: string;
   relayFeePerByteInSatoshi: number;
   discardChange?: boolean;
-  fee?: FeeFn;
 }): Promise<bigint> {
   const inputSizeP2pkh = 148;
   const outputSizeP2pkh = 34;
@@ -837,12 +769,6 @@ export async function getFeeAmountSimple({
     (discardChange ? 0 : outputSizeP2pkh);
   const txSizeBytes = inputTotalSize + outputTotalSize + 16;
 
-  if (feeStrategy) {
-    return feeStrategy({
-      txSizeBytes,
-      relayFeePerByte: relayFeePerByteInSatoshi,
-    });
-  }
   return BigInt(Math.ceil(txSizeBytes * relayFeePerByteInSatoshi));
 }
 
@@ -853,7 +779,6 @@ export async function getFeeAmount({
   relayFeePerByteInSatoshi,
   discardChange,
   walletCache,
-  fee: feeStrategy,
   tokenChange,
 }: {
   utxos: Utxo[];
@@ -862,7 +787,6 @@ export async function getFeeAmount({
   relayFeePerByteInSatoshi: number;
   discardChange?: boolean;
   walletCache: WalletCache;
-  fee?: FeeFn;
   tokenChange?: TokenSendRequest[];
 }) {
   // build transaction
@@ -878,13 +802,6 @@ export async function getFeeAmount({
       walletCache,
       tokenChange,
     });
-
-    if (feeStrategy) {
-      return feeStrategy({
-        txSizeBytes: draftTransaction.length,
-        relayFeePerByte: relayFeePerByteInSatoshi,
-      });
-    }
     return BigInt(
       Math.ceil(draftTransaction.length * relayFeePerByteInSatoshi + 1),
     );
@@ -905,7 +822,6 @@ export async function buildEncodedTransaction({
   discardChange = false,
   changeAddress = "",
   walletCache,
-  outputOrdering,
   tokenBurns,
   tokenChange,
 }: {
@@ -916,7 +832,6 @@ export async function buildEncodedTransaction({
   discardChange?: boolean;
   changeAddress?: string;
   walletCache: WalletCache;
-  outputOrdering?: OutputOrderingFn;
   tokenBurns?: TokenBurnAllowance;
   tokenChange?: TokenSendRequest[];
 }) {
@@ -928,7 +843,6 @@ export async function buildEncodedTransaction({
     discardChange,
     changeAddress,
     walletCache,
-    outputOrdering,
     tokenBurns,
     tokenChange,
   });

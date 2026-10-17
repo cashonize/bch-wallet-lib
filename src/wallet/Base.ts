@@ -38,7 +38,7 @@ import {
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { runCallback, waitOnWatch } from "../util/watch.js";
-import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
+import { WalletTypeEnum } from "./enum.js";
 import {
   InsufficientFundsError,
   InvalidRequestError,
@@ -877,13 +877,6 @@ export class BaseWallet implements WalletI {
       this._slpSemiAware = true;
     }
 
-    let feePaidBy;
-    if (params.options && params.options.feePaidBy) {
-      feePaidBy = params.options.feePaidBy;
-    } else {
-      feePaidBy = FeePaidByEnum.change;
-    }
-
     // get inputs
     const { pool, ensureUtxos } = await this.getSpendPool(params.options);
     // a BCH sweep has no token change to price, so a token coin's satoshis would go to the miners
@@ -915,7 +908,6 @@ export class BaseWallet implements WalletI {
       utxos,
       undefined,
       bestHeight,
-      feePaidBy,
       sendRequests,
     );
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
@@ -924,7 +916,6 @@ export class BaseWallet implements WalletI {
       sendRequests: sendRequests,
       sourceAddress: placeholderCashAddr,
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      feePaidBy: feePaidBy,
       fee: params.options?.fee,
     });
     const spendableAmount = sumUtxoValue(fundingUtxos);
@@ -1019,13 +1010,7 @@ export class BaseWallet implements WalletI {
       ...ensureUtxos,
       ...utxos.filter((utxo) => !ensureIds.has(toUtxoId(utxo))),
     ];
-    // the max has the fee taken off already, so the output pays it whatever feePaidBy says
-    options = {
-      ...options,
-      utxoIds: inputs,
-      ensureUtxos: inputs,
-      feePaidBy: FeePaidByEnum.change,
-    };
+    options = { ...options, utxoIds: inputs, ensureUtxos: inputs };
 
     const sendRequest = new SendRequest({
       cashaddr: cashaddr,
@@ -1101,13 +1086,6 @@ export class BaseWallet implements WalletI {
       this._slpSemiAware = true;
     }
 
-    let feePaidBy: FeePaidByEnum;
-    if (options?.feePaidBy) {
-      feePaidBy = options.feePaidBy;
-    } else {
-      feePaidBy = FeePaidByEnum.change;
-    }
-
     let changeAddress: string;
     if (options?.changeAddress) {
       changeAddress = options.changeAddress;
@@ -1169,7 +1147,6 @@ export class BaseWallet implements WalletI {
         utxos,
         0n,
         bestHeight,
-        feePaidBy,
         selectionRequests,
         options?.ensureUtxos || [],
         options?.tokenOperation,
@@ -1207,7 +1184,6 @@ export class BaseWallet implements WalletI {
         sendRequests: allOutputs,
         sourceAddress: this.getDepositAddress(),
         relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-        feePaidBy: feePaidBy,
         fee: options?.fee,
       });
     // Each round selects for the last round's estimate plus `margin` until the selected coins
@@ -1218,7 +1194,6 @@ export class BaseWallet implements WalletI {
           utxos,
           spendAmount + feeEstimate + margin,
           bestHeight,
-          feePaidBy,
           selectionRequests,
           ensureUtxos,
           options?.tokenOperation,
@@ -1247,7 +1222,6 @@ export class BaseWallet implements WalletI {
             sendRequests: sendRequests,
             sourceAddress: this.getDepositAddress(),
             relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-            feePaidBy: feePaidBy,
             walletCache: this.walletCache,
             fee: options?.fee,
             tokenChange,
@@ -1271,17 +1245,14 @@ export class BaseWallet implements WalletI {
         e instanceof InsufficientFundsError ? e["data"] : undefined;
       if (!shortfall) throw e;
       // The last round's estimate leaves out the fee of the coins the selection could not reach;
-      // what is needed is told from the fee of spending every coin it could use. With another
-      // feePaidBy the outputs pay the fee, so the coins need to cover only them.
-      let required = spendAmount;
-      if (feePaidBy === FeePaidByEnum.change) {
-        const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
-        const usable = [
-          ...ensureUtxos,
-          ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
-        ];
-        required += await estimateFee(usable);
-      }
+      // what is needed is told from the fee of spending every coin it could use.
+      const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
+      const usable = [
+        ...ensureUtxos,
+        ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
+      ];
+      const usableFee = await estimateFee(usable);
+      let required = spendAmount + usableFee;
       if (shortfall.required > required) required = shortfall.required;
       throw amountNotMetError(required, shortfall.available);
     }
@@ -1289,12 +1260,7 @@ export class BaseWallet implements WalletI {
     // dust is kept when it pays the miners less, the extra inputs' fees included.
     const change =
       sumUtxoValue(settled.selectedUtxos) - spendAmount - settled.fee;
-    if (
-      feePaidBy === FeePaidByEnum.change &&
-      !discardChange &&
-      change > 0n &&
-      change <= DUST_UTXO_THRESHOLD
-    ) {
+    if (!discardChange && change > 0n && change <= DUST_UTXO_THRESHOLD) {
       try {
         const withChange = await settle(DUST_UTXO_THRESHOLD + 1n, settled.fee);
         if (withChange.fee < settled.fee + change) settled = withChange;
@@ -1321,7 +1287,6 @@ export class BaseWallet implements WalletI {
       signingKey: privateKey ?? placeholderPrivateKeyBin,
       fee,
       discardChange,
-      feePaidBy,
       changeAddress,
       walletCache: this.walletCache,
       outputOrdering: options?.outputOrdering,

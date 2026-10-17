@@ -18,7 +18,6 @@ import { DUST_UTXO_THRESHOLD, MAX_OP_RETURN_BYTES } from "../constant.js";
 import { NFTCapability, TokenI, Utxo } from "../interface.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
-import { FeePaidByEnum } from "../wallet/enum.js";
 import {
   InsufficientFundsError,
   InvalidRequestError,
@@ -29,7 +28,6 @@ import {
   SendRequestType,
   TokenSendRequest,
 } from "../wallet/model.js";
-import { allocateFee } from "./allocateFee.js";
 import {
   checkTokenConservation,
   TokenBurnAllowance,
@@ -51,7 +49,6 @@ export async function buildP2pkhNonHdTransaction({
   signingKey,
   fee = 0n,
   discardChange = false,
-  feePaidBy = FeePaidByEnum.change,
   changeAddress = "",
   walletCache,
   outputOrdering,
@@ -63,13 +60,12 @@ export async function buildP2pkhNonHdTransaction({
   signingKey?: Uint8Array;
   fee?: bigint;
   discardChange?: boolean;
-  feePaidBy?: FeePaidByEnum;
   changeAddress?: string;
   walletCache: WalletCache;
   outputOrdering?: OutputOrderingFn;
   /** when given, refuse outputs that destroy more of the inputs' tokens than this allows */
   tokenBurns?: TokenBurnAllowance;
-  /** the token change, placed after the outputs; a feePaidBy option never charges it */
+  /** the token change, placed after the outputs */
   tokenChange?: TokenSendRequest[];
 }) {
   if (!signingKey) {
@@ -84,23 +80,15 @@ export async function buildP2pkhNonHdTransaction({
   const compiler = walletTemplateToCompilerBch(template);
   const inputAmount = sumUtxoValue(inputs);
 
-  const sendAmount = await sumSendRequestAmounts([...outputs, ...tokenChange]);
-
-  // The fee comes out of the change or, per feePaidBy, out of the outputs, so the change is
-  // what is left after both; allocateFee is given the change before the fee.
-  const changeBeforeFee = BigInt(inputAmount) - BigInt(sendAmount);
-  if (feePaidBy !== FeePaidByEnum.change) {
-    outputs = allocateFee(outputs, fee, feePaidBy, changeBeforeFee);
-  }
   outputs = [...outputs, ...tokenChange];
-  // as allocateFee refuses in every mode: a transaction of nothing but BCH change sends nothing
+  // a transaction of nothing but BCH change sends nothing
   if (outputs.length === 0) {
-    throw Error("Attempted to specify feePaidBy on zero length SendRequest");
+    throw Error("A send needs at least one output");
   }
   const paidOutAmount = await sumSendRequestAmounts(outputs);
+  // the fee comes out of the change
   const changeAmount =
     BigInt(inputAmount) - BigInt(paidOutAmount) - BigInt(fee);
-  // the inputs must cover the outputs and the fee, whoever pays it
   if (changeAmount < 0n) {
     throw amountNotMetError(paidOutAmount + fee, inputAmount);
   }
@@ -345,7 +333,6 @@ export async function getSuitableUtxos(
   inputs: Utxo[],
   amountRequired: bigint | undefined,
   bestHeight: number,
-  feePaidBy: FeePaidByEnum,
   requests: SendRequestType[],
   ensureUtxos: Utxo[] = [],
   tokenOperation: "send" | "genesis" | "mint" | "burn" = "send",
@@ -583,11 +570,6 @@ export async function getSuitableUtxos(
     }
   }
 
-  // if the fee is split with a feePaidBy option, skip checking change.
-  if (feePaidBy && feePaidBy != FeePaidByEnum.change) {
-    return suitableUtxos;
-  }
-
   // If the amount needed is met, or no amount is given, return
   if (typeof amountRequired === "undefined") {
     return suitableUtxos;
@@ -814,7 +796,6 @@ export async function getFeeAmountSimple({
   sendRequests: Array<SendRequest | TokenSendRequest | OpReturnData>;
   sourceAddress: string;
   relayFeePerByteInSatoshi: number;
-  feePaidBy: FeePaidByEnum;
   discardChange?: boolean;
   fee?: FeeFn;
 }): Promise<bigint> {
@@ -870,7 +851,6 @@ export async function getFeeAmount({
   utxos,
   sendRequests,
   relayFeePerByteInSatoshi,
-  feePaidBy,
   discardChange,
   walletCache,
   fee: feeStrategy,
@@ -880,7 +860,6 @@ export async function getFeeAmount({
   sendRequests: Array<SendRequest | TokenSendRequest | OpReturnData>;
   sourceAddress: string;
   relayFeePerByteInSatoshi: number;
-  feePaidBy: FeePaidByEnum;
   discardChange?: boolean;
   walletCache: WalletCache;
   fee?: FeeFn;
@@ -895,7 +874,6 @@ export async function getFeeAmount({
       signingKey: placeholderPrivateKeyBin,
       fee: 0n, //DUST_UTXO_THRESHOLD
       discardChange: discardChange ?? false,
-      feePaidBy,
       changeAddress: "",
       walletCache,
       tokenChange,
@@ -925,7 +903,6 @@ export async function buildEncodedTransaction({
   signingKey,
   fee = 0n,
   discardChange = false,
-  feePaidBy = FeePaidByEnum.change,
   changeAddress = "",
   walletCache,
   outputOrdering,
@@ -937,7 +914,6 @@ export async function buildEncodedTransaction({
   signingKey: Uint8Array;
   fee?: bigint;
   discardChange?: boolean;
-  feePaidBy?: FeePaidByEnum;
   changeAddress?: string;
   walletCache: WalletCache;
   outputOrdering?: OutputOrderingFn;
@@ -950,7 +926,6 @@ export async function buildEncodedTransaction({
     signingKey,
     fee,
     discardChange,
-    feePaidBy,
     changeAddress,
     walletCache,
     outputOrdering,

@@ -14,7 +14,6 @@ import {
   TokenMintRequest,
   TokenSendRequest,
 } from "./model.js";
-import { FeePaidByEnum } from "./enum.js";
 import { InsufficientFundsError } from "./errors.js";
 import { RegTestWallet } from "./Wif.js";
 
@@ -318,94 +317,15 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     );
     expect(error.data).toEqual({ required: 5824n, available: 5000n });
   });
-
-  test("an output that pays the fee is not charged it a second time on the change", async () => {
-    const { alice, bob, coins } = await fund(10, 1000n);
-    const send = (value: bigint, feePaidBy: FeePaidByEnum, utxoIds?: Utxo[]) =>
-      bob.send(new SendRequest({ cashaddr: alice.cashaddr!, value }), {
-        feePaidBy,
-        utxoIds,
-        broadcast: false,
-      });
-
-    // the change took the fee off as well, leaving 75 sats that went to the miners
-    const first = await send(5000n, FeePaidByEnum.first);
-    expect(decode(first.transaction).inputs.length).toBe(6);
-    const { paid, expected } = await feeCheck(bob, first.transaction, coins);
-    expect(paid).toBe(expected);
-    expect(outputValues(first.transaction)).toEqual([5000n - expected, 1000n]);
-
-    // the 500 sats of change pay part of the fee and the output the rest; the output paid the
-    // whole fee and the 391 sats the change fell short by again
-    const changeThenFirst = await send(
-      5500n,
-      FeePaidByEnum.changeThenFirst,
-      coins.slice(0, 6),
-    );
-    const changeThenFirstFee = await feeCheck(
-      bob,
-      changeThenFirst.transaction,
-      coins,
-    );
-    expect(changeThenFirstFee.paid).toBe(changeThenFirstFee.expected);
-    expect(outputValues(changeThenFirst.transaction)).toEqual([
-      6000n - changeThenFirstFee.expected,
-    ]);
-  });
 });
 
-describe("an output that pays the fee is checked as the change is", () => {
-  const send = (
-    bob: RegTestWallet,
-    requests: Array<SendRequest | TokenSendRequest>,
-    feePaidBy: FeePaidByEnum,
-    utxoIds?: Utxo[],
-  ) => bob.send(requests, { feePaidBy, utxoIds, broadcast: false });
-
-  test("outputs the coins cannot cover are refused, the fee paid by an output or not", async () => {
-    const { alice, bob } = await fund(5, 1000n);
-    const request = new SendRequest({
-      cashaddr: alice.cashaddr!,
-      value: 5200n,
-    });
-    // the outputs alone took 200 sats more than the inputs held, which the network refuses;
-    // with the change first, the output paid those 200 sats on top of the fee
-    for (const feePaidBy of [
-      FeePaidByEnum.first,
-      FeePaidByEnum.last,
-      FeePaidByEnum.any,
-      FeePaidByEnum.changeThenFirst,
-      FeePaidByEnum.changeThenLast,
-      FeePaidByEnum.changeThenAny,
-    ]) {
-      const error = await send(bob, [request], feePaidBy).catch((e) => e);
-      expect(error).toBeInstanceOf(InsufficientFundsError);
-      expect(error.asset).toBe("bch");
-      expect(error.data).toEqual({ required: 5200n, available: 5000n });
-    }
-  });
-
-  test("an output the fee would take below dust is refused", async () => {
-    const { alice, bob } = await fund(5, 1000n);
-    // three inputs cost more than the 300 sats the output holds above dust
-    for (const feePaidBy of [FeePaidByEnum.first, FeePaidByEnum.last]) {
-      const error = await send(
-        bob,
-        [new SendRequest({ cashaddr: alice.cashaddr!, value: 846n })],
-        feePaidBy,
-        (await bob.getUtxos()).slice(0, 3),
-      ).catch((e) => e);
-      expect(error).toBeInstanceOf(InsufficientFundsError);
-      expect(error.asset).toBe("bch");
-    }
-  });
-
+describe("a send's outputs", () => {
   test("a send of no outputs is refused, though a token change of ensureUtxos is one", async () => {
     const { bob } = await fund(1, 20000n);
     const genesis = await bob.tokenGenesis({ amount: 10n });
     const tokenCoins = await bob.getTokenUtxos(genesis.categories[0]);
     await expect(bob.send([], { broadcast: false })).rejects.toThrow(
-      "Attempted to specify feePaidBy on zero length SendRequest",
+      "A send needs at least one output",
     );
     const response = await bob.send([], {
       ensureUtxos: tokenCoins,
@@ -416,42 +336,6 @@ describe("an output that pays the fee is checked as the change is", () => {
         (output) => output.token?.amount,
       ),
     ).toEqual([10n, undefined]);
-  });
-
-  test("the last requested output pays the fee, not the token change after it", async () => {
-    const { alice, bob } = await fund(1, 20000n);
-    const genesis = await bob.tokenGenesis({ amount: 10n });
-    const category = genesis.categories[0];
-    const coins = await bob.getUtxos();
-
-    // the token change came last and was asked to pay: "Cannot specify fee to be paid by
-    // TokenSendRequest"
-    const response = await send(
-      bob,
-      [
-        new TokenSendRequest({
-          cashaddr: alice.tokenaddr!,
-          category,
-          amount: 4n,
-        }),
-        new SendRequest({ cashaddr: alice.cashaddr!, value: 5000n }),
-      ],
-      FeePaidByEnum.last,
-    );
-    const { paid, expected } = await feeCheck(bob, response.transaction, coins);
-    expect(paid).toBe(expected);
-    const inputValue = coins.reduce((sum, coin) => sum + coin.satoshis, 0n);
-    expect(decode(response.transaction).inputs.length).toBe(coins.length);
-    const outputs = decode(response.transaction).outputs.map((output) => ({
-      value: output.valueSatoshis,
-      amount: output.token?.amount,
-    }));
-    expect(outputs).toEqual([
-      { value: 1000n, amount: 4n },
-      { value: 5000n - expected, amount: undefined },
-      { value: 1000n, amount: 6n },
-      { value: inputValue - 7000n, amount: undefined },
-    ]);
   });
 });
 
@@ -484,22 +368,5 @@ describe("sendMax takes the fee options send takes", () => {
     const low = { fee: feeAbsolute(200n) };
     expect(await maxOf(low)).toBe(4800n);
     expect(outputValues((await sendMax(low)).transaction)).toEqual([4800n]);
-  });
-
-  test("an output paying the fee is not charged it on top of the max", async () => {
-    const { alice, bob } = await fund(5, 1000n);
-    const max = await bob.getMaxAmountToSend();
-    for (const feePaidBy of [
-      FeePaidByEnum.first,
-      FeePaidByEnum.last,
-      FeePaidByEnum.any,
-      FeePaidByEnum.changeThenFirst,
-    ]) {
-      const response = await bob.sendMax(alice.cashaddr!, {
-        feePaidBy,
-        broadcast: false,
-      });
-      expect(outputValues(response.transaction)).toEqual([max]);
-    }
   });
 });

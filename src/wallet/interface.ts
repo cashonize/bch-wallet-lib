@@ -8,7 +8,7 @@ import type {
   OutputOrderingFn,
 } from "../transaction/coin-control/types.js";
 import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
-import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
+import { WalletTypeEnum } from "./enum.js";
 
 export interface WalletRequestI {
   name?: string;
@@ -57,7 +57,6 @@ export interface SendRequestOptionsI {
   slpSemiAware?: boolean; // a flag which requires an utxo to have more than 546 sats to be spendable and counted in the balance
   queryBalance?: boolean;
   awaitTransactionPropagation?: boolean;
-  feePaidBy?: FeePaidByEnum;
   checkTokenQuantities?: boolean; // true
   tokenOperation?: "send" | "genesis" | "mint" | "burn"; // undefined. internal use only
   tokenBurns?: TokenBurnAllowance; // undefined. internal use only: what a token operation may burn

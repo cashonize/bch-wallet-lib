@@ -56,7 +56,7 @@ export {
 } from "./wallet/Base.js";
 // wallet utilities, models, interfaces - barrel re-export is fine (small items)
 export * from "./wallet/createWallet.js";
-export { FeePaidByEnum, WalletTypeEnum } from "./wallet/enum.js";
+export { WalletTypeEnum } from "./wallet/enum.js";
 export {
   InsufficientFundsError,
   InvalidRequestError,

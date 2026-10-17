@@ -6,11 +6,8 @@ import {
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { NFTCapability } from "../interface.js";
 import { BroadcastRejectedError } from "../network/errors.js";
-import { allocateFee } from "../transaction/allocateFee.js";
-import { asSendRequestObject } from "../util/asSendRequestObject.js";
-import { FeePaidByEnum } from "./enum.js";
 import { InsufficientFundsError } from "./errors.js";
-import { SendRequest, TokenSendRequest } from "./model.js";
+import { TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
 
 beforeAll(async () => {
@@ -114,16 +111,6 @@ describe("insufficient funds are an InsufficientFundsError", () => {
     const error = await shortfall(alice.tokenBurn({ category, amount: 1n }));
     expect(error.message).toMatch(/^You do not have suitable token UTXOs/);
     expect(error.category).toBe(category);
-  });
-
-  test("outputs that cannot pay the fee", () => {
-    const requests = asSendRequestObject([
-      ["alice", 2000n],
-      ["bob", 2000n],
-    ]) as SendRequest[];
-    expect(() => allocateFee(requests, 7000n, FeePaidByEnum.any, 0n)).toThrow(
-      InsufficientFundsError,
-    );
   });
 });
 

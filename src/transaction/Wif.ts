@@ -459,6 +459,31 @@ export async function getSuitableUtxos(
           break;
         }
         if (foundCapability) continue;
+
+        // with no mutable NFT left to claim, a minting coin of the category backs the new mutable
+        // NFT, and comes back as change as a minting coin spent for another request does
+        if (isMutable) {
+          for (let i = 0; i < inputs.length; i++) {
+            if (usedIndices.has(i)) continue;
+            const val = inputs[i];
+            if (
+              val.token?.category !== request.category ||
+              val.token?.nft?.capability !== NFTCapability.minting
+            ) {
+              continue;
+            }
+            const key = utxoKey(val);
+            if (selectedSet.has(key)) continue;
+
+            selectedSet.add(key);
+            suitableUtxos.push(val);
+            usedIndices.add(i);
+            amountAvailable += BigInt(val.satoshis);
+            foundCapability = true;
+            break;
+          }
+          if (foundCapability) continue;
+        }
       }
 
       // handle splitting the hybrid (FT+NFT) token into its parts

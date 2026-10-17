@@ -2025,7 +2025,30 @@ describe("NFT requests by capability", () => {
     expect(await getNftTokenBalance(bob, category)).toBe(1);
   });
 
-  test("more mutable NFT requests than mutable NFTs throw before anything is built", async () => {
+  test("more mutable NFT requests than mutable NFTs throw before anything is built, without the minting NFT", async () => {
+    const { bob, category } = await twoMutable();
+    const carol = await RegTestWallet.newRandom();
+    const request = (commitment: string) =>
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment },
+      });
+    const baton = (await getTokenUtxos(bob, category)).find(
+      (utxo) => utxo.token!.nft?.capability === NFTCapability.minting,
+    )!;
+
+    const error = await bob
+      .send([request("aa"), request("bb"), request("cc")], {
+        excludeUtxoIds: [baton],
+      })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(InsufficientFundsError);
+    expect((error as InsufficientFundsError).category).toBe(category);
+  });
+
+  test("a mutable NFT request beyond the mutable NFTs is backed by the minting NFT", async () => {
     const { bob, category } = await twoMutable();
     const carol = await RegTestWallet.newRandom();
     const request = (commitment: string) =>
@@ -2035,12 +2058,41 @@ describe("NFT requests by capability", () => {
         nft: { capability: NFTCapability.mutable, commitment },
       });
 
-    const error = await bob
-      .send([request("aa"), request("bb"), request("cc")])
-      .catch((e: unknown) => e);
+    const response = await bob.send(
+      [request("aa"), request("bb"), request("cc")],
+      { broadcast: false },
+    );
 
-    expect(error).toBeInstanceOf(InsufficientFundsError);
-    expect((error as InsufficientFundsError).category).toBe(category);
+    // the two mutable NFTs are claimed first, and the third request spends the minting NFT; a
+    // spent minting NFT backs every new mutable NFT, so the mutable inputs come back as they were
+    const tokenInputs = (await getTokenUtxos(bob, category)).map(
+      (utxo) => `${utxo.txid}:${utxo.vout}`,
+    );
+    expect(inputOutpoints(response.transaction)).toEqual(
+      expect.arrayContaining(tokenInputs),
+    );
+    const tokens = decodeOutputs(response.transaction)
+      .filter((output) => output.token)
+      .map((output) => output.token);
+    const nft = (capability: NFTCapability, commitment: string) => ({
+      category,
+      amount: 0n,
+      nft: { capability, commitment },
+    });
+    expect(tokens.slice(0, 3)).toEqual(
+      ["aa", "bb", "cc"].map((commitment) =>
+        nft(NFTCapability.mutable, commitment),
+      ),
+    );
+    expect(
+      tokens
+        .slice(3)
+        .sort((a, b) => a!.nft!.commitment.localeCompare(b!.nft!.commitment)),
+    ).toEqual([
+      nft(NFTCapability.minting, ""),
+      nft(NFTCapability.mutable, "01"),
+      nft(NFTCapability.mutable, "02"),
+    ]);
   });
 });
 
@@ -2149,6 +2201,43 @@ describe("NFT requests backed by a minting NFT", () => {
           category,
           amount: 0n,
           nft: { capability: NFTCapability.minting, commitment: "aa" },
+        },
+      },
+    ]);
+  });
+
+  test("a new mutable NFT is backed by the only minting NFT, which comes back as change", async () => {
+    const { bob, category } = await oneBaton();
+    const carol = await RegTestWallet.newRandom();
+    const [baton] = await getTokenUtxos(bob, category);
+
+    const response = await bob.send(
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "bb" },
+      }),
+    );
+
+    expect(inputOutpoints(response.transaction)).toContain(outpoint(baton));
+    const outputs = decodeOutputs(response.transaction);
+    expect(outputs.filter((output) => output.token)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.mutable, commitment: "bb" },
+        },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: baton.satoshis,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.minting, commitment: "" },
         },
       },
     ]);

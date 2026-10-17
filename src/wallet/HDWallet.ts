@@ -587,7 +587,10 @@ export class HDWallet extends BaseWallet {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
-        callback(pendingStatus, pendingAddress);
+        // the Base watchers read in their callback, which rejects while discovery is failed
+        new Promise<void>((resolve) =>
+          resolve(callback(pendingStatus, pendingAddress)),
+        ).catch(() => {});
       }, debounce);
     };
 

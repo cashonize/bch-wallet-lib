@@ -169,6 +169,24 @@ describe("a subscription that cannot be made", () => {
     expect(provider.subscriptions).toBe(80);
     await wallet.stop();
   }, 5000);
+
+  test("settles a watcher's read while a gap extension has failed", async () => {
+    const wallet = await RegTestHDWallet.newRandom();
+    await wallet.watchPromise;
+    const balances: bigint[] = [];
+    await wallet.watchBalance((balance) => balances.push(balance));
+
+    // the used address moves the gap, and its extension cannot subscribe
+    refuse.address = true;
+    await fund(wallet.getDepositAddress(15), 1_000n);
+    await delay(300);
+    expect(balances).toEqual([]);
+    await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
+
+    refuse.address = false;
+    expect(await wallet.getBalance()).toBe(1_000n);
+    await wallet.stop();
+  }, 5000);
 });
 
 describe("a fetch that fails during HD address discovery", () => {

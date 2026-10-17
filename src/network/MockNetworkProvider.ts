@@ -13,7 +13,7 @@ export interface MockNetworkProviderOptions {
 // @paryonusd/mem-cash, a dev dependency
 
 /**
- * In-memory NetworkProvider backed by @paryonusd/mem-cash.
+ * An ElectrumNetworkProvider on an in-memory chain, @paryonusd/mem-cash.
  *
  * Inherits all Electrum protocol handling from ElectrumNetworkProvider.
  * Only adds test helpers (addUtxo, mine, setBlockHeight, reset) and

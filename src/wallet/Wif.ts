@@ -39,9 +39,6 @@ export interface WalletOptions {
   address?: string;
 }
 
-/**
- * Class to manage a bitcoin cash wallet.
- */
 // what a walletId of each type this class loads lacks when its value part is empty; a named
 // id's empty name is fromNamedId's to refuse
 const missingValueMessages: Record<string, string> = {
@@ -52,6 +49,9 @@ const missingValueMessages: Record<string, string> = {
   [WalletTypeEnum.Watch]: "address is required to create a watch-only wallet",
 };
 
+/**
+ * Class to manage a bitcoin cash wallet.
+ */
 export class Wallet extends WatchWallet {
   readonly derivationPath: string = Config.DefaultParentDerivationPath + "/0/0";
   readonly mnemonic!: string;

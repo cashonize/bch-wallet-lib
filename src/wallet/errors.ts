@@ -1,3 +1,4 @@
+import type { NetworkType } from "../enum.js";
 import type { NFTCapability } from "../interface.js";
 
 /**
@@ -98,5 +99,32 @@ export class TokenBurnError extends Error {
     this.category = category;
     this.amount = amount;
     this.nft = nft;
+  }
+}
+
+/**
+ * Thrown when a WIF cannot be used: it is not a WIF (`reason` `"malformed"`), it encodes an
+ * uncompressed key, whose funds are on an address this library does not derive
+ * (`"uncompressed"`), or it is for another network than the wallet's (`"network"`). `network`
+ * is the WIF's own network when it could be read. The WIF is never in the error.
+ */
+export class InvalidWifError extends Error {
+  readonly reason: "malformed" | "uncompressed" | "network";
+  readonly network?: NetworkType.Mainnet | NetworkType.Testnet;
+
+  constructor(
+    message: string,
+    {
+      reason,
+      network,
+    }: {
+      reason: "malformed" | "uncompressed" | "network";
+      network?: NetworkType.Mainnet | NetworkType.Testnet;
+    },
+  ) {
+    super(message);
+    this.name = "InvalidWifError";
+    this.reason = reason;
+    this.network = network;
   }
 }

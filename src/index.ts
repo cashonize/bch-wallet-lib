@@ -47,6 +47,7 @@ export type {
 } from "./rate/ExchangeRate.js";
 export { convert } from "./util/convert.js";
 // utils
+export { decodeWif } from "./util/decodeWif.js";
 export { decodeHeader } from "./util/header.js";
 // wallets - explicit exports for tree-shaking
 export {
@@ -58,6 +59,7 @@ export {
 export {
   InsufficientFundsError,
   InvalidRequestError,
+  InvalidWifError,
   TokenBurnError,
   UtxoNotAvailableError,
 } from "./wallet/errors.js";

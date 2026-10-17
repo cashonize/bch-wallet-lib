@@ -13,7 +13,7 @@ import {
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
-import { decodeWif } from "../util/decodeWif.js";
+import { wifPrivateKey } from "../util/decodeWif.js";
 import { WalletTypeEnum } from "./enum.js";
 import { SendRequestOptionsI, WalletFactoryOptions } from "./interface.js";
 import {
@@ -118,7 +118,7 @@ export class Wallet extends WatchWallet {
     if (privateKeyWif?.length) {
       if (!this.privateKey) {
         // @ts-ignore
-        this.privateKey = decodeWif(privateKeyWif, this.network);
+        this.privateKey = wifPrivateKey(privateKeyWif, this.network);
       }
 
       // @ts-ignore

@@ -57,6 +57,8 @@ test("the entry exports the utilities Cashonize uses and none of the removed one
   for (const name of [
     "convert",
     "decodeHeader",
+    "decodeWif",
+    "InvalidWifError",
     "ExchangeRate",
     "getAddrsByXpubKey",
     "getXPubKey",

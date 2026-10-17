@@ -6,13 +6,16 @@ import {
   utf8ToBin,
 } from "@bitauth/libauth";
 import { bchParam } from "../chain.js";
+import { NetworkType } from "../enum.js";
 import { DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
 import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { BroadcastRejectedError } from "../network/errors.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
+import { decodeWif } from "../util/decodeWif.js";
 import { delay } from "../util/delay.js";
 import { convert } from "../util/index.js";
+import { InvalidWifError } from "./errors.js";
 import { CancelFn } from "./interface.js";
 import {
   OpReturnData,
@@ -321,6 +324,73 @@ describe(`WIF validation`, () => {
         encodeBase58AddressFormat(0x80, new Uint8Array(31).fill(0x11)),
       ),
     ).rejects.toThrow("Invalid WIF: unexpected payload length");
+  });
+
+  test("Each refused WIF throws InvalidWifError with its reason", async () => {
+    const cases: [
+      () => Promise<unknown>,
+      { reason: string; network?: NetworkType },
+    ][] = [
+      [
+        () => Wallet.fromWIF(testnetWif),
+        { reason: "network", network: NetworkType.Testnet },
+      ],
+      [
+        () => TestNetWallet.fromWIF(mainnetWif),
+        { reason: "network", network: NetworkType.Mainnet },
+      ],
+      [
+        () => Wallet.fromWIF(encodePrivateKeyWif(key, "mainnetUncompressed")),
+        { reason: "uncompressed", network: NetworkType.Mainnet },
+      ],
+      [
+        () =>
+          RegTestWallet.fromWIF(
+            encodePrivateKeyWif(key, "testnetUncompressed"),
+          ),
+        { reason: "uncompressed", network: NetworkType.Testnet },
+      ],
+      [
+        () => Wallet.fromWIF(mainnetWif.slice(0, -1) + "x"),
+        { reason: "malformed", network: undefined },
+      ],
+      [
+        () => Wallet.fromWIF("1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH"),
+        { reason: "malformed", network: undefined },
+      ],
+    ];
+    for (const [fn, fields] of cases) {
+      const error = await errorOf(fn);
+      expect(error).toBeInstanceOf(InvalidWifError);
+      expect(error).toMatchObject({ name: "InvalidWifError", ...fields });
+    }
+  });
+
+  test("decodeWif tells the network and the key form without judging them", () => {
+    expect(decodeWif(mainnetWif)).toEqual({
+      network: NetworkType.Mainnet,
+      compressed: true,
+      privateKey: key,
+    });
+    expect(decodeWif(testnetWif)).toEqual({
+      network: NetworkType.Testnet,
+      compressed: true,
+      privateKey: key,
+    });
+    expect(decodeWif(encodePrivateKeyWif(key, "testnetUncompressed"))).toEqual({
+      network: NetworkType.Testnet,
+      compressed: false,
+      privateKey: key,
+    });
+    // a Base58 address is valid base58check but no WIF, as is a payload of the wrong length
+    for (const notWif of [
+      "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH",
+      encodeBase58AddressFormat(0x80, new Uint8Array(31).fill(0x11)),
+      "bch-wif:" + mainnetWif,
+      "",
+    ]) {
+      expect(() => decodeWif(notWif)).toThrow(InvalidWifError);
+    }
   });
 
   test("Compressed WIFs still decode to the key's address", async () => {

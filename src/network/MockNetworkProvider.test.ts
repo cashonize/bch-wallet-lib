@@ -133,8 +133,8 @@ describe("MockNetworkProvider", () => {
     const height = await provider.getBlockHeight();
     expect(height).toBe(300);
 
-    const header = await provider.getHeader(300);
-    expect((header as any).height).toBe(300);
+    const headers = await provider.getHeaders([300]);
+    expect(headers.get(300)?.height).toBe(300);
   });
 
   test("should reset state", async () => {

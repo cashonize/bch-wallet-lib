@@ -370,14 +370,9 @@ describe("data written by mainnet-js 3.1.7", () => {
       );
       expect(verbose.hex).toBe(transactions[cached.verboseTransaction]);
       expect(verbose).not.toHaveProperty("fetchHeight");
-      expect(await provider.getHeader(cached.header)).toEqual({
-        height: cached.header,
-        hex: expect.any(String),
-      });
       const headers = await provider.getHeaders(cached.verboseHeaders);
       for (const height of cached.verboseHeaders) {
         expect(headers.get(height)?.height).toBe(height);
-        expect((await provider.getHeader(height, true)).height).toBe(height);
       }
       // only the tip subscription, which the verbose transaction's confirmations need
       expect(

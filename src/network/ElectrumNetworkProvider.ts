@@ -100,30 +100,6 @@ export default class ElectrumNetworkProvider {
     return BigInt(result.confirmed) + BigInt(result.unconfirmed);
   }
 
-  async getHeader(
-    height: number,
-    verbose: boolean = false,
-  ): Promise<HeaderI | HexHeaderI> {
-    const key = `header-${this.network}-${height}-${verbose}`;
-
-    if (this.cache) {
-      const cached = await this.cache.getItem(key);
-      if (cached) {
-        return verbose ? decodeHeader(JSON.parse(cached)) : JSON.parse(cached);
-      }
-    }
-
-    const result = await this.performRequest<HexHeaderI>(
-      "blockchain.header.get",
-      [height],
-    );
-    if (this.cache) {
-      await this.cache.setItem(key, JSON.stringify(result));
-    }
-
-    return verbose ? decodeHeader(result) : result;
-  }
-
   /**
    * Batch retrieve raw transactions by their hashes.
    * @param hashes Array of transaction hashes.

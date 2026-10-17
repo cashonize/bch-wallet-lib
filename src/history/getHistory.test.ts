@@ -491,7 +491,7 @@ describe("history load", () => {
     expect(counts.maxInFlight).toBe(10);
   });
 
-  test("a single-address wallet's history takes its balance from the utxos", async () => {
+  test("a single-address wallet's history and balance come from its own snapshot", async () => {
     const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
     const bob = await RegTestWallet.newRandom();
     await miner.send({ cashaddr: bob.cashaddr!, value: 20000n });
@@ -503,7 +503,13 @@ describe("history load", () => {
     const history = await bob.getHistory();
     restore();
 
+    // neither is read from the server again, where it may have moved on since the wallet's update
     expect(counts.byMethod["blockchain.address.get_balance"]).toBeUndefined();
+    expect(counts.byMethod["blockchain.address.get_history"]).toBeUndefined();
+    const rawHistory = await bob.getRawHistory();
+    expect(history.map((tx) => tx.hash).sort()).toEqual(
+      rawHistory.map((tx) => tx.tx_hash).sort(),
+    );
     const serverUtxos = await utxosFromServer(provider, [bob.cashaddr!]);
     expect(history[0].balance).toBe(Number(sumUtxoValue(serverUtxos)));
     const reference = await getHistory({
@@ -512,6 +518,16 @@ describe("history load", () => {
       utxos: serverUtxos,
     });
     expect(history).toEqual(reference);
+
+    // the wallet keeps its raw history in the server's order, oldest first; `count` keeps the newest
+    const newest = await getHistory({
+      addresses: [bob.cashaddr!],
+      provider,
+      count: 1,
+      rawHistory,
+      utxos: serverUtxos,
+    });
+    expect(newest.map((tx) => tx.hash)).toEqual([history[0].hash]);
   });
 
   test("the history of several addresses is read per address, bounded", async () => {

@@ -49,7 +49,7 @@ export const getHistory = async ({
   provider: ElectrumNetworkProvider;
   /** The newest `count` items; default -1, all of them */
   count?: number;
-  /** @internal The wallet's raw history of `addresses`, instead of fetching it */
+  /** @internal The wallet's raw history of `addresses`, instead of fetching it; from the same snapshot as `utxos` */
   rawHistory?: TxI[];
   /** The current utxos of `addresses`, token coins included, which the running balances are backfilled from */
   utxos: Utxo[];
@@ -64,34 +64,35 @@ export const getHistory = async ({
     count = 1e10;
   }
 
-  let history: TxI[];
+  let allHistory: TxI[];
   if (rawHistory) {
-    history = rawHistory.slice(0, count);
+    allHistory = rawHistory;
   } else {
-    const allHistory = (
+    allHistory = (
       await mapConcurrent(addresses, concurrency, (address) =>
         provider.getHistory(address),
       )
     ).flat();
-
-    // Dedup using Set instead of O(N^2) findIndex
-    const seen = new Set<string>();
-    const deduped: TxI[] = [];
-    for (const item of allHistory) {
-      if (!seen.has(item.tx_hash)) {
-        seen.add(item.tx_hash);
-        deduped.push(item);
-      }
-    }
-
-    history = deduped
-      .sort((a, b) =>
-        a.height <= 0 || b.height <= 0
-          ? a.height - b.height
-          : b.height - a.height,
-      )
-      .slice(0, count);
   }
+
+  // Dedup using Set instead of O(N^2) findIndex
+  const seen = new Set<string>();
+  const deduped: TxI[] = [];
+  for (const item of allHistory) {
+    if (!seen.has(item.tx_hash)) {
+      seen.add(item.tx_hash);
+      deduped.push(item);
+    }
+  }
+
+  // newest first, so that `count` keeps the newest; a wallet's raw history may be in any order
+  const history = deduped
+    .sort((a, b) =>
+      a.height <= 0 || b.height <= 0
+        ? a.height - b.height
+        : b.height - a.height,
+    )
+    .slice(0, count);
 
   // Collect unique heights for header fetch
   const uniqueHeightsSet = new Set<number>();

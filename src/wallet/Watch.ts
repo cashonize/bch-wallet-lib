@@ -425,10 +425,12 @@ export class WatchWallet extends BaseWallet {
     await this.watched();
     await this.updatePromise;
 
+    // the history and the balance it is backfilled from, from the same update
     return getHistory({
       addresses: [this.cashaddr],
       provider: this.provider,
       count,
+      rawHistory: this.rawHistory,
       utxos: this.utxos,
       concurrency,
     });

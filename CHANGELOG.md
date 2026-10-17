@@ -100,6 +100,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `setProvider`'s documentation says what the caller has to do with the old provider: it stays connected, and the caller disconnects it once `setProvider` resolves if nothing else uses it.
 - A rate source that answers something other than a positive finite number (`NaN`, `0`, a negative number, a missing field) counts as a failed fetch: `ExchangeRate.getQuote` and the conversions throw an `Error` (or, with `staleOnError`, return the last known rate as `stale: true`), and the answer is never cached. Before, such a rate was returned as fresh and cached for its TTL, so a conversion gave `NaN` or divided by zero. A cached `rate-<symbol>` entry holding such a rate is ignored and fetched again.
 - The `concurrency` options (`getHistory` and the wallets' `getHistory`, `getRawTransactions`, `getHeaders`) accept `Infinity`, for no limit; it was refused with a `RangeError`. Anything else but a positive integer is still refused.
+- A single-address or watch-only wallet's `getHistory` reads its transactions from the wallet's own history, the same update its utxos and so the running balances come from, instead of fetching the address's history from the server again; a transaction the server knew of but the wallet had not processed yet could show up with a balance that did not count it. The history matches `getRawHistory()`, and the next address notification brings it up to date. Nothing changes for a caller.
 
 ### Removed
 

@@ -9,9 +9,10 @@ import {
   ElectrumNetworkProvider,
   InsufficientFundsError,
   NetworkType,
-  RegTestWallet,
   setGlobalProvider,
 } from "bch-wallet-lib";
+// off the entry, as the regtest classes are test infrastructure; the same built modules
+import { RegTestWallet } from "../dist/wallet/Wif.js";
 
 // the funded test wallet
 process.loadEnvFile(fileURLToPath(new URL("../.env.regtest", import.meta.url)));

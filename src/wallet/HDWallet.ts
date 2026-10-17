@@ -308,10 +308,10 @@ export class HDWallet extends BaseWallet {
   /// Stops the wallet from watching for address changes
   /// After calling this method, the wallet will no longer update and is considered defunct
   public override async stop() {
-    const cancels: Array<Promise<void> | void> = [super.stop()];
+    const cancels: Promise<void>[] = [super.stop()];
     for (const branch of this.branches) {
       for (const fn of this.watchCancels.get(branch) ?? []) {
-        cancels.push(fn?.());
+        if (fn) cancels.push(fn());
       }
     }
     await Promise.all(cancels);

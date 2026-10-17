@@ -276,7 +276,7 @@ describe("Test message Signing and Verification", () => {
     // Private key: cPPQTpVuL8WPDcH9wuhjVcbdKtRX3j4Q4uV2qnL8hbtyW2ugMAcn
     const addr = "bchtest:qrynfuk47hxqj4sgpt62v3yzzpnjw6l2hvnc4p897k";
 
-    const result = await SignedMessage.verify(longMsg, ecSig, addr);
+    const result = SignedMessage.verify(longMsg, ecSig, addr);
     expect(result.valid).toBe(true);
     expect(result.details?.publicKeyHashMatch).toBe(true);
   });

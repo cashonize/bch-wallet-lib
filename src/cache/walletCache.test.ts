@@ -9,7 +9,12 @@ import {
 
 import { Config } from "../config.js";
 import { MemoryCache } from "./MemoryCache.js";
-import { HDWalletCache, parse, stringify } from "./walletCache.js";
+import {
+  HDWalletCache,
+  parse,
+  SingleAddressWalletCache,
+  stringify,
+} from "./walletCache.js";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -167,6 +172,54 @@ describe("HDWalletCache", () => {
       expect(Object.keys(stored.walletCache)).toEqual([`${walletId}-0/0`]);
       expect(stored.indexCache).toBeUndefined();
     } finally {
+      Config.UseMemoryCache = prevMemory;
+    }
+  });
+});
+
+describe("a debounced write that fails", () => {
+  test("is not left as an unhandled rejection", async () => {
+    const prevMemory = Config.UseMemoryCache;
+    Config.UseMemoryCache = true;
+    let writes = 0;
+    // not vi.spyOn: a spy handles the promises it returns, which would hide the rejection
+    const failWrites = (cache: object) => {
+      (cache as any)._storage.setItem = async () => {
+        writes++;
+        throw new Error("storage full");
+      };
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
+      const hd = new HDWalletCache(
+        "wallet-write-fails",
+        node,
+        "bitcoincash",
+        1,
+      );
+      await hd.init();
+      failWrites(hd);
+      const entry = hd.getByPath("0/0");
+      hd.setStatusAndUtxos(entry.address, "status", [], [], 0);
+
+      const single = new SingleAddressWalletCache(
+        "single-write-fails",
+        entry.address,
+        entry.tokenAddress,
+        1,
+      );
+      await single.init();
+      failWrites(single);
+      single.setStatusAndUtxos(entry.address, "status", [], [], 0);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(writes).toBe(2);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
       Config.UseMemoryCache = prevMemory;
     }
   });

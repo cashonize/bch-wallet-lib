@@ -1,7 +1,7 @@
 import { getWeakRandomInt } from "./randomInt.js";
 
 test("get a random int", async () => {
-  let zero = await getWeakRandomInt(0);
+  let zero = getWeakRandomInt(0);
   expect(zero).toBe(0);
 });
 

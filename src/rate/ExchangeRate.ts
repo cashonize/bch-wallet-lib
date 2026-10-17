@@ -59,7 +59,8 @@ export class ExchangeRate {
       // else fall through
     }
     let freshRate = await getRateFromExchange(symbol);
-    cache.setRate(symbol, freshRate, getTtl());
+    // a rate that cannot be cached (e.g. storage full) is still returned
+    cache.setRate(symbol, freshRate, getTtl()).catch(() => {});
     return freshRate;
   }
 

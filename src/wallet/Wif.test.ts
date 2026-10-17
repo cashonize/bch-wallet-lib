@@ -614,15 +614,10 @@ describe(`Wallet subscriptions`, () => {
   });
 
   test("Create two wallets, get balances concurrently", async () => {
-    let balance1 = 999n;
-    let balance2 = 666n;
-    Wallet.newRandom().then((wallet) =>
-      wallet.getBalance().then((balance) => (balance1 = balance)),
-    );
-    Wallet.newRandom().then((wallet) =>
-      wallet.getBalance().then((balance) => (balance2 = balance)),
-    );
-    await delay(5000);
+    const [balance1, balance2] = await Promise.all([
+      Wallet.newRandom().then((wallet) => wallet.getBalance()),
+      Wallet.newRandom().then((wallet) => wallet.getBalance()),
+    ]);
     expect(balance1).toBe(0n);
     expect(balance2).toBe(0n);
   });
@@ -640,7 +635,7 @@ describe(`Wallet subscriptions`, () => {
     const aliceWallet = await RegTestWallet.fromId(aliceWif);
     const bobWallet = await RegTestWallet.newRandom();
 
-    aliceWallet.send([
+    const sent = aliceWallet.send([
       {
         cashaddr: bobWallet.cashaddr!,
         value: 2000n,
@@ -649,6 +644,7 @@ describe(`Wallet subscriptions`, () => {
 
     let balance = await bobWallet.waitForBalance(2000n);
     expect(balance).toBeGreaterThanOrEqual(2000n);
+    await sent;
     await bobWallet.sendMax(aliceWallet.cashaddr!);
   });
 
@@ -656,7 +652,7 @@ describe(`Wallet subscriptions`, () => {
     const aliceId = `wif:regtest:${process.env.PRIVATE_WIF!}`;
     const alice = await RegTestWallet.fromId(aliceId);
     const bob = await RegTestWallet.newRandom();
-    alice.send([
+    const sent = alice.send([
       {
         cashaddr: bob.cashaddr!,
         value: 2000n,
@@ -666,6 +662,7 @@ describe(`Wallet subscriptions`, () => {
     let cancel = await bob.watchBalance(() => {});
     let balance = await bob.waitForBalance(2000n);
     expect(balance).toBe(2000n);
+    await sent;
     await cancel();
   });
 

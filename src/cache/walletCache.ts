@@ -147,10 +147,10 @@ export class SingleAddressWalletCache implements WalletCacheI {
     } else {
       this.debounceTimer = setTimeout(() => {
         this.debounceTimer = undefined;
-        this._storage?.setItem(
-          `walletCache-${this.walletId}`,
-          stringify(this.entry),
-        );
+        // a failed write is redone by the next one, which writes the whole entry
+        this._storage
+          ?.setItem(`walletCache-${this.walletId}`, stringify(this.entry))
+          .catch(() => {});
       }, this.writeTimeout);
     }
   }
@@ -179,7 +179,7 @@ export class SingleAddressWalletCache implements WalletCacheI {
     this.entry.utxos = utxos;
     this.entry.rawHistory = rawHistory;
     this.entry.lastConfirmedHeight = lastConfirmedHeight;
-    this.persist();
+    void this.persist(); // debounced, only schedules the write
   }
 }
 
@@ -249,7 +249,8 @@ export class HDWalletCache implements WalletCacheI {
     } else {
       this.debounceTimer = setTimeout(() => {
         this.debounceTimer = undefined;
-        write();
+        // a failed write is redone by the next one, which writes the whole cache
+        write()?.catch(() => {});
       }, this.writeTimeout);
     }
   }
@@ -303,7 +304,7 @@ export class HDWalletCache implements WalletCacheI {
 
       this.pathCache[address] = relativePath;
 
-      this.persist();
+      void this.persist(); // debounced, only schedules the write
     }
 
     return this.walletCache[id];
@@ -343,6 +344,6 @@ export class HDWalletCache implements WalletCacheI {
     this.walletCache[key].rawHistory = rawHistory;
     this.walletCache[key].lastConfirmedHeight = lastConfirmedHeight;
 
-    this.persist();
+    void this.persist(); // debounced, only schedules the write
   }
 }

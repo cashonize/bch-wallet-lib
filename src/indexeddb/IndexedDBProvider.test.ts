@@ -24,7 +24,7 @@ test("Store and retrieve a Regtest wallet", async () => {
   let w2 = await db.getWallet("dave");
   expect(w1.name).toBe(w2!.name);
   expect(w1.toString()).toBe(w2!.wallet);
-  db.close();
+  await db.close();
 });
 
 test("Store and replace a Regtest wallet", async () => {
@@ -52,7 +52,7 @@ test("Store and replace a Regtest wallet", async () => {
   let w6 = await db.getWallet("storereplace_nonexistent")!;
   expect(w6).toBe(undefined);
 
-  db.close();
+  await db.close();
 });
 
 test("Store and retrieve a Testnet wallet", async () => {
@@ -66,7 +66,7 @@ test("Store and retrieve a Testnet wallet", async () => {
   let w2 = await db.getWallet("dave");
   expect(w1.name).toBe(w2!.name);
   expect(w1.toString()).toBe(w2!.wallet);
-  db.close();
+  await db.close();
 });
 
 test("Store and retrieve a Mainnet wallet", async () => {
@@ -79,7 +79,7 @@ test("Store and retrieve a Mainnet wallet", async () => {
   let w2 = await db.getWallet(w1.name);
   expect(w1.name).toBe(w2!.name);
   expect(w1.toString()).toBe(w2!.wallet);
-  db.close();
+  await db.close();
 });
 
 test("Store and retrieve a Mainnet wallet", async () => {

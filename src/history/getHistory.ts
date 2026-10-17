@@ -92,7 +92,9 @@ export const getHistory = async ({
   // Batch fetch headers and history transactions in parallel
   const historyHashes = history.map((tx) => tx.tx_hash);
   const [headerMap, txHexMap] = await Promise.all([
-    uniqueHeights.length > 0 ? provider.getHeaders(uniqueHeights) : new Map(),
+    uniqueHeights.length > 0
+      ? provider.getHeaders(uniqueHeights)
+      : Promise.resolve(new Map()),
     provider.getRawTransactions(historyHashes),
   ] as const);
 

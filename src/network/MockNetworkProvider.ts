@@ -98,7 +98,7 @@ export async function createMockProvider(): Promise<MockNetworkProvider> {
   let verifier: import("@paryonusd/mem-cash/validation").TxVerifier | undefined;
   try {
     const { createTxVerifier } = await import("@paryonusd/mem-cash/validation");
-    verifier = await createTxVerifier({ vmVersion: "BCH_2026_05" });
+    verifier = createTxVerifier({ vmVersion: "BCH_2026_05" });
   } catch {}
   return new MockNetworkProvider({ indexerConfig: { verifier } });
 }

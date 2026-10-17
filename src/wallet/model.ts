@@ -331,7 +331,6 @@ export class XPubKey {
   }
 
   public async ready() {
-    await this.xPubKey;
     return this.asObject();
   }
 

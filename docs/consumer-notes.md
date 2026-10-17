@@ -67,7 +67,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 
 1. **Choose the server at construction.** Add `fromId(id, {provider})` / `named(name, {provider})`. Today HD discovery starts on the global provider, and Cashonize sets `DefaultProvider.servers` in advance so the wallet's addresses don't leak to a default server. On the migration branch, the sweep's temporary wallets and every wallet before `initializeWallet` still use the global provider. `setProvider` already exists; it leaves the old provider connected, which Cashonize can disconnect itself once `setProvider` resolves (say so in its JSDoc).
 2. **Saving constructs nothing.** `replaceNamed` (and `named` when it creates) constructs the wallet, and construction subscribes: the chipnet copy Cashonize stores of every new wallet subscribes on chipnet, and an import's two copies do the same. Add a store-only `saveNamedWallet(name, walletId, dbName)`. Same rule for `namedExists`, which still constructs a wallet.
-3. **An address scan that constructs no wallets.** Derive path P, indices a..b, plus a history check. This replaces `scanDerivationPaths`, whose ~83 wallets each subscribe as they are constructed and are never stopped (a real leak on the migration branch).
+3. Done on the app side, moved to section 4 (an address scan that constructs no wallets).
 4. **Explicit coins in token operations.**
    - A `genesisInputs` option on `tokenGenesis` that throws if the coin isn't available (today: narrow with `utxoIds` and rely on order).
    - The minting utxo and its return address as options on `tokenMint`.
@@ -111,6 +111,7 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 | `nftMintForm.vue` `isHex`; genesis amount range checks                                                              | `InvalidRequestError` for bad hex, odd length, >128-byte commitments and amounts outside 0..2^63−1                                                                                      |
 | Lowercasing and try/catch around `SignedMessage.verify`; libauth `decodeTransaction` instead of the library's       | `verify` compares decoded addresses and returns `valid: false`; `decodeTransaction` decodes every output and takes a provider                                                           |
 | `spendAuthUtxo`'s narrowing as the only guard against a burn                                                        | `TokenBurnError` refuses a built transaction that burns tokens (the narrowing stays as defense in depth)                                                                                |
+| `scanDerivationPaths` building ~83 wallets that each subscribe and are never stopped                                | The scan derives each path's addresses with `getXPubKey` and `getAddrsByXpubKey` and asks `getNetworkProvider(…).getHistory` directly, building no wallet (Cashonize `e747c92`)         |
 | Comments about `UseLocalStorageCache` and `DefaultCurrency` being unsafe                                            | `UseLocalStorageCache` is removed; the rate fix (#262)                                                                                                                                  |
 
 ## 5. API breaks Cashonize will hit

@@ -1,25 +1,7 @@
 import {
   derivePublicNodeCashaddr,
   getAddrsByXpubKey,
-  getXpubKeyInfo,
 } from "./getAddrsByXpubKey.js";
-
-test("Should decode xpubInfo", async () => {
-  let xpub =
-    "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj";
-  let xpubInfo = getXpubKeyInfo(xpub);
-  expect(xpubInfo.version).toBe("mainnet");
-  expect(xpubInfo.depth).toBe(3);
-  expect(xpubInfo.parentFingerprint).toBe("155bca59");
-  expect(xpubInfo.childNumber).toBe(2147483648);
-  expect(xpubInfo.chain).toBe(
-    "3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219",
-  );
-  expect(xpubInfo.data).toBe(
-    "03774c910fcf07fa96886ea794f0d5caed9afe30b44b83f7e213bb92930e7df4bd",
-  );
-  expect(xpubInfo.fingerprint).toBe("6cc9f252");
-});
 
 test("Should derive cashaddr given xpub and path", async () => {
   // abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about

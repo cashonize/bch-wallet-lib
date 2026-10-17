@@ -462,27 +462,6 @@ export type SendResponseFor<B extends boolean | undefined> = B extends true
   ? UnsignedSendResponse
   : SignedSendResponse;
 
-export class XPubKey {
-  path: string;
-  xPubKey: string;
-
-  constructor({ path, xPubKey }: { path: string; xPubKey: string }) {
-    this.path = path;
-    this.xPubKey = xPubKey;
-  }
-
-  public async ready() {
-    return this.asObject();
-  }
-
-  public asObject() {
-    return {
-      path: this.path,
-      xPubKey: this.xPubKey,
-    };
-  }
-}
-
 export const fromUtxoId = (utxoId: string): UtxoId => {
   const [txid, vout, satoshis] = utxoId.split(DELIMITER);
   return {

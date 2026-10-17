@@ -105,4 +105,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `getWeakRandomInt`, `sanitizeAddress` and `derivedNetwork`, with no replacement.
 - `isValidAddress`, `deriveTokenaddr` and `convertAddress`: use libauth's `decodeCashAddress` and `encodeCashAddress`.
 - `toBch`, `toSat`, `toCurrency` and `convertObject`: use `convert(value, from, to)`, e.g. `convert(Number(sats), "sat", "usd")` for `toCurrency(sats, "usd")`.
+- `getAddrsByXpubKeyObject`: call `getAddrsByXpubKey(xpub, path, count)`.
+- `getXpubKeyInfo` and `getXpubKeyInfoObject`: use libauth's `decodeHdPublicKey`.
+- `deriveHdPaths`, `getXPubKeys`, the `XPubKey` class and the `DERIVATION_PATHS` constant: derive the seed with libauth's `deriveSeedFromBip39Mnemonic(mnemonic)` and call `getXPubKey(seed, path, network)` per path. `getXPubKey` does not refuse the root path `m` as `deriveHdPaths` did.
 - `SignedMessage.verify`'s `publicKey` parameter, with the DER, Schnorr and compact verification it enabled: only a recoverable signature verifies, against the address that signed it. The `raw` and `details` fields of the sign and verify responses go with it, as do the types `SignedMessageRawI`, `SignedMessageDetailsI`, `VerifyMessageDetailsI` and `SignedMessageI`.

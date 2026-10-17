@@ -21,10 +21,10 @@ test("Store and retrieve a Regtest wallet", async () => {
   await db.init();
   let w1 = await RegTestWallet.newRandom();
   w1.name = "dave";
-  await db.addWallet(w1.name, w1.toString());
+  await db.addWallet(w1.name, w1.toDbString());
   let w2 = await db.getWallet("dave");
   expect(w1.name).toBe(w2!.name);
-  expect(w1.toString()).toBe(w2!.wallet);
+  expect(w1.toDbString()).toBe(w2!.wallet);
   await db.close();
 });
 
@@ -63,10 +63,10 @@ test("Store and retrieve a Testnet wallet", async () => {
   // but we want to save it manually in this case
   let w1 = await TestNetWallet.newRandom();
   w1.name = "dave";
-  await db.addWallet(w1.name, w1.toString());
+  await db.addWallet(w1.name, w1.toDbString());
   let w2 = await db.getWallet("dave");
   expect(w1.name).toBe(w2!.name);
-  expect(w1.toString()).toBe(w2!.wallet);
+  expect(w1.toDbString()).toBe(w2!.wallet);
   await db.close();
 });
 
@@ -76,10 +76,10 @@ test("Store and retrieve a Mainnet wallet", async () => {
 
   let w1 = await Wallet.newRandom();
   w1.name = "dave";
-  await db.addWallet(w1.name, w1.toString());
+  await db.addWallet(w1.name, w1.toDbString());
   let w2 = await db.getWallet(w1.name);
   expect(w1.name).toBe(w2!.name);
-  expect(w1.toString()).toBe(w2!.wallet);
+  expect(w1.toDbString()).toBe(w2!.wallet);
   await db.close();
 });
 

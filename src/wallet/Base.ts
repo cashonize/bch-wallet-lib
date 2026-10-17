@@ -46,8 +46,6 @@ import {
   SendRequestOptionsI,
   WaitForTransactionOptions,
   WaitForTransactionResponse,
-  WalletI,
-  WalletInfoI,
   WatchOptions,
 } from "./interface.js";
 import {
@@ -94,14 +92,13 @@ interface TokenOperationOptions extends SendRequestOptionsI {
  * A class to hold features used by all wallets
  * @class  BaseWallet
  */
-export class BaseWallet implements WalletI {
+export class BaseWallet {
   public static StorageProvider?: typeof StorageProvider;
 
   readonly walletCache: WalletCache;
   private _provider: ElectrumNetworkProvider;
   readonly network: NetworkType;
   readonly walletType: WalletTypeEnum;
-  readonly isTestnet: boolean;
   name: string = "";
   private subscriptions = new Set<WalletSubscription>();
   // Bumped by stop(), so that a subscription still being made when it ran is ended, not kept
@@ -115,11 +112,6 @@ export class BaseWallet implements WalletI {
 
   public get networkPrefix(): CashAddressNetworkPrefix {
     return prefixFromNetworkMap[this.network];
-  }
-
-  // Return wallet info
-  public getInfo(): WalletInfoI {
-    throw Error("getInfo not implemented in BaseWallet");
   }
 
   //#region Accessors
@@ -204,7 +196,6 @@ export class BaseWallet implements WalletI {
     this.network = network;
     this.walletType = WalletTypeEnum.Watch;
     this._provider = this.getNetworkProvider(this.network);
-    this.isTestnet = this.network === NetworkType.Mainnet ? false : true;
     this.walletCache = new Map<string, { privateKey: Uint8Array }>();
   }
   //#endregion Constructors
@@ -344,14 +335,6 @@ export class BaseWallet implements WalletI {
    * @throws {Error} if called on BaseWallet
    */
   public toDbString(): string {
-    return `${this.walletType}:${this.network}:${this.getDepositAddress()}`;
-  }
-
-  // Returns the serialized wallet as a string
-  // If storing in a database, set asNamed to false to store secrets
-  // In all other cases, the a named wallet is deserialized from the database
-  //  by the name key
-  public toString() {
     return `${this.walletType}:${this.network}:${this.getDepositAddress()}`;
   }
   //#endregion Serialization

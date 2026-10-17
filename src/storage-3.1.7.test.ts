@@ -264,7 +264,6 @@ describe("data written by mainnet-js 3.1.7", () => {
       expect(wallet.network).toBe(expected.network);
       expect(wallet.name).toBe(expected.name);
       expect(wallet.toDbString()).toBe(expected.toDbString);
-      expect(wallet.toString()).toBe(expected.toString);
       expect(String(await wallet.getBalance())).toBe(expected.balance);
       const utxos = (await wallet.getUtxos()).map(
         (utxo) => `${utxo.txid}:${utxo.vout}`,

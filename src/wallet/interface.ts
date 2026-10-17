@@ -1,46 +1,5 @@
-import { NetworkEnum } from "../enum.js";
 import { Utxo } from "../interface.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
-import { WalletTypeEnum } from "./enum.js";
-
-export interface WalletRequestI {
-  name?: string;
-  network?: string;
-  type?: WalletTypeEnum;
-  platform?: string;
-  walletId?: string;
-}
-
-export interface WalletResponseI {
-  name: string;
-  cashaddr?: string;
-  address?: string;
-  walletId: string;
-  network?: NetworkEnum;
-  wif?: string;
-  privkey?: string;
-  seed?: string;
-  derivationPath?: string;
-  parentDerivationPath?: string;
-}
-
-export interface WalletInfoI {
-  cashaddr?: string;
-  tokenaddr?: string;
-  isTestnet?: boolean;
-  name?: string;
-  network: NetworkEnum;
-  seed?: string;
-  derivationPath?: string;
-  parentDerivationPath?: string;
-  parentXPubKey?: string;
-  publicKey?: string;
-  publicKeyHash?: string;
-  privateKey?: string;
-  privateKeyWif?: string;
-  walletId: string;
-  walletDbEntry: string;
-}
 
 export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
@@ -55,39 +14,6 @@ export interface SendRequestOptionsI {
   tokenOperation?: "send" | "genesis" | "mint" | "burn";
   ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction; they must be in the spend's pool
   broadcast?: boolean; // true
-}
-
-export interface MnemonicI {
-  seed: string;
-  derivationPath: string;
-  parentDerivationPath: string;
-}
-
-export interface WalletI {
-  // Accessors
-  getDepositAddress(): string;
-  getTokenDepositAddress(): string;
-  // getSeed(): MnemonicI;
-  // getNetworkProvider(network: NetworkType): any;
-  // generate(): Promise<this>;
-
-  // Serialization
-  toString(): string;
-  toDbString(): string;
-
-  // Static constructors
-  // fromId(walletId: string): Promise<this>;
-  // fromSeed(mnemonic: string, derivationPath?: string): Promise<this>;
-  // newRandom(name: string, dbName?: string): Promise<this>;
-  // watchOnly(address: string): Promise<this>;
-  // named(name: string, dbName?: string, forceNew?: boolean): Promise<this>;
-  // namedExists(name: string, dbName?: string): Promise<boolean>;
-
-  // Funds
-  getBalance(): Promise<any>;
-  getMaxAmountToSend(params?: any): Promise<any>;
-  send(requests: any, options?: any): Promise<any>;
-  sendMax(address: string, options?: any): Promise<any>;
 }
 
 export interface WaitForTransactionOptions {

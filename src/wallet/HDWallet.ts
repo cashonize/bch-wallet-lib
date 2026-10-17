@@ -34,12 +34,7 @@ import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import {
-  CancelFn,
-  SendRequestOptionsI,
-  WalletInfoI,
-  WatchOptions,
-} from "./interface.js";
+import { CancelFn, SendRequestOptionsI, WatchOptions } from "./interface.js";
 import { OpReturnData, SendRequest, TokenSendRequest } from "./model.js";
 import { networkPrefixError } from "../util/networkPrefixError.js";
 
@@ -559,18 +554,6 @@ export class HDWallet extends BaseWallet {
     return addresses.length;
   }
 
-  // Return wallet info
-  public getInfo(): WalletInfoI {
-    return {
-      isTestnet: this.isTestnet,
-      name: this.name,
-      network: this.network as any,
-      seed: this.mnemonic,
-      walletId: this.toString(),
-      walletDbEntry: this.toDbString(),
-    };
-  }
-
   /// Internal method called when any address status changes
   private notifyWalletWatchers(status: string | null, address: string) {
     for (const callback of this.walletWatchCallbacks) {
@@ -1034,18 +1017,6 @@ export class HDWallet extends BaseWallet {
   }
 
   //#region Serialization
-  // Returns the serialized wallet as a string
-  // If storing in a database, set asNamed to false to store secrets
-  // In all other cases, the a named wallet is deserialized from the database
-  // by the name key
-  public toString() {
-    if (this.name) {
-      return `named:${this.network}:${this.name}`;
-    }
-
-    return this.toDbString();
-  }
-
   /**
    * toDbString - store the serialized version of the wallet in the database, not just the name
    *

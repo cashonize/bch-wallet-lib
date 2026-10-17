@@ -273,26 +273,22 @@ describe("HDWallet", () => {
     const wallet = await HDWallet.fromSeed(
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage",
     );
-    expect(wallet.toString()).toBe(
-      "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0':0:0",
-    );
     expect(wallet.toDbString()).toBe(
       "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0':0:0",
     );
 
     wallet.name = "testWallet";
-    expect(wallet.toString()).toBe("named:mainnet:testWallet");
     expect(wallet.toDbString()).toBe(
       "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0':0:0",
     );
 
     const xPrivWallet = await HDWallet.fromXPriv(expectedXprv);
-    expect(xPrivWallet.toString()).toBe(
+    expect(xPrivWallet.toDbString()).toBe(
       "hd:mainnet:xprv9yHV1hFYFTfNmUpXP2S3XbBTz61AeXKRLx7Eyp4r53DiwadSoMVMJfm5fvtxBc3NFKfozcH42LM66Kb5VaxdLvGk43JWahCegx6iaEJbkB2:0:0",
     );
 
     const xPubWallet = await HDWallet.fromXPub(expectedXpub);
-    expect(xPubWallet.toString()).toBe(
+    expect(xPubWallet.toDbString()).toBe(
       "hd:mainnet:xpub6CGqRCnS5qDfyxtzV3y3tj8CY7qf3z3GiB2qnCUTdNkhpNxbLtobrU5ZXBVPG3rzPcBUpJAoj3K1u1jyDwKuduL71gLPm27Tckc85apgQRr:0:0",
     );
 

@@ -20,7 +20,6 @@ import {
   TokenSendRequest,
   toUtxoId,
 } from "./model.js";
-import { walletFromId } from "./createWallet.js";
 import { HDWallet } from "./HDWallet.js";
 import { WatchWallet } from "./Watch.js";
 import { RegTestWallet, TestNetWallet, Wallet, WifWallet } from "./Wif.js";
@@ -150,8 +149,6 @@ describe(`Test creation of wallet from walletId`, () => {
           wif,
           "Unknown network prefix to a mainnet wallet",
         ],
-        [() => walletFromId(wif), wif, "Unknown wallet type in walletId"],
-        [() => walletFromId(`wif:${wif}`), wif, "Unknown network in walletId"],
       ];
       for (const [fn, secret, message] of cases) {
         const error: Error = await fn().then(
@@ -176,10 +173,6 @@ describe(`Test creation of wallet from walletId`, () => {
         ],
         [
           () => Wallet.fromId("wif:mainnet"),
-          "refusing to create wallet from empty WIF",
-        ],
-        [
-          () => walletFromId("wif:mainnet:"),
           "refusing to create wallet from empty WIF",
         ],
         [
@@ -240,10 +233,6 @@ describe(`Test creation of wallet from walletId`, () => {
         ],
         [
           () => HDWallet.fromId("hd:mainnet::0:0"),
-          "refusing to create wallet from a walletId without a key",
-        ],
-        [
-          () => walletFromId("hd:mainnet:"),
           "refusing to create wallet from a walletId without a key",
         ],
         [

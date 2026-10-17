@@ -14,8 +14,6 @@ import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { Utxo } from "../interface.js";
 import { sumUtxoValue } from "../util/index.js";
-import { createWallet } from "../wallet/createWallet.js";
-import { WalletTypeEnum } from "../wallet/enum.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import { getHistory } from "./getHistory.js";
@@ -43,14 +41,8 @@ test("Should get an address history", async () => {
     throw Error("Attempted to pass an empty WIF");
   } else {
     let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
-    const bob = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
-    const charlie = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
+    const bob = await RegTestWallet.newRandom();
+    const charlie = await RegTestWallet.newRandom();
     let sendResponse = await alice.send([
       {
         cashaddr: bob.cashaddr!,
@@ -120,14 +112,8 @@ test("Should get a history with multi-party sends", async () => {
     throw Error("Attempted to pass an empty WIF");
   } else {
     let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
-    const bob = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
-    const charlie = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
+    const bob = await RegTestWallet.newRandom();
+    const charlie = await RegTestWallet.newRandom();
     let sendResponse = await alice.send([
       {
         cashaddr: bob.cashaddr!,
@@ -196,14 +182,8 @@ test("Should cut results with a longer history to given count", async () => {
     throw Error("Attempted to pass an empty WIF");
   } else {
     let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
-    const bob = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
-    const charlie = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
+    const bob = await RegTestWallet.newRandom();
+    const charlie = await RegTestWallet.newRandom();
     let sendResponse = await alice.send([
       {
         cashaddr: bob.cashaddr!,
@@ -255,14 +235,8 @@ test("Should handle input and fee from many utxos", async () => {
     throw Error("Attempted to pass an empty WIF");
   } else {
     let alice = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF); // insert WIF from #1
-    const bob = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
-    const charlie = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
+    const bob = await RegTestWallet.newRandom();
+    const charlie = await RegTestWallet.newRandom();
     let sendResponse = await alice.send([
       {
         cashaddr: bob.cashaddr!,

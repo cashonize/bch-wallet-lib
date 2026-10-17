@@ -54,8 +54,6 @@ export {
   deleteNamedWallet,
   getNamedWalletId,
 } from "./wallet/Base.js";
-// wallet utilities, models, interfaces - barrel re-export is fine (small items)
-export * from "./wallet/createWallet.js";
 export {
   InsufficientFundsError,
   InvalidRequestError,

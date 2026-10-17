@@ -2,15 +2,11 @@ import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   BaseWallet,
   convert,
-  createWallet,
-  createWalletResponse,
   RegTestWallet,
   SignedMessage,
   TestNetWallet,
   Wallet,
-  walletFromId,
 } from "../index.js";
-import { WalletTypeEnum } from "../wallet/enum.js";
 import { IndexedDBProvider } from "./index.js";
 
 beforeAll(async () => {
@@ -27,24 +23,6 @@ describe("Wallet should function in the browser", () => {
 
   test("Should load module", async () => {
     expect(typeof TestNetWallet).toEqual("function");
-  });
-
-  test("Should create regtest wallet", async () => {
-    const result = await createWalletResponse({
-      name: "Alice's Regtest",
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
-    expect(result.cashaddr!.slice(0, 8)).toBe("bchreg:q");
-  });
-
-  test("Should create testnet wallet", async () => {
-    const result = await createWalletResponse({
-      name: "Alice's TestNet",
-      type: WalletTypeEnum.Wif,
-      network: "testnet",
-    });
-    expect(result.cashaddr!.slice(0, 9)).toBe("bchtest:q");
   });
 
   test("Should throw Error on regtest wif to Testnet", async () => {
@@ -129,7 +107,9 @@ describe("Wallet should function in the browser", () => {
   });
 
   test("Should sign a message and verify it", async () => {
-    const alice = await walletFromId(`wif:regtest:${process.env.PRIVATE_WIF}`);
+    const alice = await RegTestWallet.fromId(
+      `wif:regtest:${process.env.PRIVATE_WIF}`,
+    );
     const result = SignedMessage.sign("test", alice.privateKey!);
     const verifyResult = SignedMessage.verify(
       "test",
@@ -143,12 +123,10 @@ describe("Wallet should function in the browser", () => {
   });
 
   test("Should send to Bob; sendMax all of Bob's funds back", async () => {
-    const alice = await walletFromId(`wif:regtest:${process.env.PRIVATE_WIF}`);
-    const bob = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-      name: "Bob's random wallet",
-    });
+    const alice = await RegTestWallet.fromId(
+      `wif:regtest:${process.env.PRIVATE_WIF}`,
+    );
+    const bob = await RegTestWallet.named("Bob's random wallet");
     await alice.send([{ cashaddr: bob.cashaddr!, value: 3000n }]);
     await bob.sendMax(alice.cashaddr!);
     expect(await bob.getBalance()).toBe(0n);

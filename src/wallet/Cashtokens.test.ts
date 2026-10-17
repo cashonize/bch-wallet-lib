@@ -2180,3 +2180,148 @@ describe("NFT requests by capability", () => {
     expect((error as InsufficientFundsError).category).toBe(category);
   });
 });
+
+describe("NFT requests backed by a minting NFT", () => {
+  const outpoint = (utxo: Utxo) => `${utxo.txid}:${utxo.vout}`;
+
+  // a category whose minting NFT, commitment "", is bob's only token coin
+  const oneBaton = async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+    const genesis = await bob.tokenGenesis({
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    return { alice, bob, category: genesis.categories![0] };
+  };
+
+  test("a new minting NFT next to an exact one does not spend a second minting NFT", async () => {
+    const { bob, category } = await oneBaton();
+    await bob.tokenMint(
+      new TokenMintRequest({
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "ee" },
+      }),
+    );
+    const carol = await RegTestWallet.newRandom();
+    const batons = await bob.getTokenUtxos(category);
+    const keptBaton = batons.find(
+      (utxo) => utxo.token!.nft?.commitment === "ee",
+    )!;
+    expect(batons).toHaveLength(2);
+
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "" },
+      }),
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "01" },
+      }),
+    ]);
+
+    expect(inputOutpoints(response.transaction)).not.toContain(
+      outpoint(keptBaton),
+    );
+    const outputs = decodeOutputs(response.transaction);
+    expect(outputs.filter((output) => output.token)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.minting, commitment: "" },
+        },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.minting, commitment: "01" },
+        },
+      },
+    ]);
+    expect((await bob.getTokenUtxos(category)).map(outpoint)).toEqual([
+      outpoint(keptBaton),
+    ]);
+  });
+
+  test("one minting NFT kept and a second one handed out", async () => {
+    const { alice, bob, category } = await oneBaton();
+
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "" },
+      }),
+      new TokenSendRequest({
+        cashaddr: alice.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "aa" },
+      }),
+    ]);
+
+    const outputs = decodeOutputs(response.transaction);
+    expect(outputs.filter((output) => output.token)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.minting, commitment: "" },
+        },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(alice.tokenaddr!),
+        value: 1000n,
+        token: {
+          category,
+          amount: 0n,
+          nft: { capability: NFTCapability.minting, commitment: "aa" },
+        },
+      },
+    ]);
+  });
+
+  test("a new mutable NFT next to a sent minting NFT does not spend a mutable NFT", async () => {
+    const { bob, category } = await oneBaton();
+    await bob.tokenMint(
+      new TokenMintRequest({
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "01" },
+      }),
+    );
+    const mutableCoin = (await bob.getTokenUtxos(category)).find(
+      (utxo) => utxo.token!.nft?.capability === NFTCapability.mutable,
+    )!;
+
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.minting, commitment: "" },
+      }),
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        nft: { capability: NFTCapability.mutable, commitment: "bb" },
+      }),
+    ]);
+
+    expect(inputOutpoints(response.transaction)).not.toContain(
+      outpoint(mutableCoin),
+    );
+    const commitments = (await bob.getTokenUtxos(category))
+      .map((utxo) => utxo.token!.nft!.commitment)
+      .sort();
+    expect(commitments).toEqual(["", "01", "bb"]);
+  });
+});

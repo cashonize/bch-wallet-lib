@@ -416,21 +416,32 @@ export async function getSuitableUtxos(
         request.nft?.capability === NFTCapability.minting ||
         request.nft?.capability === NFTCapability.mutable
       ) {
-        // The request changes a coin of its capability, which it claims as an NFT request
-        // claims its exact match: two requests never change the same coin
+        // Under consensus a minting input backs any number of NFT outputs of its category, so a
+        // selected minting coin covers the request; a mutable input backs one, so a mutable
+        // request claims its coin as an NFT request claims its exact match
+        const isMutable = request.nft?.capability === NFTCapability.mutable;
         const matchCapability = (val: Utxo) =>
           val.token?.category === request.category &&
           val.token?.nft?.capability === request.nft?.capability;
 
         // Check already-selected suitable utxos first
+        const hasMinting = suitableUtxos.some(
+          (val) =>
+            val.token?.category === request.category &&
+            val.token?.nft?.capability === NFTCapability.minting,
+        );
+        if (hasMinting) continue;
+
         let foundCapability = false;
-        for (const val of suitableUtxos) {
-          if (!matchCapability(val)) continue;
-          const key = utxoKey(val);
-          if (claimedUtxos.has(key)) continue;
-          claimedUtxos.set(key, 1);
-          foundCapability = true;
-          break;
+        if (isMutable) {
+          for (const val of suitableUtxos) {
+            if (!matchCapability(val)) continue;
+            const key = utxoKey(val);
+            if (claimedUtxos.has(key)) continue;
+            claimedUtxos.set(key, 1);
+            foundCapability = true;
+            break;
+          }
         }
         if (foundCapability) continue;
 
@@ -445,7 +456,9 @@ export async function getSuitableUtxos(
           suitableUtxos.push(val);
           usedIndices.add(i);
           amountAvailable += BigInt(val.satoshis);
-          claimedUtxos.set(key, 1);
+          if (isMutable) {
+            claimedUtxos.set(key, 1);
+          }
           foundCapability = true;
           break;
         }

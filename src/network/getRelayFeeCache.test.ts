@@ -48,11 +48,15 @@ test("floors the server's relay fee at 1 sat/byte", async () => {
   expect(await getRelayFeeCache(providerWithRelayFee(0.0001))).toBe(10);
 });
 
-test("caps the server's relay fee at Config.MaxRelayFeePerByte", async () => {
+test("ignores a server relay fee above Config.MaxRelayFeePerByte", async () => {
   const absurd = providerWithRelayFee(0.5);
-  expect(await getRelayFeeCache(absurd)).toBe(10);
-  Config.MaxRelayFeePerByte = 20;
-  expect(await getRelayFeeCache(absurd)).toBe(20);
+  expect(await getRelayFeeCache(absurd)).toBe(1);
+  expect(await getRelayFeeCache(providerWithRelayFee(0.00011))).toBe(1);
+  Config.MaxRelayFeePerByte = 50_000;
+  expect(await getRelayFeeCache(absurd)).toBe(50_000);
+  Config.MaxRelayFeePerByte = 10;
+  Config.RelayFeePerByte = 3;
+  expect(await getRelayFeeCache(absurd)).toBe(3);
 });
 
 test("a Config.MaxRelayFeePerByte below 1 still gives 1 sat/byte", async () => {
@@ -130,9 +134,10 @@ const feeAt = (size: number, feePerByte: number) =>
   BigInt(size * feePerByte + 1);
 
 test("a server reporting an absurd relay fee cannot make a send overpay", async () => {
-  // 0.5 BCH/kB, 50,000 sat/byte: unchecked, this send would pay over 0.1 BCH in fees
+  // 0.5 BCH/kB, 50,000 sat/byte: unchecked it would pay over 0.1 BCH in
+  // fees, and clamped to the cap 10 times the minimum
   const { fee, size } = await sendWithRelayFee(0.5);
-  expect(fee).toBe(feeAt(size, 10));
+  expect(fee).toBe(feeAt(size, 1));
 });
 
 test("a send pays the server's relay fee within the cap", async () => {
@@ -151,6 +156,12 @@ test("a send under a Config.MaxRelayFeePerByte below 1 pays 1 sat/byte", async (
   Config.MaxRelayFeePerByte = 0.5;
   const { fee, size } = await sendWithRelayFee(0.00001);
   expect(fee).toBe(feeAt(size, 1));
+});
+
+test("a send pays Config.RelayFeePerByte over an absurd server relay fee", async () => {
+  Config.RelayFeePerByte = 3;
+  const { fee, size } = await sendWithRelayFee(0.5);
+  expect(fee).toBe(feeAt(size, 3));
 });
 
 test("a send under an invalid fee setting rejects before anything is built", async () => {

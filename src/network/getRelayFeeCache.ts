@@ -20,8 +20,8 @@ function checkFeeSetting(name: string, value: unknown): number {
 }
 
 // The fee rate for a send in satoshis per byte, never below 1: Config.RelayFeePerByte, or the server's
-// blockchain.relayfee capped at Config.MaxRelayFeePerByte, since an unchecked server rate would set what the
-// wallet burns in fees (mainnet-js#254)
+// blockchain.relayfee. A server rate above Config.MaxRelayFeePerByte is ignored rather than capped, since
+// an unchecked or capped server rate would let the server set what the wallet burns in fees (mainnet-js#254)
 export async function getRelayFeeCache(provider: NetworkProvider) {
   const maxFeePerByte = checkFeeSetting(
     "MaxRelayFeePerByte",
@@ -48,9 +48,15 @@ export async function getRelayFeeCache(provider: NetworkProvider) {
     } else {
       console.warn("Couldn't get min relay fee, using default instead");
     }
+    if (serverFeePerByte > maxFeePerByte) {
+      console.warn(
+        `Ignoring the server's relay fee of ${serverFeePerByte} sat/byte, above Config.MaxRelayFeePerByte (${maxFeePerByte})`,
+      );
+    }
     relayFeeCache.set(provider, serverFeePerByte);
   }
 
-  const feePerByte = Math.min(serverFeePerByte, maxFeePerByte);
+  let feePerByte = serverFeePerByte;
+  if (feePerByte > maxFeePerByte) feePerByte = MinRelayFeePerByte;
   return Math.max(feePerByte, MinRelayFeePerByte);
 }

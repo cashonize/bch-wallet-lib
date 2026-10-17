@@ -532,7 +532,8 @@ describe(`Test cashtokens`, () => {
     );
 
     const rawTx = await alice.provider!.getRawTransactionObject(response.txId!);
-    expect(rawTx!.vout.length).toEqual(3);
+    // the OP_RETURN and the BCH change, the burned coin's sats included
+    expect(rawTx!.vout.length).toEqual(2);
     expect(rawTx!.vout[0].scriptPubKey.type).toEqual("nulldata");
     expect(rawTx!.vout[0].scriptPubKey.hex).toContain(
       binToHex(utf8ToBin("burn")),
@@ -2292,5 +2293,113 @@ describe("NFT requests backed by a minting NFT", () => {
         amount: 0n,
       },
     ]);
+  });
+});
+
+describe("tokenBurn inputs and outputs", () => {
+  const fundedWallet = async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 100000n });
+    return bob;
+  };
+
+  const opReturn = {
+    lockingBytecode: expect.stringMatching(/^6a/),
+    value: 0n,
+    token: undefined,
+  };
+
+  // the wallet's coins a transaction spends, every input being one of them
+  const spentCoins = (transactionHex: string, coins: Utxo[]) => {
+    const spent = inputOutpoints(transactionHex);
+    const picked = coins.filter((coin) =>
+      spent.includes(`${coin.txid}:${coin.vout}`),
+    );
+    expect(picked).toHaveLength(spent.length);
+    return picked;
+  };
+
+  const sumValue = (coins: Utxo[]) =>
+    coins.reduce((sum, coin) => sum + coin.satoshis, 0n);
+
+  const feeOf = async (wallet: RegTestWallet, transactionHex: string) => {
+    const rate = await getRelayFeeCache(wallet.provider);
+    return BigInt(Math.ceil((transactionHex.length / 2) * rate + 1));
+  };
+
+  // fungible-only coins of one category, with these amounts and satoshis
+  const fungibleCoins = async (
+    wallet: RegTestWallet,
+    coins: Array<{ amount: bigint; value: bigint }>,
+  ) => {
+    const total = coins.reduce((sum, coin) => sum + coin.amount, 0n);
+    const category = (await wallet.tokenGenesis({ amount: total }))
+      .categories![0];
+    await wallet.send(
+      coins.map(
+        ({ amount, value }) =>
+          new TokenSendRequest({
+            cashaddr: wallet.tokenaddr!,
+            category,
+            amount,
+            value,
+          }),
+      ),
+      { checkTokenQuantities: false },
+    );
+    return category;
+  };
+
+  test("the fungible change holds the standard token output value, not the sats of every matching coin", async () => {
+    const bob = await fundedWallet();
+    const category = await fungibleCoins(bob, [
+      { amount: 60n, value: 5000n },
+      { amount: 40n, value: 3000n },
+    ]);
+    const coins = [...(await bob.getUtxos())];
+
+    const response = await bob.tokenBurn({ category, amount: 10n }, "burn");
+    const spent = spentCoins(response.transaction!, coins);
+    const burned = spent.filter((coin) => coin.token);
+    expect(burned).toHaveLength(1);
+    const fee = await feeOf(bob, response.transaction!);
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      opReturn,
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: burned[0].token!.amount - 10n },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.cashaddr!),
+        value: sumValue(spent) - 1000n - fee,
+        token: undefined,
+      },
+    ]);
+    expect(await getTokenBalance(bob, category)).toBe(90n);
+  });
+
+  test("a burn that takes all the tokens of the coins it spends leaves only BCH change", async () => {
+    const bob = await fundedWallet();
+    const category = await fungibleCoins(bob, [
+      { amount: 40n, value: 5000n },
+      { amount: 40n, value: 3000n },
+    ]);
+    const coins = [...(await bob.getUtxos())];
+
+    const response = await bob.tokenBurn({ category, amount: 40n });
+    const spent = spentCoins(response.transaction!, coins);
+    expect(spent.filter((coin) => coin.token)).toHaveLength(1);
+    const fee = await feeOf(bob, response.transaction!);
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      opReturn,
+      {
+        lockingBytecode: lockingBytecodeOf(bob.cashaddr!),
+        value: sumValue(spent) - fee,
+        token: undefined,
+      },
+    ]);
+    expect(await getTokenBalance(bob, category)).toBe(40n);
   });
 });

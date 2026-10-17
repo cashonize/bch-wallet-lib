@@ -1386,22 +1386,18 @@ export class BaseWallet {
             }
           }
 
+          // no value: the standard 1000 sats of a token output, as a send's fungible change
+          // holds; the spent coins' other sats, and all of them when no tokens are left, go to
+          // the BCH change
           const newAmount = available - fungibleBurnAmount;
-          const cashaddr = toTokenaddr(this.getChangeAddress());
-          const value = tokenUtxos.reduce((a, c) => a + c.satoshis, 0n);
           if (newAmount > 0n) {
             changeSendRequests.push(
               new TokenSendRequest({
-                cashaddr,
+                cashaddr: toTokenaddr(this.getChangeAddress()),
                 category: burnRequest.category,
                 amount: newAmount,
-                value,
               }),
             );
-          } else {
-            // nothing left of the category: the plain output libauth built when it dropped the
-            // empty token prefix of a zero-amount change
-            changeSendRequests.push(new SendRequest({ cashaddr, value }));
           }
         }
       }

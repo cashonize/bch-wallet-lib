@@ -8,7 +8,7 @@ import {
   Opcodes,
 } from "@bitauth/libauth";
 import { countRequests } from "#test/countRequests.js";
-import { mine } from "../mine/index.js";
+import { mine } from "#test/mine.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { Utxo } from "../interface.js";

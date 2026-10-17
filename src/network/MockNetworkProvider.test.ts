@@ -2,7 +2,7 @@ import { randomNFT, randomToken, randomUtxo } from "@paryonusd/mem-cash";
 import { Network } from "../interface.js";
 import { SendRequest, TokenSendRequest } from "../wallet/model.js";
 import { RegTestWallet } from "../wallet/Wif.js";
-import { removeGlobalProvider, setGlobalProvider } from "./index.js";
+import { removeGlobalProvider, setGlobalProvider } from "./default.js";
 import { MockNetworkProvider } from "./MockNetworkProvider.js";
 
 /** Fund a wallet with a UTXO in the mock provider. */

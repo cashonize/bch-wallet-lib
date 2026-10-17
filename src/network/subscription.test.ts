@@ -5,7 +5,7 @@ import {
   createProvider,
   removeGlobalProvider,
   setGlobalProvider,
-} from "./index.js";
+} from "./default.js";
 import type { Unsubscribe } from "./Transport.js";
 import { liveTests } from "#test/live.js";
 

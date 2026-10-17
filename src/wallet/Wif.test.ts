@@ -10,7 +10,7 @@ import {
 } from "@bitauth/libauth";
 import { bchParam } from "../chain.js";
 import { DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
-import { mine } from "../mine/index.js";
+import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { BroadcastRejectedError } from "../network/errors.js";
 import { ElectrumRawTransaction } from "../network/interface.js";

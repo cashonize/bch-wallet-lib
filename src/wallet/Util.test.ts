@@ -8,7 +8,7 @@ import {
 import type { CacheProvider } from "../cache/interface.js";
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
-import { mine } from "../mine/index.js";
+import { mine } from "#test/mine.js";
 import { createMockProvider } from "../network/MockNetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";

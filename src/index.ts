@@ -17,40 +17,24 @@ export type {
 } from "./message/interface.js";
 // message
 export { SignedMessage } from "./message/signed.js";
-// mine
-export { mine } from "./mine/mine.js";
-export {
-  disconnectProviders,
-  initProvider,
-  initProviders,
-} from "./network/Connection.js";
 // provider
 export { DefaultProvider } from "./network/configuration.js";
 // network
 export {
   createProvider,
-  getGlobalProvider,
   getNetworkProvider,
   removeGlobalProvider,
   setGlobalProvider,
 } from "./network/default.js";
 export { default as ElectrumNetworkProvider } from "./network/ElectrumNetworkProvider.js";
 export { BroadcastRejectedError } from "./network/errors.js";
-export {
-  ElectrumTimeoutError,
-  ElectrumTransport,
-} from "./network/ElectrumTransport.js";
-export type {
-  ElectrumServer,
-  ElectrumTransportOptions,
-} from "./network/ElectrumTransport.js";
+export { ElectrumTimeoutError } from "./network/ElectrumTransport.js";
+export type { ElectrumTransportOptions } from "./network/ElectrumTransport.js";
 export type {
   ElectrumRawTransaction,
   ElectrumRawTransactionVinWithValues,
   ElectrumRawTransactionWithInputValues,
 } from "./network/interface.js";
-export type { ConcurrencyOptions } from "./network/ElectrumNetworkProvider.js";
-export type { Transport, Unsubscribe } from "./network/Transport.js";
 // xpub utilities
 export { getAddrsByXpubKey } from "./util/getAddrsByXpubKey.js";
 export { getXPubKey } from "./util/getXPubKey.js";

@@ -1,5 +1,5 @@
 import { Network } from "../interface.js";
-import { mine } from "../mine/index.js";
+import { mine } from "#test/mine.js";
 import { delay } from "../util/delay.js";
 import { getNetworkProvider } from "../network/default.js";
 import { RegTestWallet } from "../wallet/Wif.js";

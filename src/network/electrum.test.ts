@@ -1,6 +1,6 @@
 import { Network } from "../interface.js";
 import { ElectrumTransport } from "./ElectrumTransport.js";
-import { createProvider, getNetworkProvider } from "./index.js";
+import { createProvider, getNetworkProvider } from "./default.js";
 import { liveTests } from "#test/live.js";
 
 test.skipIf(!liveTests)(

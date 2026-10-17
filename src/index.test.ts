@@ -99,3 +99,37 @@ test("SignedMessage has only the static sign and verify", () => {
     "constructor",
   ]);
 });
+
+test("the entry exports the network, history and rate surface Cashonize uses and none of the internals", () => {
+  for (const name of [
+    "BroadcastRejectedError",
+    "createProvider",
+    "DefaultProvider",
+    "ElectrumNetworkProvider",
+    "ElectrumTimeoutError",
+    "ExchangeRate",
+    "getHistory",
+    "getNetworkProvider",
+    "removeGlobalProvider",
+    "setGlobalProvider",
+  ]) {
+    expect(entry).toHaveProperty(name);
+  }
+  for (const name of [
+    "disconnectProviders",
+    "ElectrumTransport",
+    "getExchangeRatePromise",
+    "getGlobalProvider",
+    "getUsdRate",
+    "initProvider",
+    "initProviders",
+    "mine",
+  ]) {
+    expect(entry, name).not.toHaveProperty(name);
+  }
+  expect(Object.getOwnPropertyNames(entry.ExchangeRate)).not.toContain("get");
+  expect(Object.getOwnPropertyNames(entry.ExchangeRate)).toContain("getQuote");
+  for (const name of ["DefaultCurrency", "MaxRelayFeePerByte"]) {
+    expect(entry.Config, name).not.toHaveProperty(name);
+  }
+});

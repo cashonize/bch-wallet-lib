@@ -3,7 +3,7 @@ import { Network, Utxo } from "../../interface.js";
 import {
   removeGlobalProvider,
   setGlobalProvider,
-} from "../../network/index.js";
+} from "../../network/default.js";
 import { MockNetworkProvider } from "../../network/MockNetworkProvider.js";
 import { OpReturnData, SendRequest } from "../../wallet/model.js";
 import { RegTestWallet } from "../../wallet/Wif.js";

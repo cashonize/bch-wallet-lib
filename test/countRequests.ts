@@ -11,11 +11,15 @@ export interface RequestCounts {
 // macrotask, so that requests started together overlap even on the in-memory chain, which
 // answers within the same tick.
 export function countRequests(provider: ElectrumNetworkProvider) {
-  const original = provider.performRequest.bind(provider);
+  // performRequest is protected; the tests wrap it from outside
+  const target = provider as unknown as {
+    performRequest<T>(method: string, parameters?: unknown[]): Promise<T>;
+  };
+  const original = target.performRequest.bind(provider);
   const counts: RequestCounts = { byMethod: {}, maxInFlight: 0 };
   let inFlight = 0;
 
-  provider.performRequest = async <T>(
+  target.performRequest = async <T>(
     method: string,
     parameters?: unknown[],
   ): Promise<T> => {
@@ -34,7 +38,7 @@ export function countRequests(provider: ElectrumNetworkProvider) {
     counts,
     // the class method again
     restore: () => {
-      delete (provider as { performRequest?: unknown }).performRequest;
+      delete (target as { performRequest?: unknown }).performRequest;
     },
   };
 }

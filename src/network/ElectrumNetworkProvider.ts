@@ -40,8 +40,8 @@ type CachedRawTransaction = ElectrumRawTransaction & { fetchHeight: number };
 
 /** The connection to one Electrum server (Fulcrum) that wallets read the chain from and broadcast to. */
 export default class ElectrumNetworkProvider {
-  public transport: Transport;
-  public subscriptions: number = 0;
+  private readonly transport: Transport;
+  private subscriptionCount: number = 0;
   private currentHeight: number = 0;
   private headerCancelFn?: CancelFn;
 
@@ -54,6 +54,11 @@ export default class ElectrumNetworkProvider {
       this._cache = new IndexedDbCache();
     }
     return this._cache;
+  }
+
+  /** @internal The subscriptions open on this provider, for the tests that check none leak. */
+  get subscriptions(): number {
+    return this.subscriptionCount;
   }
 
   constructor(
@@ -446,7 +451,7 @@ export default class ElectrumNetworkProvider {
   }
 
   // subscribe to notifications sent when new block is found, the block header is sent to callback
-  async subscribeToHeaders(
+  private async subscribeToHeaders(
     callback: (header: HexHeaderI) => unknown,
   ): Promise<CancelFn> {
     return this.subscribeRequest("blockchain.headers.subscribe", [], (data) =>
@@ -495,8 +500,11 @@ export default class ElectrumNetworkProvider {
     );
   }
 
-  // Regtest only. Fulcrum's daemon.passthrough takes named params, which electrum-cash cannot send,
-  // so this calls generatetoaddress on the node's own RPC, with the RPC_* settings of the regtest
+  /**
+   * @internal Regtest only. Fulcrum's daemon.passthrough takes named params, which electrum-cash
+   * cannot send, so this calls generatetoaddress on the node's own RPC, with the RPC_* settings of
+   * the regtest.
+   */
   async mine(cashaddr: string, blocks: number): Promise<string[]> {
     const env = typeof process === "undefined" ? {} : process.env;
     const credentials = utf8ToBin(`${env.RPC_USER}:${env.RPC_PASS}`);
@@ -532,7 +540,7 @@ export default class ElectrumNetworkProvider {
     });
   }
 
-  public async performRequest<T = unknown>(
+  protected async performRequest<T = unknown>(
     method: string,
     parameters: unknown[] = [],
   ): Promise<T> {
@@ -540,7 +548,7 @@ export default class ElectrumNetworkProvider {
     return this.transport.request(method, parameters) as Promise<T>;
   }
 
-  public async subscribeRequest(
+  protected async subscribeRequest(
     method: string,
     parameters: unknown[],
     callback: (data: any) => unknown,
@@ -553,11 +561,11 @@ export default class ElectrumNetworkProvider {
       parameters,
       (data) => runCallback(() => callback(data)),
     );
-    this.subscriptions++;
+    this.subscriptionCount++;
 
     return async () => {
       await unsubscribe();
-      this.subscriptions--;
+      this.subscriptionCount--;
     };
   }
 

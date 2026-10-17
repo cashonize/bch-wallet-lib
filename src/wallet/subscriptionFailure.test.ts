@@ -6,6 +6,7 @@ import { delay } from "../util/delay.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWatchWallet } from "./Watch.js";
 import { RegTestWallet } from "./Wif.js";
+import type { CancelFn } from "./interface.js";
 
 // A subscription that cannot be made settles what waits on it instead of leaving it pending
 // (an async promise executor used to swallow the rejection, the hang of mainnet-js#256)
@@ -49,8 +50,12 @@ beforeEach(async () => {
     if (refuse.transaction) throw new Error("subscription refused");
     return subscribeToTransaction(...args);
   };
-  const subscribeToHeaders = provider.subscribeToHeaders.bind(provider);
-  provider.subscribeToHeaders = async (...args) => {
+  // subscribeToHeaders is private; the test wraps it from outside
+  const headers = provider as unknown as {
+    subscribeToHeaders: (...args: unknown[]) => Promise<CancelFn>;
+  };
+  const subscribeToHeaders = headers.subscribeToHeaders.bind(provider);
+  headers.subscribeToHeaders = async (...args) => {
     if (refuse.headers) throw new Error("subscription refused");
     return subscribeToHeaders(...args);
   };

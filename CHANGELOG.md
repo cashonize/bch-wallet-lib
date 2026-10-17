@@ -90,6 +90,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `getNetworkProvider` and `setGlobalProvider` take and return `ElectrumNetworkProvider` instead of the removed interface; nothing changes for a caller that passed one.
 - `ElectrumNetworkProvider.getRawTransaction(hash)` takes only the hash and returns the hex. The `verbose` and `loadInputValues` overloads are gone: `getRawTransaction(hash, true)` becomes `getRawTransactionObject(hash)`, and `getRawTransaction(hash, true, true)` becomes `getRawTransactionObject(hash, true)`. Both read and write the same `txraw-` and `tx-` cache entries as before.
 - The `utxos` option of the free `getHistory` is required: the running balances are backfilled from it, and the balance is no longer read per address from the server when it is missing. Pass the current utxos of `addresses`, token coins included (Cashonize's `test/bchWalletLib.test.ts` already does). The wallet methods pass their own. `rawHistory` is marked `@internal`.
+- On `ElectrumNetworkProvider`, the plumbing is no longer public: `transport` is private, `performRequest` and `subscribeRequest` are protected (for a subclass), and `subscribeToHeaders` is private; use `watchBlocks(callback, false)` for every header including the current one. `subscriptions` is a read-only getter marked `@internal`, and `mine` is marked `@internal` (regtest only).
 
 ### Removed
 

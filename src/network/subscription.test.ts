@@ -142,9 +142,9 @@ describe.skipIf(!liveTests)(
 
     test("Should receive initial block header", async () => {
       const received: Array<{ height: number; hex: string }> = [];
-      const cancel = await provider.subscribeToHeaders((header) => {
+      const cancel = await provider.watchBlocks((header) => {
         received.push(header);
-      });
+      }, false);
 
       await new Promise((r) => setTimeout(r, 100));
 

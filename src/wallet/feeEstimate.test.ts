@@ -353,3 +353,50 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     ]);
   });
 });
+
+describe("an output that pays the fee is checked as the change is", () => {
+  const send = (
+    bob: RegTestWallet,
+    requests: Array<SendRequest | TokenSendRequest>,
+    feePaidBy: FeePaidByEnum,
+    utxoIds?: Utxo[],
+  ) => bob.send(requests, { feePaidBy, utxoIds, broadcast: false });
+
+  test("outputs the coins cannot cover are refused, the fee paid by an output or not", async () => {
+    const { alice, bob } = await fund(5, 1000n);
+    const request = new SendRequest({
+      cashaddr: alice.cashaddr!,
+      value: 5200n,
+    });
+    // the outputs alone took 200 sats more than the inputs held, which the network refuses;
+    // with the change first, the output paid those 200 sats on top of the fee
+    for (const feePaidBy of [
+      FeePaidByEnum.first,
+      FeePaidByEnum.last,
+      FeePaidByEnum.any,
+      FeePaidByEnum.changeThenFirst,
+      FeePaidByEnum.changeThenLast,
+      FeePaidByEnum.changeThenAny,
+    ]) {
+      const error = await send(bob, [request], feePaidBy).catch((e) => e);
+      expect(error).toBeInstanceOf(InsufficientFundsError);
+      expect(error.asset).toBe("bch");
+      expect(error.data).toEqual({ required: 5200n, available: 5000n });
+    }
+  });
+
+  test("an output the fee would take below dust is refused", async () => {
+    const { alice, bob } = await fund(5, 1000n);
+    // three inputs cost more than the 300 sats the output holds above dust
+    for (const feePaidBy of [FeePaidByEnum.first, FeePaidByEnum.last]) {
+      const error = await send(
+        bob,
+        [new SendRequest({ cashaddr: alice.cashaddr!, value: 846n })],
+        feePaidBy,
+        (await bob.getUtxos()).slice(0, 3),
+      ).catch((e) => e);
+      expect(error).toBeInstanceOf(InsufficientFundsError);
+      expect(error.asset).toBe("bch");
+    }
+  });
+});

@@ -93,6 +93,10 @@ export async function buildP2pkhNonHdTransaction({
   const paidOutAmount = await sumSendRequestAmounts(outputs);
   const changeAmount =
     BigInt(inputAmount) - BigInt(paidOutAmount) - BigInt(fee);
+  // the inputs must cover the outputs and the fee, whoever pays it
+  if (changeAmount < 0n) {
+    throw amountNotMetError(paidOutAmount + fee, inputAmount);
+  }
 
   // Append change as a SendRequest so user-supplied output ordering can act on
   // the complete output list. Skipped when discardChange is set or the change

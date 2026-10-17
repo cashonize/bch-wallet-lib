@@ -1268,14 +1268,17 @@ export class BaseWallet implements WalletI {
         e instanceof InsufficientFundsError ? e["data"] : undefined;
       if (!shortfall) throw e;
       // The last round's estimate leaves out the fee of the coins the selection could not reach;
-      // what is needed is told from the fee of spending every coin it could use.
-      const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
-      const usable = [
-        ...ensureUtxos,
-        ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
-      ];
-      const feeOfAll = await estimateFee(usable);
-      let required = spendAmount + feeOfAll;
+      // what is needed is told from the fee of spending every coin it could use. With another
+      // feePaidBy the outputs pay the fee, so the coins need to cover only them.
+      let required = spendAmount;
+      if (feePaidBy === FeePaidByEnum.change) {
+        const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
+        const usable = [
+          ...ensureUtxos,
+          ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
+        ];
+        required += await estimateFee(usable);
+      }
       if (shortfall.required > required) required = shortfall.required;
       throw amountNotMetError(required, shortfall.available);
     }

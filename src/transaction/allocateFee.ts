@@ -9,7 +9,10 @@ import {
 
 export function checkFeeForDust(value: bigint) {
   if (value < DUST_UTXO_THRESHOLD) {
-    throw Error("Fee strategy would result in dust output");
+    throw new InsufficientFundsError(
+      "Fee strategy would result in dust output",
+      { asset: "bch" },
+    );
   }
 }
 
@@ -107,6 +110,10 @@ function changeThenFallback(
   change: bigint,
   fallbackFn: Function,
 ) {
+  // change below zero is a shortfall of the inputs, not a part of the fee for an output to pay
+  if (change < 0n) {
+    change = 0n;
+  }
   if (BigInt(fee) > change) {
     let outstandingFee = BigInt(fee) - change;
     requests = fallbackFn(requests, outstandingFee);

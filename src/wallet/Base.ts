@@ -1,7 +1,9 @@
 import {
   binToHex,
   CashAddressNetworkPrefix,
+  decodeTransaction,
   getDustThreshold,
+  lockingBytecodeToCashAddress,
   sha256,
 } from "@bitauth/libauth";
 import {
@@ -66,6 +68,9 @@ import {
   TokenSendRequest,
   toUtxoId,
 } from "./model.js";
+
+// How long a broadcast waits for the wallet's own coins to reflect it, once the server reports it
+const COIN_VIEW_TIMEOUT = 10_000;
 
 export const placeholderCashAddr =
   "bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqfnhks603";
@@ -190,6 +195,11 @@ export class BaseWallet {
       address === this.getDepositAddress() ||
       address === this.getChangeAddress()
     );
+  }
+
+  /** Whether the coins of an address of this wallet reach its view, i.e. it is subscribed to */
+  protected watchesAddress(address: string): boolean {
+    return this.hasAddress(address);
   }
   //#endregion Accessors
 
@@ -876,12 +886,7 @@ export class BaseWallet {
       return { txId, transaction, categories };
     }
 
-    // the wallet's own view of its coins includes the transaction when the send returns
-    const [_, txId] = await Promise.all([
-      this.waitForUpdate({ timeout: 2500 }),
-      this.submitTransaction(encodedTransaction),
-    ]);
-
+    const txId = await this.submitTransaction(encodedTransaction);
     return { txId, transaction, categories };
   }
 
@@ -1134,7 +1139,9 @@ export class BaseWallet {
   }
 
   /**
-   * Broadcast a signed transaction and wait until the server reports it.
+   * Broadcast a signed transaction and wait until the server reports it, and then until the
+   * wallet's own coins reflect it (its inputs gone, its outputs to the wallet there), so that the
+   * next spend does not pick a coin it spent. That second wait gives up after 10 seconds.
    * @throws {BroadcastRejectedError} If the server refused the transaction.
    * @returns The transaction id.
    */
@@ -1143,7 +1150,76 @@ export class BaseWallet {
       throw Error("Wallet network provider was not initialized");
     }
     const rawTransaction = binToHex(transaction);
-    return await this.provider.sendRawTransaction(rawTransaction);
+    const txId = await this.provider.sendRawTransaction(rawTransaction);
+    await this.waitForCoins(transaction, txId);
+    return txId;
+  }
+
+  // Waits until the wallet's coins reflect a transaction the server holds: the status that
+  // includes it may arrive after the broadcast returns, and other statuses before it. Never
+  // throws, the transaction went through; a view that stays stale only risks a refused next spend
+  private async waitForCoins(
+    transaction: Uint8Array,
+    txId: string,
+  ): Promise<void> {
+    const decoded = decodeTransaction(transaction);
+    if (typeof decoded === "string") return;
+    const spent = decoded.inputs.map((input) =>
+      toUtxoId({
+        txid: binToHex(input.outpointTransactionHash),
+        vout: input.outpointIndex,
+      }),
+    );
+    const own = decoded.outputs.flatMap((output, vout) => {
+      const result = lockingBytecodeToCashAddress({
+        bytecode: output.lockingBytecode,
+        prefix: this.networkPrefix,
+      });
+      if (typeof result === "string") return [];
+      if (!this.watchesAddress(result.address)) return [];
+      return [toUtxoId({ txid: txId, vout })];
+    });
+    const reflected = async () => {
+      const ids = new Set((await this.getUtxos()).map(toUtxoId));
+      return own.every((id) => ids.has(id)) && !spent.some((id) => ids.has(id));
+    };
+
+    let done = false;
+    let woken = false;
+    let wake = () => {};
+    let cancel: CancelFn | undefined;
+    const wait = (async () => {
+      const made = await this.watchStatus(() => {
+        woken = true;
+        wake();
+      });
+      if (done) {
+        await made();
+        return;
+      }
+      cancel = made;
+      while (!done) {
+        woken = false;
+        if (await reflected()) return;
+        // a status handled during the read is read again at once
+        if (!woken) await new Promise<void>((resolve) => (wake = resolve));
+      }
+    })();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, COIN_VIEW_TIMEOUT);
+    });
+    try {
+      await Promise.race([wait, expired]);
+    } catch {
+      // a status watch or read that failed: the view is left as it is
+    } finally {
+      done = true;
+      wake();
+      clearTimeout(timer);
+      wait.catch(() => {});
+      await cancel?.().catch(() => {});
+    }
   }
 
   // gets transaction history of this wallet

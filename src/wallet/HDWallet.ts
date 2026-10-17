@@ -748,6 +748,19 @@ export class HDWallet extends BaseWallet {
     return this.walletCache.get(address) !== undefined;
   }
 
+  // the addresses of the watched window only: one derived beyond it has no subscription
+  protected override watchesAddress(address: string): boolean {
+    return this.branches.some((branch) => {
+      const length = this.watchedLength(branch);
+      for (let index = 0; index < length; index++) {
+        if (this.walletCache.getByIndex(index, branch).address === address) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
   /**
    * newRandom - create a random wallet
    *

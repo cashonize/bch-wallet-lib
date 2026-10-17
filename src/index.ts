@@ -49,10 +49,7 @@ export type {
   ElectrumRawTransactionVinWithValues,
   ElectrumRawTransactionWithInputValues,
 } from "./network/interface.js";
-export type {
-  ConcurrencyOptions,
-  default as NetworkProvider,
-} from "./network/NetworkProvider.js";
+export type { ConcurrencyOptions } from "./network/ElectrumNetworkProvider.js";
 export type { Transport, Unsubscribe } from "./network/Transport.js";
 // xpub utilities
 export { getAddrsByXpubKey } from "./util/getAddrsByXpubKey.js";

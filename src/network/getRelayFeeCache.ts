@@ -1,12 +1,12 @@
 import { bchParam } from "../chain.js";
 import { Config } from "../config.js";
-import { default as NetworkProvider } from "./NetworkProvider.js";
+import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 
 // 1 sat/byte, the network's minrelaytxfee: below it a transaction does not propagate
 const MinRelayFeePerByte = 1;
 
 // The server's rate per provider, so that a wallet moved to another server (setProvider) asks that server
-const relayFeeCache = new WeakMap<NetworkProvider, number>();
+const relayFeeCache = new WeakMap<ElectrumNetworkProvider, number>();
 
 // Config is assigned by the app, possibly from untyped code or stored settings, so a bad value is
 // caught here and named rather than surfacing as a broken fee calculation
@@ -22,7 +22,7 @@ function checkFeeSetting(name: string, value: unknown): number {
 // The fee rate for a send in satoshis per byte, never below 1: Config.RelayFeePerByte, or the server's
 // blockchain.relayfee. A server rate above Config.MaxRelayFeePerByte is ignored rather than capped, since
 // an unchecked or capped server rate would let the server set what the wallet burns in fees (mainnet-js#254)
-export async function getRelayFeeCache(provider: NetworkProvider) {
+export async function getRelayFeeCache(provider: ElectrumNetworkProvider) {
   const maxFeePerByte = checkFeeSetting(
     "MaxRelayFeePerByte",
     Config.MaxRelayFeePerByte,

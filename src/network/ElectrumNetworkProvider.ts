@@ -27,16 +27,19 @@ import {
   parseRejection,
   serverErrorCode,
 } from "./errors.js";
-import {
-  ConcurrencyOptions,
-  default as NetworkProvider,
-} from "./NetworkProvider.js";
 import type { Transport } from "./Transport.js";
+
+/** Options of the provider calls that fan out over a list. */
+export interface ConcurrencyOptions {
+  /** Requests in flight at most for this call. Default 10. */
+  concurrency?: number;
+}
 
 /** Internal type for cached verbose transactions. fetchHeight is stripped before returning. */
 type CachedRawTransaction = ElectrumRawTransaction & { fetchHeight: number };
 
-export default class ElectrumNetworkProvider implements NetworkProvider {
+/** The connection to one Electrum server (Fulcrum) that wallets read the chain from and broadcast to. */
+export default class ElectrumNetworkProvider {
   public transport: Transport;
   public subscriptions: number = 0;
   private currentHeight: number = 0;
@@ -64,6 +67,10 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     }
   }
 
+  /**
+   * All UTXOs (confirmed and unconfirmed) of an address, token coins included.
+   * @param cashaddr The CashAddress whose UTXOs to retrieve.
+   */
   async getUtxos(cashaddr: string): Promise<Utxo[]> {
     const result = await this.performRequest<ElectrumUtxo[]>(
       "blockchain.address.listunspent",
@@ -117,6 +124,12 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return verbose ? decodeHeader(result) : result;
   }
 
+  /**
+   * Batch retrieve raw transactions by their hashes.
+   * @param hashes Array of transaction hashes.
+   * @param options.concurrency Requests in flight at most for the cache misses. Default 10.
+   * @returns Map from hash to hex transaction string.
+   */
   async getRawTransactions(
     hashes: string[],
     options: ConcurrencyOptions = {},
@@ -172,6 +185,12 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return results;
   }
 
+  /**
+   * Batch retrieve block headers by their heights.
+   * @param heights Array of block heights.
+   * @param options.concurrency Requests in flight at most for the cache misses. Default 10.
+   * @returns Map from height to decoded header.
+   */
   async getHeaders(
     heights: number[],
     options: ConcurrencyOptions = {},
@@ -229,6 +248,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return results;
   }
 
+  /** The current block height, kept up to date by a header subscription opened on the first call. */
   async getBlockHeight(): Promise<number> {
     if (!this.headerCancelFn) {
       this.headerCancelFn = await this.subscribeToHeaders(
@@ -361,7 +381,11 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return { ...transaction, vin: enrichedVin };
   }
 
-  // gets the decoded transaction in human readable form
+  /**
+   * The decoded transaction of a transaction ID.
+   * @param loadInputValues When true, each vin is enriched with value, address and tokenData from the parent output.
+   * @throws {Error} If the transaction does not exist
+   */
   async getRawTransactionObject(
     txHash: string,
     loadInputValues: true,
@@ -380,6 +404,13 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return this.getRawTransaction(txHash, true);
   }
 
+  /**
+   * Broadcast a raw hex transaction.
+   * @param txHex The raw transaction hex to be broadcast.
+   * @param awaitPropagation Wait for transaction to be registered in the bitcoind or indexer. If set to false, function returns computed transaction hash immediately.
+   * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
+   * @returns The transaction ID (hash) corresponding to the broadcast transaction.
+   */
   async sendRawTransaction(
     txHex: string,
     awaitPropagation: boolean = true,
@@ -404,7 +435,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return txHash;
   }
 
-  // Get transaction history of a given cashaddr
+  /** The confirmed and unconfirmed history of an address, in the server's order. */
   async getHistory(
     cashaddr: string,
     fromHeight: number = 0,
@@ -417,7 +448,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     ]);
   }
 
-  // Get the minimum fee a low-priority transaction must pay in order to be accepted to the daemon's memory pool.
+  /** The server's minimum relay fee, in BCH per kB. */
   async getRelayFee(): Promise<number> {
     return this.performRequest<number>("blockchain.relayfee");
   }
@@ -484,6 +515,10 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     );
   }
 
+  /**
+   * Subscribe to an address's status: the callback gets `[cashaddr, status]`, first for the current
+   * status and then for every change.
+   */
   async subscribeToAddress(
     cashaddr: string,
     callback: (data: [address: string, status: string | null]) => unknown,
@@ -495,6 +530,10 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     );
   }
 
+  /**
+   * Subscribe to a transaction's confirmation status: the callback gets `[txHash, confirmations]`,
+   * with null confirmations while the server does not know the transaction.
+   */
   async subscribeToTransaction(
     txHash: string,
     callback: (data: [txHash: string, confirmations: number | null]) => unknown,
@@ -587,11 +626,13 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return this.connect();
   }
 
+  /** Connect to the server; resolves when connected, rejects when no connection can be made. */
   async connect(): Promise<void> {
     await this.cache?.init();
     await this.transport.connect();
   }
 
+  /** Close the connection and the provider's own header subscription. */
   async disconnect(): Promise<boolean> {
     await this.headerCancelFn?.();
     await this.transport.close();

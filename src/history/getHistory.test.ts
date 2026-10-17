@@ -10,7 +10,6 @@ import {
 import { countRequests } from "#test/countRequests.js";
 import { mine } from "../mine/index.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
-import type NetworkProvider from "../network/NetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { sumUtxoValue } from "../util/index.js";
 import { createWallet } from "../wallet/createWallet.js";
@@ -587,7 +586,7 @@ describe("a transaction the server sends that does not decode", () => {
       getHeaders: async () => new Map(),
       getRawTransactions: async (hashes: string[]) =>
         new Map(hashes.map((hash) => [hash, raw[hash]])),
-    }) as unknown as NetworkProvider;
+    }) as unknown as ElectrumNetworkProvider;
 
   test("in the history", async () => {
     const error = await getHistory({

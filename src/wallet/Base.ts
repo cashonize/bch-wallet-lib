@@ -153,9 +153,8 @@ export class BaseWallet implements WalletI {
 
   //#region Accessors
   protected getNetworkProvider(
-    // @ts-ignore
     network: NetworkType = NetworkType.Mainnet,
-  ): any {
+  ): ElectrumNetworkProvider {
     return getNetworkProvider(network);
   }
 

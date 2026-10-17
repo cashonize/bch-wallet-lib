@@ -12,7 +12,7 @@ import {
 import { bchParam } from "../chain.js";
 import { UnitEnum } from "../enum.js";
 import { HeaderI, TxI, Utxo } from "../interface.js";
-import NetworkProvider from "../network/NetworkProvider.js";
+import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { ExchangeRate } from "../rate/ExchangeRate.js";
 import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { sanitizeUnit } from "../util/sanitizeUnit.js";
@@ -54,7 +54,7 @@ export const getHistory = async ({
   concurrency = DEFAULT_CONCURRENCY,
 }: {
   addresses: string[];
-  provider: NetworkProvider;
+  provider: ElectrumNetworkProvider;
   unit?: UnitEnum;
   fromHeight?: number;
   toHeight?: number;

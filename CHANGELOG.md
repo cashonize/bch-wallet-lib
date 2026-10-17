@@ -87,6 +87,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `new IndexedDBProvider(dbName)` requires `dbName`. Without it the provider opened a database named `"wallet"`, which no wallet stores to: `named()` and `getNamedWalletId` use `"bitcoincash"` and `"bchtest"`. A caller that relied on the default passes `"wallet"`.
 - `WalletCacheI`'s `init`, `flush`, `getByPath` and `setStatusAndUtxos` are marked `@internal`: the wallets call them, and a caller who does can break the wallet's own state. `get`, `getByIndex` and `persist` stay.
 - `SignedMessage.sign(message, privateKey)` returns `{ signature }` only and no longer computes a DER or Schnorr signature; `SignedMessage.verify(message, signature, address)` takes the address as a required argument and returns `{ valid }` only. Only the static methods remain; `new SignedMessage()` has no methods.
+- `getNetworkProvider` and `setGlobalProvider` take and return `ElectrumNetworkProvider` instead of the removed interface; nothing changes for a caller that passed one.
 
 ### Removed
 
@@ -111,3 +112,4 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - `SignedMessage.verify`'s `publicKey` parameter, with the DER, Schnorr and compact verification it enabled: only a recoverable signature verifies, against the address that signed it. The `raw` and `details` fields of the sign and verify responses go with it, as do the types `SignedMessageRawI`, `SignedMessageDetailsI`, `VerifyMessageDetailsI` and `SignedMessageI`.
 - The `Network` object and type: use `NetworkType` (`Network.MAINNET` is `NetworkType.Mainnet`); the enum's values are the same strings.
 - From the entry, still used inside the library: `amountInSatoshi`, `sanitizeUnit`, `UnitEnum`, `checkUtxos`, `delay`, `deriveCashaddr`, `toCashaddr`, `toTokenaddr`, `isTokenaddr`, `checkTokenaddr`, `derivePublicKeyHash`, `derivePublicNodeCashaddr`, `getRuntimePlatform`, `RuntimePlatform`, `hash160`, `sumUtxoValue`, `sumTokenAmounts`, and the types `UtxoId` and `PrivateKeyI`. The interface module is no longer re-exported whole: the entry exports `NFTCapability` and the types `Utxo`, `TokenI`, `TxI`, `HexHeaderI` and `HeaderI`.
+- The `NetworkProvider` interface, which only `ElectrumNetworkProvider` implemented. Type a provider as `ElectrumNetworkProvider` instead (Cashonize: `test/bchWalletLib.test.ts`). `ConcurrencyOptions` moved next to the class.

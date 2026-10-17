@@ -25,5 +25,4 @@ export type {
   ElectrumRawTransactionVinWithValues,
   ElectrumRawTransactionWithInputValues,
 } from "./interface.js";
-export type { default as NetworkProvider } from "./NetworkProvider.js";
 export type { Transport, Unsubscribe } from "./Transport.js";

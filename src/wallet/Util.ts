@@ -13,7 +13,7 @@ import { NetworkType, prefixFromNetworkMap } from "../enum.js";
 import { historyAddress } from "../history/getHistory.js";
 import { Network } from "../interface.js";
 import { getNetworkProvider } from "../network/default.js";
-import NetworkProvider from "../network/NetworkProvider.js";
+import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import {
   ElectrumRawTransaction,
   ElectrumRawTransactionVin,
@@ -97,7 +97,7 @@ function mapToElectrumRawTransaction(
 
 export interface DecodeTransactionOptions {
   /** The provider to fetch the transaction (and its inputs') from; default the network's global provider */
-  provider?: NetworkProvider;
+  provider?: ElectrumNetworkProvider;
 }
 
 export async function decodeTransaction(

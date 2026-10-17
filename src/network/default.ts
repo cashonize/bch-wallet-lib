@@ -6,12 +6,11 @@ import {
   ElectrumTransport,
   type ElectrumTransportOptions,
 } from "./ElectrumTransport.js";
-import { default as NetworkProvider } from "./NetworkProvider.js";
 
 export function setGlobalProvider(
   network: Network,
-  provider: NetworkProvider,
-): NetworkProvider {
+  provider: ElectrumNetworkProvider,
+): ElectrumNetworkProvider {
   const accessor = networkTickerMap[network];
   globalThis[accessor] = provider;
   return provider;
@@ -19,7 +18,7 @@ export function setGlobalProvider(
 
 export function getGlobalProvider(
   network: Network,
-): NetworkProvider | undefined {
+): ElectrumNetworkProvider | undefined {
   const accessor = networkTickerMap[network];
   return globalThis[accessor];
 }
@@ -49,7 +48,7 @@ export async function createProvider(
 
 export function getNetworkProvider(
   network: Network = Network.MAINNET,
-): NetworkProvider {
+): ElectrumNetworkProvider {
   const globalProvider = getGlobalProvider(network);
   if (globalProvider) {
     return globalProvider;

@@ -691,7 +691,8 @@ describe(`Watch only Wallets`, () => {
     );
     expect(txId).toBe(built.txId);
 
-    expect(await bobWallet.getBalance()).toBe(2000n);
+    // bob's own subscription reports it after the broadcast returns
+    expect(await waitForBalance(bobWallet, 2000n)).toBe(2000n);
   });
 });
 describe(`Wallet subscriptions`, () => {

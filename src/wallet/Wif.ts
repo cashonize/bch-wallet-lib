@@ -15,7 +15,7 @@ import { NetworkType } from "../enum.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
 import { decodeWif } from "../util/decodeWif.js";
 import { WalletTypeEnum } from "./enum.js";
-import { SendRequestOptionsI } from "./interface.js";
+import { SendRequestOptionsI, WalletFactoryOptions } from "./interface.js";
 import {
   OpReturnData,
   SendRequest,
@@ -149,28 +149,32 @@ export class Wallet extends WatchWallet {
    * `named:<network>:<name>`
    *
    * @param walletId   walletId options to steer the creation process
+   * @param options   the wallet's provider
    *
    * @returns wallet instantiated accordingly to the walletId rules
    */
   public static async fromId<T extends typeof Wallet>(
     this: T,
     walletId: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().fromId(walletId) as InstanceType<T>;
+    return this.create(options).fromId(walletId) as Promise<InstanceType<T>>;
   }
 
   /**
    * fromWIF - create a wallet using the private key supplied in `Wallet Import Format`
    *
    * @param wif   WIF encoded private key string
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet
    */
   public static async fromWIF<T extends typeof Wallet>(
     this: T,
     wif: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().fromWIF(wif) as InstanceType<T>;
+    return this.create(options).fromWIF(wif) as Promise<InstanceType<T>>;
   }
 
   /**
@@ -179,14 +183,16 @@ export class Wallet extends WatchWallet {
    * if `name` parameter is specified, the wallet is got or created as with `named(name)`
    *
    * @param name   user friendly wallet alias
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet
    */
   public static async newRandom<T extends typeof Wallet>(
     this: T,
     name: string = "",
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().newRandom(name) as InstanceType<T>;
+    return this.create(options).newRandom(name) as Promise<InstanceType<T>>;
   }
   //#endregion Constructors
 

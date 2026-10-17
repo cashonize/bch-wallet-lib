@@ -34,7 +34,11 @@ import {
   InvalidRequestError,
   UtxoNotAvailableError,
 } from "./errors.js";
-import { CancelFn, SendRequestOptionsI } from "./interface.js";
+import {
+  CancelFn,
+  SendRequestOptionsI,
+  WalletFactoryOptions,
+} from "./interface.js";
 import {
   fromUtxoId,
   OpReturnData,
@@ -69,6 +73,17 @@ function once(cancel: CancelFn): CancelFn {
   return () => (done ??= cancel());
 }
 
+function checkProviderNetwork(
+  provider: ElectrumNetworkProvider,
+  network: NetworkType,
+) {
+  if ((provider.network as string) !== network) {
+    throw new Error(
+      `a ${provider.network} provider cannot serve a ${network} wallet`,
+    );
+  }
+}
+
 // The options a token operation passes on to its send
 interface TokenOperationOptions extends SendRequestOptionsI {
   /** what the operation may burn; undefined when its caller turned the token check off */
@@ -83,7 +98,8 @@ export class BaseWallet {
   public static StorageProvider?: typeof StorageProvider;
 
   readonly walletCache: WalletCache;
-  private _provider: ElectrumNetworkProvider;
+  // set by the factory that made the wallet; a wallet made with `new` takes the global one on first use
+  private _provider?: ElectrumNetworkProvider;
   readonly network: NetworkType;
   protected readonly walletType: WalletTypeEnum;
   name: string = "";
@@ -94,6 +110,7 @@ export class BaseWallet {
 
   /** The electrum provider this wallet talks to; change it with setProvider() */
   public get provider(): ElectrumNetworkProvider {
+    this._provider ??= this.getNetworkProvider(this.network);
     return this._provider;
   }
 
@@ -182,10 +199,26 @@ export class BaseWallet {
   constructor(network = NetworkType.Mainnet) {
     this.network = network;
     this.walletType = WalletTypeEnum.Watch;
-    this._provider = this.getNetworkProvider(this.network);
     this.walletCache = new Map<string, { privateKey: Uint8Array }>();
   }
   //#endregion Constructors
+
+  /**
+   * The instance a factory initializes, on the provider of `options` or else the network's global
+   * one, so that its first subscription is made on the provider it keeps
+   */
+  protected static create<T extends typeof BaseWallet>(
+    this: T,
+    options: WalletFactoryOptions = {},
+  ): InstanceType<T> {
+    const wallet: BaseWallet = new this();
+    if (options.provider) {
+      checkProviderNetwork(options.provider, wallet.network);
+    }
+    wallet._provider =
+      options.provider ?? wallet.getNetworkProvider(wallet.network);
+    return wallet as InstanceType<T>;
+  }
 
   /**
    * named (internal) get a named wallet from the database of the wallet's network, or create a
@@ -297,14 +330,16 @@ export class BaseWallet {
    * new random one under that name
    *
    * @param name   user friendly wallet alias
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet
    */
   public static async named<T extends typeof BaseWallet>(
     this: T,
     name: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().named(name) as InstanceType<T>;
+    return this.create(options).named(name) as Promise<InstanceType<T>>;
   }
 
   /**
@@ -315,6 +350,7 @@ export class BaseWallet {
    *
    * @param name   user friendly wallet alias
    * @param walletId walletId options to steer the creation process
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet, stored in the database of the class's network
    */
@@ -322,8 +358,11 @@ export class BaseWallet {
     this: T,
     name: string,
     walletId: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().replaceNamed(name, walletId) as InstanceType<T>;
+    return this.create(options).replaceNamed(name, walletId) as Promise<
+      InstanceType<T>
+    >;
   }
 
   protected fromId(_walletId: string): Promise<this> {
@@ -390,11 +429,7 @@ export class BaseWallet {
    * until setProvider is called again.
    */
   public async setProvider(provider: ElectrumNetworkProvider): Promise<void> {
-    if ((provider.network as string) !== this.network) {
-      throw new Error(
-        `a ${provider.network} provider cannot serve a ${this.network} wallet`,
-      );
-    }
+    checkProviderNetwork(provider, this.network);
     const move = this.providerSwitch.then(() =>
       this.moveSubscriptions(provider),
     );
@@ -405,7 +440,7 @@ export class BaseWallet {
   private async moveSubscriptions(provider: ElectrumNetworkProvider) {
     // an unreachable server rejects here, before anything moved
     await provider.connect();
-    const previous = this._provider;
+    const previous = this.provider;
     this._provider = provider;
     try {
       await this.settleSubscriptions();
@@ -419,7 +454,7 @@ export class BaseWallet {
 
   // Make every subscription live on the current provider, starting the new one before ending the old
   private async settleSubscriptions() {
-    const provider = this._provider;
+    const provider = this.provider;
     const stale = [...this.subscriptions].filter(
       (subscription) => subscription.provider !== provider,
     );

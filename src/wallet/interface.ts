@@ -1,4 +1,5 @@
 import { Utxo } from "../interface.js";
+import type ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 
 export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
@@ -16,3 +17,13 @@ export interface SendRequestOptionsI {
 }
 
 export type CancelFn = () => Promise<void>;
+
+/** Options of the wallet factories (fromId, named, newRandom, …), fixed for the wallet's life */
+export interface WalletFactoryOptions {
+  /**
+   * The electrum provider the wallet talks to from the start: its first subscription and an HD
+   * wallet's address discovery are made on it, and the network's global provider is never created
+   * or used. Without it the wallet uses the global provider. Its network must be the wallet's.
+   */
+  provider?: ElectrumNetworkProvider;
+}

@@ -68,7 +68,11 @@ export {
   HDWallet,
   TestNetHDWallet,
 } from "./wallet/HDWallet.js";
-export type { CancelFn, SendRequestOptionsI } from "./wallet/interface.js";
+export type {
+  CancelFn,
+  SendRequestOptionsI,
+  WalletFactoryOptions,
+} from "./wallet/interface.js";
 export {
   OpReturnData,
   TokenBurnRequest,

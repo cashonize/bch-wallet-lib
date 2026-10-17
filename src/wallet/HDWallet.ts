@@ -34,7 +34,11 @@ import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { CancelFn, SendRequestOptionsI } from "./interface.js";
+import {
+  CancelFn,
+  SendRequestOptionsI,
+  WalletFactoryOptions,
+} from "./interface.js";
 import { OpReturnData, SendRequest, TokenSendRequest } from "./model.js";
 import { networkPrefixError } from "../util/networkPrefixError.js";
 
@@ -785,18 +789,20 @@ export class HDWallet extends BaseWallet {
    * if `name` parameter is specified, the wallet is got or created as with `named(name)`
    *
    * @param name   user friendly wallet alias
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet
    */
   public static async newRandom<T extends typeof HDWallet>(
     this: T,
     name: string = "",
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
     if (name.length > 0) {
-      return this.named(name);
+      return this.named(name, options);
     }
 
-    return new this().initialize() as Promise<InstanceType<T>>;
+    return this.create(options).initialize() as Promise<InstanceType<T>>;
   }
 
   /**
@@ -805,14 +811,16 @@ export class HDWallet extends BaseWallet {
    * index>]` or `named:<network>:<name>`
    *
    * @param walletId   walletId options to steer the creation process
+   * @param options   the wallet's provider
    *
    * @returns wallet instantiated accordingly to the walletId rules
    */
   public static async fromId<T extends typeof HDWallet>(
     this: T,
     walletId: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().fromId(walletId) as InstanceType<T>;
+    return this.create(options).fromId(walletId) as Promise<InstanceType<T>>;
   }
 
   /// override the base class fromId method implementation

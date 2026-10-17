@@ -1,4 +1,6 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { IndexedDbCache } from "../cache/IndexedDbCache.js";
+import { Config } from "../config.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWatchWallet } from "./Watch.js";
 import { RegTestWallet, RegTestWifWallet } from "./Wif.js";
@@ -53,5 +55,39 @@ describe("Wallet cache initialization", () => {
       wallet.walletCache!.get(wallet.cashaddr)!.privateKey,
     ).toBeUndefined();
     await wallet.stop();
+  });
+});
+
+describe("single-address wallet cache", () => {
+  test("is never written to the cache storage", async () => {
+    const prevIndexedDb = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
+    const storage = new IndexedDbCache("WalletCache");
+    await storage.init();
+    const before = await storage.keys();
+    // a funded wallet, whose status, utxos and history the cache gets
+    const funded = await RegTestWallet.fromId(
+      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
+    );
+    const wallets = [
+      funded,
+      await RegTestWallet.newRandom(),
+      await RegTestWatchWallet.watchOnly(funded.cashaddr),
+    ];
+    try {
+      for (const wallet of wallets) {
+        await wallet.getUtxos();
+        await wallet.walletCache.persist(true);
+      }
+      expect(funded.walletCache.get(funded.cashaddr)!.utxos.length).toBe(
+        (await funded.getUtxos()).length,
+      );
+      expect(funded.walletCache.get(funded.cashaddr)!.status).not.toBeNull();
+      expect(await storage.keys()).toEqual(before);
+    } finally {
+      await Promise.all(wallets.map((wallet) => wallet.stop()));
+      await storage.close();
+      Config.UseIndexedDBCache = prevIndexedDb;
+    }
   });
 });

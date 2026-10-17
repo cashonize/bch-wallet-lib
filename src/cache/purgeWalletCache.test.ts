@@ -1,4 +1,3 @@
-import { binToHex } from "@bitauth/libauth";
 import { mkdtempSync } from "fs";
 import { LocalStorage } from "node-localstorage";
 import { tmpdir } from "os";
@@ -65,19 +64,13 @@ async function withCacheBackend(
 }
 
 describe("walletCacheIdFromWalletId", () => {
-  test("derives the cache id each wallet type keys its cache record by", async () => {
+  test("derives the cache id each HD wallet keys its cache record by", async () => {
     const hd = await RegTestHDWallet.fromSeed(MNEMONIC);
-    const single = await RegTestWallet.fromSeed(MNEMONIC);
     const wallets: BaseWallet[] = [
       hd,
       await RegTestHDWallet.fromSeed(MNEMONIC, "m/44'/145'/1'"),
       await RegTestHDWallet.fromXPriv(hd.xPriv),
       await RegTestHDWallet.fromXPub(hd.xPub),
-      single,
-      await RegTestWallet.fromSeed(MNEMONIC, "m/44'/145'/0'/0/5"),
-      await RegTestWifWallet.fromWIF(single.privateKeyWif),
-      await RegTestWallet.fromId(`privkey:regtest:${"11".repeat(32)}`),
-      await RegTestWatchWallet.watchOnly(single.getDepositAddress()),
     ];
     try {
       const cacheIds = new Set<string>();
@@ -89,13 +82,24 @@ describe("walletCacheIdFromWalletId", () => {
         ).toBe(cacheId);
         cacheIds.add(cacheId);
       }
-      // the WIF and the watch-only wallet share the seed wallet's address, and so its record
-      expect(cacheIds.size).toBe(wallets.length - 2);
+      expect(cacheIds.size).toBe(wallets.length);
+    } finally {
+      await Promise.all(wallets.map((wallet) => wallet.stop()));
+    }
+  });
 
-      const payload = single.getDepositAddress().split(":")[1];
-      expect(walletCacheIdFromWalletId(`watch:regtest:${payload}`)).toBe(
-        cacheIdOf(single),
-      );
+  test("gives none for a single-address wallet, which keeps no cache record", async () => {
+    const single = await RegTestWallet.fromSeed(MNEMONIC);
+    const wallets: BaseWallet[] = [
+      single,
+      await RegTestWifWallet.fromWIF(single.privateKeyWif),
+      await RegTestWallet.fromId(`privkey:regtest:${"11".repeat(32)}`),
+      await RegTestWatchWallet.watchOnly(single.getDepositAddress()),
+    ];
+    try {
+      for (const wallet of wallets) {
+        expect(walletCacheIdFromWalletId(wallet.toDbString())).toBeUndefined();
+      }
     } finally {
       await Promise.all(wallets.map((wallet) => wallet.stop()));
     }
@@ -125,12 +129,12 @@ describe.each(["indexeddb", "localstorage"] as const)(
             await wallet.stop();
           }
           const hdKey = `walletCache-${cacheIdOf(hd)}`;
-          const singleKey = `walletCache-${cacheIdOf(single)}`;
           const keptKey = `walletCache-${cacheIdOf(kept)}`;
           // what is at stake: the records hold the private keys
           expect(await storage.getItem(hdKey)).toContain("privateKey");
-          expect(await storage.getItem(singleKey)).toContain(
-            JSON.stringify(binToHex(single.privateKey)),
+          // and the single-address wallet keeps none
+          expect((await storage.keys()).sort()).toEqual(
+            [hdKey, keptKey].sort(),
           );
 
           await deleteNamedWallet("hd", dbName);
@@ -138,7 +142,6 @@ describe.each(["indexeddb", "localstorage"] as const)(
           await deleteNamedWallet("never-existed", dbName);
 
           expect(await storage.getItem(hdKey)).toBeNull();
-          expect(await storage.getItem(singleKey)).toBeNull();
           expect(await storage.getItem(keptKey)).not.toBeNull();
           const db = new IndexedDBProvider(dbName);
           await db.init();
@@ -190,10 +193,12 @@ describe.each(["indexeddb", "localstorage"] as const)(
 
     test("pruneWalletCaches removes every wallet record but the kept ones", () =>
       withCacheBackend(backend, async (storage) => {
-        const kept = await RegTestWallet.newRandom();
+        const kept = await RegTestHDWallet.newRandom();
         await kept.walletCache.persist(true);
         await kept.stop();
         const keptKey = `walletCache-${cacheIdOf(kept)}`;
+        const single = await RegTestWallet.newRandom();
+        await single.stop();
         const orphanKey = `walletCache-${"ab".repeat(32)}`;
         await storage.setItem(orphanKey, "{}");
         await storage.setItem("txraw-regtest-cd", "00");
@@ -204,7 +209,7 @@ describe.each(["indexeddb", "localstorage"] as const)(
         ).rejects.toThrow();
         expect(await storage.getItem(orphanKey)).not.toBeNull();
 
-        await pruneWalletCaches([kept.toDbString()]);
+        await pruneWalletCaches([kept.toDbString(), single.toDbString()]);
 
         expect(await storage.getItem(orphanKey)).toBeNull();
         expect(await storage.getItem(keptKey)).not.toBeNull();

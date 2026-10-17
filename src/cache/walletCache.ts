@@ -3,12 +3,7 @@ import {
   binToHex,
   CashAddressNetworkPrefix,
   CashAddressType,
-  decodeCashAddressFormatWithoutPrefix,
-  decodePrivateKeyWif,
-  deriveHdPath,
   deriveHdPathRelative,
-  deriveHdPrivateNodeFromSeed,
-  deriveSeedFromBip39Mnemonic,
   encodeCashAddress,
   HdPrivateNodeValid,
   HdPublicNodeValid,
@@ -19,9 +14,8 @@ import {
   utf8ToBin,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
-import { NetworkType, prefixFromNetworkMap } from "../enum.js";
+import { prefixFromNetworkMap } from "../enum.js";
 import { TxI, Utxo } from "../interface.js";
-import { toCashaddr } from "../util/deriveCashaddr.js";
 import { IndexedDbCache } from "./IndexedDbCache.js";
 import { CacheProvider } from "./interface.js";
 import { MemoryCache } from "./MemoryCache.js";
@@ -102,26 +96,18 @@ function getStorage(): CacheProvider | undefined {
 
 const CACHE_KEY_PREFIX = "walletCache-";
 
-/// The id a wallet's cache record is keyed by: a hash of what the wallet derives its addresses
-/// from (an HD wallet's seed or extended key, a single-address wallet's cashaddr) and its network
+/// The id an HD wallet's cache record is keyed by: a hash of what the wallet derives its addresses
+/// from (its seed and derivation path, or its extended key) and its network
 export function deriveWalletCacheId(source: string, network: string): string {
   return binToHex(sha256.hash(utf8ToBin(`${source}-${network}`)));
 }
 
-function p2pkhCashaddr(privateKey: Uint8Array, network: string): string {
-  const publicKey = assertSuccess(
-    secp256k1.derivePublicKeyCompressed(privateKey),
-  );
-  return encodeCashAddress({
-    prefix: prefixFromNetworkMap[network as NetworkType],
-    type: "p2pkh",
-    payload: hash160(publicKey),
-  }).address;
-}
-
-/// The cache id of the wallet a stored wallet id (`toDbString()`, a database row's `wallet`)
-/// stands for, derived the way the wallet classes do without constructing one
-export function walletCacheIdFromWalletId(walletId: string): string {
+/// The cache id of the HD wallet a stored wallet id (`toDbString()`, a database row's `wallet`)
+/// stands for, derived the way HDWallet does without constructing one; undefined for a
+/// single-address wallet, which keeps no cache record
+export function walletCacheIdFromWalletId(
+  walletId: string,
+): string | undefined {
   const [walletType, network, arg1, arg2] = walletId.split(":");
   if (!network || !(network in prefixFromNetworkMap) || !arg1) {
     throw new Error("Not a stored wallet id");
@@ -137,51 +123,28 @@ export function walletCacheIdFromWalletId(walletId: string): string {
       const derivation = arg2 || Config.DefaultParentDerivationPath;
       return deriveWalletCacheId(arg1 + derivation, network);
     }
-    case "seed": {
-      const mnemonic = arg1.trim().toLowerCase();
-      const path = arg2 || Config.DefaultParentDerivationPath + "/0/0";
-      const rootNode = deriveHdPrivateNodeFromSeed(
-        deriveSeedFromBip39Mnemonic(mnemonic),
-        { assumeValidity: true, throwErrors: true },
-      );
-      const { privateKey } = deriveHdPath(rootNode, path);
-      return deriveWalletCacheId(p2pkhCashaddr(privateKey, network), network);
-    }
+    case "seed":
     case "privkey":
-      return deriveWalletCacheId(
-        p2pkhCashaddr(hexToBin(arg1), network),
-        network,
-      );
-    case "wif": {
-      const { privateKey } = assertSuccess(decodePrivateKeyWif(arg1));
-      return deriveWalletCacheId(p2pkhCashaddr(privateKey, network), network);
-    }
-    case "watch": {
-      let address = arg2 ? `${arg1}:${arg2}` : arg1;
-      if (!address.includes(":")) {
-        const { prefix } = assertSuccess(
-          decodeCashAddressFormatWithoutPrefix(address),
-        );
-        address = `${prefix}:${address}`;
-      }
-      return deriveWalletCacheId(toCashaddr(address), network);
-    }
+    case "wif":
+    case "watch":
+      return undefined;
     default:
       throw new Error(`Unsupported wallet type '${walletType}'`);
   }
 }
 
 /**
- * Removes the cache record of a wallet (its derived addresses with their private keys, status,
- * utxos and history) from the cache storage that `Config` selects. Use it when deleting a wallet,
- * which {@link deleteNamedWallet} does. A wallet still running writes its record again.
+ * Removes the cache record of an HD wallet (its derived addresses with their private keys, status,
+ * utxos and history) from the cache storage that `Config` selects; a single-address wallet has
+ * none. Use it when deleting a wallet, which {@link deleteNamedWallet} does. A wallet still running
+ * writes its record again.
  *
  * @param walletId the wallet's stored id, as `toDbString()` returns it and a database row holds it
  */
 export async function purgeWalletCache(walletId: string): Promise<void> {
   const cacheId = walletCacheIdFromWalletId(walletId);
   const storage = getStorage();
-  if (!storage) return;
+  if (cacheId === undefined || !storage) return;
   await storage.init();
   try {
     await storage.removeItem(CACHE_KEY_PREFIX + cacheId);
@@ -201,11 +164,11 @@ export async function pruneWalletCaches(
   keepWalletIds: string[],
 ): Promise<void> {
   // derived before anything is removed, so an id that cannot be read removes nothing
-  const keep = new Set(
-    keepWalletIds.map(
-      (walletId) => CACHE_KEY_PREFIX + walletCacheIdFromWalletId(walletId),
-    ),
-  );
+  const keep = new Set<string>();
+  for (const walletId of keepWalletIds) {
+    const cacheId = walletCacheIdFromWalletId(walletId);
+    if (cacheId !== undefined) keep.add(CACHE_KEY_PREFIX + cacheId);
+  }
   const storage = getStorage();
   if (!storage) return;
   await storage.init();
@@ -220,18 +183,12 @@ export async function pruneWalletCaches(
   }
 }
 
-/// Cache for single-address wallets (WatchWallet, Wif)
+/// Cache for single-address wallets (WatchWallet, Wif), in memory only as in mainnet-js 3.1.7: the
+/// wallet's own database record already holds its key, and a cache record would be a second copy
 export class SingleAddressWalletCache implements WalletCacheI {
   private entry: WalletCacheEntry;
-  private _storage: CacheProvider | undefined;
-  private debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(
-    public walletId: string,
-    address: string,
-    tokenAddress: string,
-    public writeTimeout: number = 2000,
-  ) {
+  constructor(address: string, tokenAddress: string) {
     this.entry = {
       address,
       tokenAddress,
@@ -245,44 +202,9 @@ export class SingleAddressWalletCache implements WalletCacheI {
     };
   }
 
-  public async init() {
-    this._storage = getStorage();
-    await this._storage?.init();
-    const data = await this._storage?.getItem(CACHE_KEY_PREFIX + this.walletId);
-    if (data) {
-      try {
-        const parsed = parse(data);
-        // Restore persisted fields, keep address identity from constructor
-        const addr = this.entry.address;
-        const tokenAddr = this.entry.tokenAddress;
-        Object.assign(this.entry, parsed, {
-          address: addr,
-          tokenAddress: tokenAddr,
-        });
-      } catch {
-        // ignore
-      }
-    }
-  }
+  public async init() {}
 
-  public async persist(immediate = false) {
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
-    if (immediate) {
-      this.debounceTimer = undefined;
-      await this._storage?.setItem(
-        CACHE_KEY_PREFIX + this.walletId,
-        stringify(this.entry),
-      );
-    } else {
-      this.debounceTimer = setTimeout(() => {
-        this.debounceTimer = undefined;
-        // a failed write is redone by the next one, which writes the whole entry
-        this._storage
-          ?.setItem(CACHE_KEY_PREFIX + this.walletId, stringify(this.entry))
-          .catch(() => {});
-      }, this.writeTimeout);
-    }
-  }
+  public async persist() {}
 
   public get(address: string) {
     return address === this.entry.address ? this.entry : undefined;
@@ -308,7 +230,6 @@ export class SingleAddressWalletCache implements WalletCacheI {
     this.entry.utxos = utxos;
     this.entry.rawHistory = rawHistory;
     this.entry.lastConfirmedHeight = lastConfirmedHeight;
-    void this.persist(); // debounced, only schedules the write
   }
 }
 

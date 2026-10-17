@@ -9,7 +9,6 @@ import {
   secp256k1,
 } from "@bitauth/libauth";
 import {
-  deriveWalletCacheId,
   SingleAddressWalletCache,
   WalletCacheEntry,
   WalletCacheI,
@@ -169,7 +168,7 @@ export class WatchWallet extends BaseWallet {
 
     this.name = name;
 
-    // Initialize persistent cache and load saved state
+    // the cache is in memory only, so this starts from an unknown status
     await this.initWalletCache();
     const cached = this.getCacheEntry();
     this.status = cached.status;
@@ -183,17 +182,8 @@ export class WatchWallet extends BaseWallet {
     return this;
   }
 
-  protected deriveWalletId(): string {
-    return deriveWalletCacheId(this.cashaddr, this.network);
-  }
-
   protected async initWalletCache(): Promise<void> {
-    const cache = new SingleAddressWalletCache(
-      this.deriveWalletId(),
-      this.cashaddr,
-      this.tokenaddr,
-    );
-    await cache.init();
+    const cache = new SingleAddressWalletCache(this.cashaddr, this.tokenaddr);
     const wallet = this as any;
     if (wallet.privateKey) {
       cache.get(this.cashaddr)!.privateKey = wallet.privateKey;

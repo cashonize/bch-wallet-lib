@@ -9,12 +9,7 @@ import {
 
 import { Config } from "../config.js";
 import { MemoryCache } from "./MemoryCache.js";
-import {
-  HDWalletCache,
-  parse,
-  SingleAddressWalletCache,
-  stringify,
-} from "./walletCache.js";
+import { HDWalletCache, parse, stringify } from "./walletCache.js";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -205,18 +200,8 @@ describe("a debounced write that fails", () => {
       const entry = hd.getByPath("0/0");
       hd.setStatusAndUtxos(entry.address, "status", [], [], 0);
 
-      const single = new SingleAddressWalletCache(
-        "single-write-fails",
-        entry.address,
-        entry.tokenAddress,
-        1,
-      );
-      await single.init();
-      failWrites(single);
-      single.setStatusAndUtxos(entry.address, "status", [], [], 0);
-
       await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(writes).toBe(2);
+      expect(writes).toBe(1);
       expect(unhandled).toEqual([]);
     } finally {
       process.off("unhandledRejection", onUnhandled);

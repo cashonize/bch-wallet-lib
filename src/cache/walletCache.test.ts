@@ -8,7 +8,8 @@ import {
 } from "@bitauth/libauth";
 
 import { Config } from "../config.js";
-import { HDWalletCache } from "./walletCache.js";
+import { MemoryCache } from "./MemoryCache.js";
+import { HDWalletCache, parse, stringify } from "./walletCache.js";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -133,6 +134,38 @@ describe("HDWalletCache", () => {
       expect(reader.get(a0)?.address).toBe(a0);
       expect(reader.get(a1)?.address).toBe(a1);
       expect(reader.get(a7)?.address).toBe(a7);
+    } finally {
+      Config.UseMemoryCache = prevMemory;
+    }
+  });
+
+  test("drops entries in the pre-next.14 index format on load", async () => {
+    const prevMemory = Config.UseMemoryCache;
+    Config.UseMemoryCache = true;
+    try {
+      const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
+      const walletId = "wallet-old-format";
+      const current = new HDWalletCache("wallet-current", node, "bitcoincash");
+      const entry = current.getByPath("0/0");
+      const oldEntry = { ...entry, privateKey: new Uint8Array(32).fill(7) };
+
+      const storage = new MemoryCache();
+      await storage.setItem(
+        `walletCache-${walletId}`,
+        stringify({
+          walletCache: { [`${walletId}-0-false`]: oldEntry },
+          indexCache: { [entry.address]: { index: 0, change: false } },
+        }),
+      );
+
+      const cache = new HDWalletCache(walletId, node, "bitcoincash");
+      await cache.init();
+      expect(cache.getByPath("0/0").address).toBe(entry.address);
+      await cache.persist(true);
+
+      const stored = parse((await storage.getItem(`walletCache-${walletId}`))!);
+      expect(Object.keys(stored.walletCache)).toEqual([`${walletId}-0/0`]);
+      expect(stored.indexCache).toBeUndefined();
     } finally {
       Config.UseMemoryCache = prevMemory;
     }

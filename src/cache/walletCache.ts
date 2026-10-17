@@ -206,15 +206,31 @@ export class HDWalletCache implements WalletCacheI {
     this._storage = getStorage();
     await this._storage?.init();
     const data = await this._storage?.getItem(`walletCache-${this.walletId}`);
+    let migrated = false;
     if (data) {
       try {
         const parsed = parse(data);
-        this.walletCache = parsed.walletCache || {};
         this.pathCache = parsed.pathCache || {};
+        // Keep only entries reachable through pathCache: the pre-next.14 format keyed them
+        // `${walletId}-${index}-${change}` (with an indexCache), private keys included, and
+        // would otherwise be carried forward on every write without ever being read
+        const stored: Record<string, WalletCacheEntry> =
+          parsed.walletCache || {};
+        let dropped = false;
+        for (const [key, entry] of Object.entries(stored)) {
+          const path = this.pathCache[entry?.address];
+          if (path !== undefined && key === `${this.walletId}-${path}`) {
+            this.walletCache[key] = entry;
+          } else {
+            dropped = true;
+          }
+        }
+        migrated = dropped || parsed.indexCache !== undefined;
       } catch (e) {
         // ignore
       }
     }
+    if (migrated) await this.persist(true);
   }
 
   public async persist(immediate = false) {

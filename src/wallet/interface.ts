@@ -50,6 +50,8 @@ export interface WalletInfoI {
 
 export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
+  /** coins no input of the spend may use, e.g. reserved ones; ids not in the wallet are ignored */
+  excludeUtxoIds?: string[] | Utxo[];
   changeAddress?: string;
   slpSemiAware?: boolean; // a flag which requires an utxo to have more than 546 sats to be spendable and counted in the balance
   queryBalance?: boolean;
@@ -57,7 +59,7 @@ export interface SendRequestOptionsI {
   feePaidBy?: FeePaidByEnum;
   checkTokenQuantities?: boolean; // true
   tokenOperation?: "send" | "genesis" | "mint" | "burn"; // undefined. internal use only
-  ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction
+  ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction; they must be in the spend's pool
   buildUnsigned?: boolean; // false
   broadcast?: boolean; // true
 

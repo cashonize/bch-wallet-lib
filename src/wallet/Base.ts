@@ -9,7 +9,6 @@ import {
   NFTCapability,
   TxI,
   Utxo,
-  UtxoId,
 } from "../interface.js";
 import { getNetworkProvider } from "../network/default.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
@@ -39,7 +38,7 @@ import {
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { runCallback, waitOnWatch } from "../util/watch.js";
 import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
-import { InsufficientFundsError } from "./errors.js";
+import { InsufficientFundsError, UtxoNotAvailableError } from "./errors.js";
 import { decodeTransaction } from "./Util.js";
 import {
   CancelFn,
@@ -756,6 +755,59 @@ export class BaseWallet implements WalletI {
     }, options);
   }
 
+  /**
+   * The coins a spend may use: the wallet's current coins, narrowed to `utxoIds` when given (in
+   * their order), minus `excludeUtxoIds`; and `ensureUtxos` resolved to coins of that pool.
+   * Coins are compared by outpoint, so a caller's copy of a coin stands for the wallet's. The
+   * token operations pick their inputs themselves and do not spend `ensureUtxos`, but a coin
+   * named there outside the pool is refused for them too.
+   */
+  protected async getSpendPool(
+    options?: SendRequestOptionsI,
+  ): Promise<{ pool: Utxo[]; ensureUtxos: Utxo[] }> {
+    const toOutpoint = (utxoId: Utxo | string) =>
+      toUtxoId(typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId);
+
+    const walletUtxos = await this.getUtxos();
+    let pool = walletUtxos;
+    if (options?.utxoIds) {
+      pool = checkUtxos(
+        options.utxoIds.map((utxoId: Utxo | string) =>
+          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
+        ),
+        walletUtxos,
+      );
+    }
+    const excluded = new Set((options?.excludeUtxoIds ?? []).map(toOutpoint));
+    pool = pool.filter((utxo) => !excluded.has(toUtxoId(utxo)));
+
+    const poolMap = new Map(pool.map((utxo) => [toUtxoId(utxo), utxo]));
+    const walletIds = new Set(walletUtxos.map(toUtxoId));
+    const ensureUtxos = (options?.ensureUtxos ?? []).map((utxo) => {
+      const utxoId = toUtxoId(utxo);
+      const inPool = poolMap.get(utxoId);
+      if (inPool) return inPool;
+      if (excluded.has(utxoId)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos is excluded by excludeUtxoIds`,
+          { utxoId, reason: "excluded" },
+        );
+      }
+      if (!walletIds.has(utxoId)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos not found in wallet`,
+          { utxoId, reason: "not-found" },
+        );
+      }
+      throw new UtxoNotAvailableError(
+        `Utxo ${utxoId} in ensureUtxos is not among utxoIds`,
+        { utxoId, reason: "not-in-utxoIds" },
+      );
+    });
+
+    return { pool, ensureUtxos };
+  }
+
   protected async _getMaxAmountToSend(
     params: {
       outputCount?: number;
@@ -765,7 +817,7 @@ export class BaseWallet implements WalletI {
       outputCount: 1,
       options: {},
     },
-  ): Promise<{ value: bigint; utxos: Utxo[] }> {
+  ): Promise<{ value: bigint; utxos: Utxo[]; ensureUtxos: Utxo[] }> {
     if (params.options && params.options.slpSemiAware) {
       this._slpSemiAware = true;
     }
@@ -778,17 +830,10 @@ export class BaseWallet implements WalletI {
     }
 
     // get inputs
-    let utxos: Utxo[];
-    const allUtxos = await this.getUtxos();
-    if (params.options && params.options.utxoIds) {
-      utxos = checkUtxos(
-        params.options.utxoIds.map((utxoId: Utxo | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        allUtxos,
-      );
-    } else {
-      utxos = allUtxos.filter((utxo) => !utxo.token);
+    const { pool, ensureUtxos } = await this.getSpendPool(params.options);
+    let utxos = pool;
+    if (!params.options?.utxoIds) {
+      utxos = pool.filter((utxo) => !utxo.token);
     }
 
     // Get current height to assure recently mined coins are not spent.
@@ -825,7 +870,7 @@ export class BaseWallet implements WalletI {
       result = 0n;
     }
 
-    return { value: result, utxos: fundingUtxos };
+    return { value: result, utxos: fundingUtxos, ensureUtxos };
   }
 
   public async getMaxAmountToSend(
@@ -889,21 +934,24 @@ export class BaseWallet implements WalletI {
     options?: SendRequestOptionsI & { buildUnsigned?: B },
     privateKey?: Uint8Array,
   ): Promise<SendResponseFor<B>> {
-    const { value: maxSpendableAmount, utxos } = await this._getMaxAmountToSend(
-      {
-        outputCount: 1,
-        options: options,
-        privateKey: privateKey,
-      },
-    );
+    const {
+      value: maxSpendableAmount,
+      utxos,
+      ensureUtxos,
+    } = await this._getMaxAmountToSend({
+      outputCount: 1,
+      options: options,
+      privateKey: privateKey,
+    });
 
     // pinned as well: the selection would stop at the coins that cover the amount, leaving the
     // ones worth less than their own input fee unspent and their share of the fee to the miners
-    options = {
-      ...options,
-      utxoIds: utxos,
-      ensureUtxos: [...(options?.ensureUtxos ?? []), ...utxos],
-    };
+    const ensureIds = new Set(ensureUtxos.map(toUtxoId));
+    const inputs = [
+      ...ensureUtxos,
+      ...utxos.filter((utxo) => !ensureIds.has(toUtxoId(utxo))),
+    ];
+    options = { ...options, utxoIds: inputs, ensureUtxos: inputs };
 
     const sendRequest = new SendRequest({
       cashaddr: cashaddr,
@@ -1004,16 +1052,10 @@ export class BaseWallet implements WalletI {
       checkTokenQuantities = false;
     }
 
-    // get inputs from options or query all inputs
-    let utxos: Utxo[] = await this.getUtxos();
-    if (options && options.utxoIds) {
-      utxos = checkUtxos(
-        options.utxoIds.map((utxoId: Utxo | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        utxos,
-      );
-    }
+    const spendPool = await this.getSpendPool(options);
+    let utxos = spendPool.pool;
+    // the pool's copies: every coin the send spends comes from the pool
+    options = { ...options, ensureUtxos: spendPool.ensureUtxos };
 
     // filter out token utxos if there are no token requests
     if (
@@ -1403,15 +1445,7 @@ export class BaseWallet implements WalletI {
       sendRequests = [sendRequests];
     }
 
-    let utxos: Utxo[] = await this.getUtxos();
-    if (options?.utxoIds) {
-      utxos = checkUtxos(
-        options.utxoIds.map((utxoId: UtxoId | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        utxos,
-      );
-    }
+    const { pool: utxos } = await this.getSpendPool(options);
 
     const genesisInputs = utxos.filter((val) => val.vout === 0 && !val.token);
     if (genesisInputs.length < genesisRequests.length) {
@@ -1481,15 +1515,7 @@ export class BaseWallet implements WalletI {
       requestsByCategory.set(request.category, bucket);
     }
 
-    let utxos: Utxo[] = await this.getUtxos();
-    if (options?.utxoIds) {
-      utxos = checkUtxos(
-        options.utxoIds.map((utxoId: UtxoId | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        utxos,
-      );
-    }
+    const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
     const outputs: TokenSendRequest[] = [];
     const depositAddresses = this.getTokenDepositAddresses(
@@ -1580,15 +1606,7 @@ export class BaseWallet implements WalletI {
     }
     burnRequests.forEach(checkBurnRequest);
 
-    let utxos: Utxo[] = await this.getUtxos();
-    if (options?.utxoIds) {
-      utxos = checkUtxos(
-        options.utxoIds.map((utxoId: UtxoId | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        utxos,
-      );
-    }
+    const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
     const changeSendRequests: Array<SendRequest | TokenSendRequest> = [];
 

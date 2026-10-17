@@ -38,3 +38,26 @@ export class InvalidRequestError extends Error {
     this.value = value;
   }
 }
+
+/**
+ * Thrown before anything is built when a coin a spend is told to use, in `ensureUtxos`, is not
+ * in its pool: the wallet's current coins, narrowed to `utxoIds` when given, minus
+ * `excludeUtxoIds`. `utxoId` is the coin's `txid:vout`; `reason` says why it is not in the pool.
+ */
+export class UtxoNotAvailableError extends Error {
+  readonly utxoId: string;
+  readonly reason: "excluded" | "not-in-utxoIds" | "not-found";
+
+  constructor(
+    message: string,
+    {
+      utxoId,
+      reason,
+    }: { utxoId: string; reason: "excluded" | "not-in-utxoIds" | "not-found" },
+  ) {
+    super(message);
+    this.name = "UtxoNotAvailableError";
+    this.utxoId = utxoId;
+    this.reason = reason;
+  }
+}

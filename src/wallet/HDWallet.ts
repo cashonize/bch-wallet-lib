@@ -67,8 +67,6 @@ export const DEPOSIT_BRANCH = 0;
 export const CHANGE_BRANCH = 1;
 
 export class HDWallet extends BaseWallet {
-  protected static networkPrefix = CashAddressNetworkPrefix.mainnet;
-
   readonly mnemonic!: string;
   readonly derivation: string = Config.DefaultParentDerivationPath;
   // the id of the wallet's cache record
@@ -1024,7 +1022,6 @@ export class HDWallet extends BaseWallet {
  * Class to manage a testnet wallet.
  */
 export class TestNetHDWallet extends HDWallet {
-  protected static networkPrefix = CashAddressNetworkPrefix.testnet;
   constructor() {
     super(NetworkType.Testnet);
   }
@@ -1034,7 +1031,6 @@ export class TestNetHDWallet extends HDWallet {
  * Class to manage a regtest wallet.
  */
 export class RegTestHDWallet extends HDWallet {
-  protected static networkPrefix = CashAddressNetworkPrefix.regtest;
   constructor() {
     super(NetworkType.Regtest);
   }

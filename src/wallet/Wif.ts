@@ -2,7 +2,6 @@
 import {
   assertSuccess,
   binToHex,
-  CashAddressNetworkPrefix,
   deriveHdPath,
   deriveHdPrivateNodeFromSeed,
   deriveSeedFromBip39Mnemonic,
@@ -372,7 +371,6 @@ export class Wallet extends WatchWallet {
  * Class to manage a testnet wallet.
  */
 export class TestNetWallet extends Wallet {
-  protected static networkPrefix = CashAddressNetworkPrefix.testnet;
   constructor(name = "") {
     super(name, NetworkType.Testnet);
   }
@@ -382,7 +380,6 @@ export class TestNetWallet extends Wallet {
  * Class to manage a regtest wallet.
  */
 export class RegTestWallet extends Wallet {
-  protected static networkPrefix = CashAddressNetworkPrefix.regtest;
   constructor(name = "") {
     super(name, NetworkType.Regtest);
   }

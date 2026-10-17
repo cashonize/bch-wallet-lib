@@ -1,6 +1,5 @@
 import {
   assertSuccess,
-  CashAddressNetworkPrefix,
   decodeCashAddress,
   decodeCashAddressFormatWithoutPrefix,
   encodeCashAddress,
@@ -44,9 +43,6 @@ export class WatchWallet extends BaseWallet {
   readonly publicKeyHash!: Uint8Array;
   readonly cashaddr!: string;
   readonly tokenaddr!: string;
-
-  protected static networkPrefix = CashAddressNetworkPrefix.mainnet;
-  protected static walletType = WalletTypeEnum.Watch;
 
   // Subscription-first infrastructure: single subscription shared by all watchers
   private watchCallbacks: Array<
@@ -476,8 +472,6 @@ export class WatchWallet extends BaseWallet {
  * Class to manage a testnet watch wallet.
  */
 export class TestNetWatchWallet extends WatchWallet {
-  protected static networkPrefix = CashAddressNetworkPrefix.testnet;
-  protected static walletType = WalletTypeEnum.Watch;
   constructor(name = "", network = NetworkType.Testnet) {
     super(name, network);
   }
@@ -487,8 +481,6 @@ export class TestNetWatchWallet extends WatchWallet {
  * Class to manage a regtest watch wallet.
  */
 export class RegTestWatchWallet extends WatchWallet {
-  protected static networkPrefix = CashAddressNetworkPrefix.regtest;
-  protected static walletType = WalletTypeEnum.Watch;
   constructor(name = "", network = NetworkType.Regtest) {
     super(name, network);
   }

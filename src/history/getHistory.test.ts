@@ -425,10 +425,8 @@ describe("history load", () => {
       amount: 500n,
       nft: { capability: "minting", commitment: "ab" },
     });
-    await hd["waitForUpdate"]({ indices: { 0: 13 } });
     // left in the mempool, spending coins of several addresses
     await hd.send({ cashaddr: miner.getDepositAddress(), value: 25000n });
-    await hd["waitForUpdate"]({ indices: { 1: 2 } });
 
     const provider = hd.provider as ElectrumNetworkProvider;
     const { counts, restore } = countRequests(provider);

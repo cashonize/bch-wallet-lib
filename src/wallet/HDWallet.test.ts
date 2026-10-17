@@ -479,7 +479,6 @@ describe("HDWallet", () => {
       cashaddr: bob.getDepositAddress(),
       value: 50000n,
     });
-    await hdWallet["waitForUpdate"]({ indices: { 1: 1 } });
     expect(hdWallet.indices.get(1)!).toBe(1);
 
     // fund and spend again, change goes to change address 1
@@ -492,7 +491,6 @@ describe("HDWallet", () => {
       cashaddr: bob.getDepositAddress(),
       value: 50000n,
     });
-    await hdWallet["waitForUpdate"]({ indices: { 1: 2 } });
     expect(hdWallet.indices.get(1)!).toBe(2);
 
     // Restore wallet from same seed and verify depositIndex is correct
@@ -585,7 +583,6 @@ describe("HDWallet", () => {
       cashaddr: bob.getDepositAddress(),
       value: 150000n,
     });
-    await hdWallet["waitForUpdate"]({ indices: { 1: 1 } });
 
     expect(
       await (
@@ -1005,8 +1002,6 @@ describe("HDWallet", () => {
 
     const category = genesisResponse.categories![0];
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
     // mint 2 NFTs, amount reducing
     const response = await alice.tokenMint([
       new TokenMintRequest({
@@ -1026,8 +1021,6 @@ describe("HDWallet", () => {
         },
       }),
     ]);
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
 
     const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
@@ -1099,7 +1092,6 @@ describe("HDWallet", () => {
       nft: { capability: NFTCapability.minting, commitment: "" },
     });
     const category = genesisResponse.categories![0];
-    await alice["waitForUpdate"]({ indices: { 0: 2, 1: 1 } });
     const [baton] = await getTokenUtxos(alice, category);
 
     const bob = await RegTestWallet.newRandom();
@@ -1135,7 +1127,6 @@ describe("HDWallet", () => {
       nft: { capability: NFTCapability.minting, commitment: "" },
     });
     const category = genesisResponse.categories![0];
-    await alice["waitForUpdate"]({ indices: { 0: 2, 1: 1 } });
 
     const bob = await RegTestWallet.newRandom();
     const mintResponse = await alice.tokenMint(
@@ -1196,7 +1187,6 @@ describe("HDWallet", () => {
 
     const genesisResponse = await alice.tokenGenesis({ amount: 550n });
     const category = genesisResponse.categories![0];
-    await alice["waitForUpdate"]({ indices: { 0: 2, 1: 1 } });
 
     // ten coins of 10 to 100 tokens, each on an address of its own
     await alice.send(
@@ -1210,7 +1200,6 @@ describe("HDWallet", () => {
           }),
       ),
     );
-    await alice["waitForUpdate"]({ indices: { 0: 12, 1: 2 } });
     const coins = await getTokenUtxos(alice, category);
     expect(coins.length).toBe(10);
 
@@ -1256,7 +1245,6 @@ describe("HDWallet", () => {
       { address: tokenChangeAddress, amount: 10n },
     ]);
 
-    await alice["waitForUpdate"]({ indices: { 1: 3 } });
     expect((await getTokenUtxos(alice, category)).length).toBe(9);
     expect(await getTokenBalance(alice, category)).toBe(370n);
     expect(await getTokenBalance(bob, category)).toBe(180n);
@@ -1277,8 +1265,6 @@ describe("HDWallet", () => {
       amount: 100n,
     });
     const category = genesisResponse.categories![0];
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
 
     const previousValue = Config.EnforceCashTokenReceiptAddresses;
 
@@ -1302,8 +1288,6 @@ describe("HDWallet", () => {
       ),
     ).resolves.not.toThrow();
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
     await expect(
       alice.send(
         new TokenSendRequest({
@@ -1313,8 +1297,6 @@ describe("HDWallet", () => {
         }),
       ),
     ).resolves.not.toThrow();
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
 
     Config.EnforceCashTokenReceiptAddresses = true;
     await expect(wrap(alice.getDepositAddress())).rejects.toThrow();
@@ -1331,8 +1313,6 @@ describe("HDWallet", () => {
         ))(),
     ).rejects.toThrow();
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
     await expect(
       alice.send(
         new TokenSendRequest({
@@ -1342,8 +1322,6 @@ describe("HDWallet", () => {
         }),
       ),
     ).resolves.not.toThrow();
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
 
     Config.EnforceCashTokenReceiptAddresses = previousValue;
   });

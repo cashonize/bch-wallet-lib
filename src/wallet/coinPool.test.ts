@@ -299,12 +299,12 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
       nft: { capability: NFTCapability.none, commitment: "01" },
     });
 
-    const plain = await bob.tokenMint(request, false, { broadcast: false });
+    const plain = await bob.tokenMint(request, { broadcast: false });
     const [picked] = inputOutpoints(plain.transaction!).filter((id) =>
       mintingCoins.includes(id),
     );
 
-    const response = await bob.tokenMint(request, false, {
+    const response = await bob.tokenMint(request, {
       broadcast: false,
       excludeUtxoIds: [picked],
     });
@@ -313,7 +313,7 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     expect(spent).toContain(mintingCoins.find((id) => id !== picked));
 
     const error = await bob
-      .tokenMint(request, false, {
+      .tokenMint(request, {
         broadcast: false,
         excludeUtxoIds: mintingCoins,
       })
@@ -455,7 +455,6 @@ describe("ensureUtxos must be in the pool", () => {
             category,
             nft: { capability: NFTCapability.none, commitment: "" },
           }),
-          false,
           options,
         ),
       () =>

@@ -156,29 +156,26 @@ describe("a built transaction that burns tokens is refused", () => {
 });
 
 describe("token operations that conserve or explicitly burn tokens still pass", () => {
-  test("a mint that deducts its fungible tokens, and burns of an NFT and of fungible tokens", async () => {
+  test("a mint, and burns of an NFT and of fungible tokens", async () => {
     const wallet = await fundedWallet();
     const bob = await RegTestWallet.newRandom();
     const minting = { capability: NFTCapability.minting, commitment: "" };
     const category = (await wallet.tokenGenesis({ amount: 10n, nft: minting }))
       .categories![0];
 
-    await wallet.tokenMint(
-      [
-        new TokenMintRequest({
-          category,
-          cashaddr: wallet.tokenaddr,
-          nft: { capability: NFTCapability.none, commitment: "0a" },
-        }),
-        new TokenMintRequest({
-          category,
-          cashaddr: bob.tokenaddr,
-          nft: { capability: NFTCapability.none, commitment: "0b" },
-        }),
-      ],
-      true,
-    );
-    expect(await wallet.getTokenBalance(category)).toBe(8n);
+    await wallet.tokenMint([
+      new TokenMintRequest({
+        category,
+        cashaddr: wallet.tokenaddr,
+        nft: { capability: NFTCapability.none, commitment: "0a" },
+      }),
+      new TokenMintRequest({
+        category,
+        cashaddr: bob.tokenaddr,
+        nft: { capability: NFTCapability.none, commitment: "0b" },
+      }),
+    ]);
+    expect(await wallet.getTokenBalance(category)).toBe(10n);
 
     await wallet.tokenBurn(
       new TokenBurnRequest({
@@ -191,7 +188,7 @@ describe("token operations that conserve or explicitly burn tokens still pass", 
     );
     const left = await wallet.getTokenUtxos(category);
     expect(left.map((utxo) => utxo.token)).toEqual([
-      { category, amount: 5n, nft: minting },
+      { category, amount: 7n, nft: minting },
     ]);
     expect(await bob.getTokenUtxos(category)).toHaveLength(1);
   });

@@ -1434,12 +1434,10 @@ export class BaseWallet implements WalletI {
    *   @param  {object?} nft NFT capability and commitment of the new token
    *   @param  {string?} cashaddr destination address; defaults to wallet's token deposit address
    *   @param  {bigint?} value satoshi value to send alongside tokens; defaults to 1000
-   * @param  {boolean?} deductTokenAmount if a minting NFT contains a fungible amount, deduct from it by the number of mints in that category
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
   public async tokenMint(
     mintRequests: TokenMintRequest | Array<TokenMintRequest>,
-    deductTokenAmount: boolean = false,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
     if (!Array.isArray(mintRequests)) {
@@ -1460,8 +1458,6 @@ export class BaseWallet implements WalletI {
     const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
     const outputs: TokenSendRequest[] = [];
-    // deductTokenAmount takes one fungible token per mint off the minting NFT, and burns it
-    const fungibleBurns: Record<string, bigint> = {};
     const depositAddresses = this.getTokenDepositAddresses(
       mintRequests.filter((request) => !request.cashaddr).length,
     );
@@ -1480,20 +1476,13 @@ export class BaseWallet implements WalletI {
       }
 
       const mintingUtxo = nftUtxos[0];
-      const newAmount =
-        deductTokenAmount && mintingUtxo.token!.amount > 0
-          ? mintingUtxo.token!.amount - BigInt(requests.length)
-          : mintingUtxo.token!.amount;
-      const safeNewAmount = newAmount < 0n ? 0n : newAmount;
-      fungibleBurns[category] = mintingUtxo.token!.amount - safeNewAmount;
-
       ensureUtxos.push(mintingUtxo);
       outputs.push(
         new TokenSendRequest({
           cashaddr: this.getTokenChangeAddress(),
           category: category,
           nft: mintingUtxo.token?.nft,
-          amount: safeNewAmount,
+          amount: mintingUtxo.token!.amount,
           value: mintingUtxo.satoshis,
         }),
       );
@@ -1516,10 +1505,7 @@ export class BaseWallet implements WalletI {
       ensureUtxos,
       checkTokenQuantities: false,
       tokenOperation: "mint",
-      tokenBurns:
-        options?.checkTokenQuantities === false
-          ? undefined
-          : { fungible: fungibleBurns },
+      tokenBurns: options?.checkTokenQuantities === false ? undefined : {},
     });
   }
 

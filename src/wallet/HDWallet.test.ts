@@ -1094,7 +1094,6 @@ describe("HDWallet", () => {
         cashaddr: bob.tokenaddr!,
         nft: { capability: NFTCapability.none, commitment: "01" },
       },
-      false,
       { broadcast: false },
     );
 
@@ -1135,7 +1134,6 @@ describe("HDWallet", () => {
         { category, nft: { capability: NFTCapability.none, commitment: "03" } },
         { category, nft: { capability: NFTCapability.none, commitment: "04" } },
       ],
-      false,
       { broadcast: false },
     );
     const minted = outputAddresses(alice, mintResponse.transaction!).filter(

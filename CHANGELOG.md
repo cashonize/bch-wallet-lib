@@ -136,3 +136,7 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 - The `queryBalance` send option and `SendResponse.balance`: a send no longer reads the balance after broadcasting. Call `getBalance()` after the send resolves; the send waits for the wallet to see its transaction, so the balance includes it.
 - `SendResponse.explorerUrl` and `BaseWallet.explorerUrl()`. Build the link from `txId` with the explorer of your choice.
 - The `awaitTransactionPropagation` send option, the `awaitPropagation` parameter of `submitTransaction` (now `submitTransaction(transaction)`) and that of `ElectrumNetworkProvider.sendRawTransaction` (now `sendRawTransaction(txHex)`). A broadcast always waits until the server reports the transaction, and a refusal always rejects with `BroadcastRejectedError`. Before, `false` returned the txid at once and swallowed a refusal, so a transaction the server refused looked sent. Drop the argument; a caller that passed `false` awaits the call instead.
+
+### Changed
+
+- `tokenMint(requests, options)`: the `deductTokenAmount` parameter is gone, and with it the burn of one fungible token per mint off the minting NFT; the minting NFT always comes back with all its fungible tokens. Drop the second argument: `tokenMint(requests, false, options)` becomes `tokenMint(requests, options)`. A caller that wants fungible tokens burned burns them with `tokenBurn`.

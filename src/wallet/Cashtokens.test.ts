@@ -407,7 +407,7 @@ describe(`Test cashtokens`, () => {
     expect(category).toEqual(response.categories![0]);
   });
 
-  test("Test minting NFT and optionally burning FT cashtoken", async () => {
+  test("Test minting NFTs keeps the minting NFT's fungible tokens", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const genesisResponse = await alice.tokenGenesis({
       cashaddr: alice.cashaddr!,
@@ -424,92 +424,82 @@ describe(`Test cashtokens`, () => {
     const tokenUtxos = await alice.getTokenUtxos(category);
     expect(tokenUtxos.length).toBe(1);
 
-    // mint 2 NFTs, amount reducing
-    const response = await alice.tokenMint(
-      [
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0b",
-          },
-        }),
-      ],
-      true,
-    );
-    expect(await alice.getTokenBalance(category)).toBe(2n);
+    // mint 2 NFTs; the minting NFT keeps its fungible tokens
+    const response = await alice.tokenMint([
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0b",
+        },
+      }),
+    ]);
+    expect(await alice.getTokenBalance(category)).toBe(4n);
     const newTokenUtxos = await alice.getTokenUtxos(category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
 
-    // mint 2 more NFTs without amount reducing
-    const ftResponse = await alice.tokenMint(
-      [
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0c",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0d",
-          },
-        }),
-      ],
-      false,
-    );
-    expect(await alice.getTokenBalance(category)).toBe(2n);
+    // mint 2 more NFTs
+    const ftResponse = await alice.tokenMint([
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0c",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0d",
+        },
+      }),
+    ]);
+    expect(await alice.getTokenBalance(category)).toBe(4n);
     const ftTokenUtxos = await alice.getTokenUtxos(category);
     expect(ftTokenUtxos.length).toBe(5);
     expect(category).toEqual(ftResponse.categories![0]);
 
-    // we are going to hit amount -1, when minting 3 more NFTs
-    // check that it will stop at 0
-    const ft2Response = await alice.tokenMint(
-      [
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-      ],
-      true,
-    );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
+    // and 3 more
+    const ft2Response = await alice.tokenMint([
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+    ]);
+    expect(await alice.getTokenBalance(category)).toBe(4n);
     const ft2TokenUtxos = await alice.getTokenUtxos(category);
     expect(ft2TokenUtxos.length).toBe(8);
     expect(category).toEqual(ft2Response.categories![0]);
@@ -1414,28 +1404,25 @@ describe(`Test cashtokens`, () => {
     ]);
     const [catA, catB] = genesisResponse.categories!;
 
-    const mintResponse = await bob.tokenMint(
-      [
-        new TokenMintRequest({
-          category: catA,
-          nft: { capability: NFTCapability.none, commitment: "a2" },
-        }),
-        new TokenMintRequest({
-          category: catA,
-          nft: { capability: NFTCapability.none, commitment: "a3" },
-        }),
-        new TokenMintRequest({
-          category: catB,
-          nft: { capability: NFTCapability.none, commitment: "b2" },
-        }),
-      ],
-      true,
-    );
+    const mintResponse = await bob.tokenMint([
+      new TokenMintRequest({
+        category: catA,
+        nft: { capability: NFTCapability.none, commitment: "a2" },
+      }),
+      new TokenMintRequest({
+        category: catA,
+        nft: { capability: NFTCapability.none, commitment: "a3" },
+      }),
+      new TokenMintRequest({
+        category: catB,
+        nft: { capability: NFTCapability.none, commitment: "b2" },
+      }),
+    ]);
 
     expect(mintResponse.txId).toBeDefined();
-    // FT amounts deducted per category: catA had 10, minted 2 -> 8; catB had 5, minted 1 -> 4
-    expect(await bob.getTokenBalance(catA)).toBe(8n);
-    expect(await bob.getTokenBalance(catB)).toBe(4n);
+    // each minting NFT keeps its fungible tokens
+    expect(await bob.getTokenBalance(catA)).toBe(10n);
+    expect(await bob.getTokenBalance(catB)).toBe(5n);
     expect(await bob.getNftTokenBalance(catA)).toBe(3);
     expect(await bob.getNftTokenBalance(catB)).toBe(2);
   });
@@ -1495,7 +1482,6 @@ describe(`Test cashtokens`, () => {
         category,
         nft: { capability: NFTCapability.none, commitment: "03" },
       },
-      false,
       { utxoIds: allowed, broadcast: false },
     );
     expect(inputOutpoints(response.transaction!)).toEqual(
@@ -1505,7 +1491,6 @@ describe(`Test cashtokens`, () => {
     await expect(
       bob.tokenMint(
         { category, nft: { capability: NFTCapability.none, commitment: "" } },
-        false,
         { utxoIds: [bchUtxos[0]], broadcast: false },
       ),
     ).rejects.toThrow(InsufficientFundsError);

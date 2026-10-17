@@ -1,4 +1,3 @@
-export { binToHex, hexToBin } from "@bitauth/libauth";
 export { ExchangeRate, getExchangeRatePromise } from "../rate/ExchangeRate.js";
 export type {
   ExchangeRateOptions,

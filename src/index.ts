@@ -10,8 +10,6 @@ export { getHistory } from "./history/getHistory.js";
 export * from "./history/interface.js";
 // interfaces
 export * from "./interface.js";
-// libauth re-export (backward compatibility)
-export * as libauth from "./libauth.js";
 export type {
   SignedMessageResponseI,
   VerifyMessageResponseI,

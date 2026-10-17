@@ -1,8 +1,12 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { utf8ToBin } from "@bitauth/libauth";
+import {
+  binToHex,
+  decodeTransaction,
+  hexToBin,
+  utf8ToBin,
+} from "@bitauth/libauth";
 import { NFTCapability } from "../interface.js";
-import * as libauth from "../libauth.js";
-import { binToHex, delay, hexToBin } from "../util/index.js";
+import { delay } from "../util/index.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
 
@@ -556,7 +560,7 @@ describe(`Cashtokens should function in the browser`, () => {
         JSON.stringify(await aliceWallet.getUtxos()),
       );
 
-      const decoded = libauth.decodeTransaction(encodedTransaction);
+      const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
         throw new Error(decoded);
       }
@@ -606,7 +610,7 @@ describe(`Cashtokens should function in the browser`, () => {
         JSON.stringify(await aliceWallet.getUtxos()),
       );
 
-      const decoded = libauth.decodeTransaction(encodedTransaction);
+      const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
         throw new Error(decoded);
       }
@@ -667,7 +671,7 @@ describe(`Cashtokens should function in the browser`, () => {
         JSON.stringify(await aliceWallet.getUtxos()),
       );
 
-      const decoded = libauth.decodeTransaction(encodedTransaction);
+      const decoded = decodeTransaction(encodedTransaction);
       if (typeof decoded === "string") {
         throw new Error(decoded);
       }

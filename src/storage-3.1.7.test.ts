@@ -1,5 +1,7 @@
 import { binToHex } from "@bitauth/libauth";
-import { readFileSync } from "fs";
+import { mkdtempSync, readFileSync } from "fs";
+import { LocalStorage } from "node-localstorage";
+import { tmpdir } from "os";
 import path from "path";
 import { parse, WalletCacheI } from "./cache/walletCache.js";
 import { Config } from "./config.js";
@@ -162,10 +164,15 @@ describe("data written by mainnet-js 3.1.7", () => {
     indexedDb: Config.UseIndexedDBCache,
     storage: BaseWallet.StorageProvider,
     path: Config.DefaultParentDerivationPath,
+    localStorage: globalThis.localStorage,
   };
 
   beforeAll(async () => {
     await loadIndexedDB(fixture.indexedDB);
+    // a localStorage of its own: the shared one is a directory every test file writes in parallel,
+    // and ExchangeRate.test.ts sets and removes the same rate-usd key
+    const dir = mkdtempSync(path.join(tmpdir(), "localstorage-"));
+    globalThis.localStorage = new LocalStorage(dir) as unknown as Storage;
     for (const [key, value] of Object.entries(fixture.localStorage)) {
       localStorage.setItem(key, value as string);
     }
@@ -194,10 +201,7 @@ describe("data written by mainnet-js 3.1.7", () => {
     for (const wallet of wallets.values()) await wallet.stop();
     removeGlobalProvider(Network.MAINNET);
     removeGlobalProvider(Network.TESTNET);
-    // node-localstorage keeps its keys on disk, for the next test run too
-    for (const key of Object.keys(fixture.localStorage)) {
-      localStorage.removeItem(key);
-    }
+    globalThis.localStorage = prevConfig.localStorage;
     Config.UseIndexedDBCache = prevConfig.indexedDb;
     BaseWallet.StorageProvider = prevConfig.storage;
     Config.DefaultParentDerivationPath = prevConfig.path;

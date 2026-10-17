@@ -1058,7 +1058,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
     let result: SendResponse, transaction: ElectrumRawTransaction;
 
     result = await wallet.send([
-      OpReturnData.from("MEMO\x10LÖL😅"),
+      OpReturnData.fromArray(["MEMO\x10LÖL😅"]),
       { cashaddr: wallet.cashaddr!, value: 546n },
     ]);
     transaction = await wallet.provider!.getRawTransactionObject(result.txId!);
@@ -1078,8 +1078,8 @@ describe(`Wallet extrema behavior regression testing`, () => {
     ]).toStrictEqual([0x00, 0x01, 0x02]);
 
     result = await wallet.send([
-      OpReturnData.from(""),
-      OpReturnData.from(Uint8Array.from([])),
+      OpReturnData.fromArray([""]),
+      OpReturnData.fromArray([Uint8Array.from([])]),
     ]);
     transaction = await wallet.provider!.getRawTransactionObject(result.txId!);
     expect(transaction.vout[0].scriptPubKey.asm).toContain("OP_RETURN");
@@ -1096,7 +1096,7 @@ describe(`Wallet extrema behavior regression testing`, () => {
     const wallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
 
     // one 223-byte script: OP_RETURN, OP_PUSHDATA1 <220>, 220 bytes
-    const full = OpReturnData.from(new Uint8Array(220).fill(1));
+    const full = OpReturnData.fromArray([new Uint8Array(220).fill(1)]);
     let result = await wallet.send([full]);
     let transaction = await wallet.provider!.getRawTransactionObject(
       result.txId!,
@@ -1104,15 +1104,15 @@ describe(`Wallet extrema behavior regression testing`, () => {
     expect(transaction.vout[0].scriptPubKey.hex).toBe(binToHex(full.buffer));
 
     // 223 bytes over two outputs: 1 + 2 + 100 and 1 + 2 + 117
-    const first = OpReturnData.from(new Uint8Array(100).fill(2));
-    const second = OpReturnData.from(new Uint8Array(117).fill(3));
+    const first = OpReturnData.fromArray([new Uint8Array(100).fill(2)]);
+    const second = OpReturnData.fromArray([new Uint8Array(117).fill(3)]);
     result = await wallet.send([first, second]);
     transaction = await wallet.provider!.getRawTransactionObject(result.txId!);
     expect(transaction.vout[0].scriptPubKey.hex).toBe(binToHex(first.buffer));
     expect(transaction.vout[1].scriptPubKey.hex).toBe(binToHex(second.buffer));
 
     // one byte more over the two is refused before anything is sent
-    const third = OpReturnData.from(new Uint8Array(118).fill(3));
+    const third = OpReturnData.fromArray([new Uint8Array(118).fill(3)]);
     await expect(wallet.send([first, third])).rejects.toThrow(
       "OP_RETURN outputs can not exceed 223 bytes in total, got 224",
     );

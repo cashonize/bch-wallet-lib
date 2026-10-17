@@ -1,8 +1,6 @@
 import {
   authenticationInstructionsAreMalformed,
-  binToUtf8,
   decodeAuthenticationInstructions,
-  hexToBin,
   utf8ToBin,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
@@ -268,17 +266,6 @@ export class OpReturnData {
   }
 
   /**
-   * from - Construct OP_RETURN data from arbitrary data type
-   *
-   * @param string   UTF-8 encoded string message to be converted to OP_RETURN data
-   *
-   * @returns class instance
-   */
-  public static from(data: string | Uint8Array) {
-    return this.fromArray([data]);
-  }
-
-  /**
    * fromString - Accept data as a simple UTF-8 string message and append an OP_RETURN and PUSH_DATA1 opcodes to it
    *
    * @param string   UTF-8 encoded string message to be converted to OP_RETURN data
@@ -287,21 +274,6 @@ export class OpReturnData {
    */
   public static fromString(string: string) {
     return this.fromArray([string]);
-  }
-
-  /**
-   * buffer - Accept OP_RETURN data as a binary buffer.
-   * If buffer lacks the OP_RETURN and OP_PUSHDATA opcodes, they will be prepended.
-   *
-   * @param buffer   Data buffer to be assigned to the OP_RETURN outpit
-   *
-   * @returns class instance
-   */
-  public static fromUint8Array(uint8Array: Uint8Array) {
-    if (uint8Array[0] !== 0x6a) {
-      return this.fromArray([uint8Array]);
-    }
-    return new this(Uint8Array.from(uint8Array));
   }
 
   /**
@@ -388,17 +360,17 @@ export class OpReturnData {
 
     return chunks;
   }
+}
 
-  /**
-   * parse - parse OP_RETURN hex data and return pushed chunks of binary data, converted to utf8 strings
-   *
-   * @param opReturn   Raw OP_RETURN hex data
-   *
-   * @returns array of binary data chunks pushed, converted to utf8 strings
-   */
-  public static parse(opReturnHex: string): string[] {
-    return this.parseBinary(hexToBin(opReturnHex)).map((val) => binToUtf8(val));
+/**
+ * OP_RETURN data from a script's bytes; bytes that do not start with OP_RETURN are pushed as one
+ * chunk after it.
+ */
+export function opReturnFromBytes(bytes: Uint8Array): OpReturnData {
+  if (bytes[0] !== 0x6a) {
+    return OpReturnData.fromArray([bytes]);
   }
+  return new OpReturnData(Uint8Array.from(bytes));
 }
 
 /** What a send returns: the signed transaction, broadcast unless `broadcast: false` was given. */

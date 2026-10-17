@@ -1,5 +1,6 @@
 import { binToHex, decodeTransaction, hexToBin } from "@bitauth/libauth";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { getTokenUtxos } from "#test/balances.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import {
   InsufficientFundsError,
@@ -195,7 +196,7 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     await bob.send(
       new TokenSendRequest({ cashaddr: bob.tokenaddr!, amount: 50n, category }),
     );
-    const tokenCoins = await bob.getTokenUtxos(category);
+    const tokenCoins = await getTokenUtxos(bob, category);
     const hybrid = tokenCoins.find((utxo) => utxo.token?.nft)!;
     const fungible = tokenCoins.find((utxo) => !utxo.token?.nft)!;
     const carol = await RegTestWallet.newRandom();
@@ -254,7 +255,7 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     });
 
     const plain = await bob.send(request, { broadcast: false });
-    const copies = (await bob.getTokenUtxos(category))
+    const copies = (await getTokenUtxos(bob, category))
       .filter((utxo) => utxo.token?.nft?.commitment === "aa")
       .map(outpoint);
     expect(copies).toHaveLength(2);
@@ -293,7 +294,7 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     const category = genesis.categories![0];
     // a second minting NFT of the category
     await bob.tokenMint(new TokenMintRequest({ category, nft: minting }));
-    const mintingCoins = (await bob.getTokenUtxos(category)).map(outpoint);
+    const mintingCoins = (await getTokenUtxos(bob, category)).map(outpoint);
     expect(mintingCoins).toHaveLength(2);
     const request = new TokenMintRequest({
       category,
@@ -329,7 +330,7 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     await bob.send(
       new TokenSendRequest({ cashaddr: bob.tokenaddr!, amount: 40n, category }),
     );
-    const tokenCoins = await bob.getTokenUtxos(category);
+    const tokenCoins = await getTokenUtxos(bob, category);
     expect(tokenCoins).toHaveLength(2);
     const request = new TokenBurnRequest({ category, amount: 10n });
 
@@ -355,7 +356,7 @@ describe("the pool is a set", () => {
     const bob = await fundedWallet(100_000n);
     const genesis = await bob.tokenGenesis({ amount: 100n, value: 5000n });
     const category = genesis.categories![0];
-    const [tokenCoin] = await bob.getTokenUtxos(category);
+    const [tokenCoin] = await getTokenUtxos(bob, category);
     const coins = await bob.getUtxos();
     const request = new TokenBurnRequest({ category, amount: 10n });
     const outputValues = (transactionHex: string) =>
@@ -510,7 +511,7 @@ describe("sendMax spends only what it counts", () => {
     const bob = await fundedWallet(100_000n);
     const genesis = await bob.tokenGenesis({ amount: 100n, value: 50_000n });
     const category = genesis.categories![0];
-    const [tokenCoin] = await bob.getTokenUtxos(category);
+    const [tokenCoin] = await getTokenUtxos(bob, category);
     const carol = await RegTestWallet.newRandom();
 
     for (const spend of [

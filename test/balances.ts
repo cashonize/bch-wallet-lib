@@ -10,7 +10,7 @@ interface BalanceSource {
 }
 
 /** The wallet's token coins, of one category when given */
-export async function tokenUtxos(
+export async function getTokenUtxos(
   wallet: UtxoSource,
   category?: string,
 ): Promise<Utxo[]> {
@@ -21,20 +21,20 @@ export async function tokenUtxos(
 }
 
 /** The wallet's fungible token amount of a category */
-export async function tokenBalance(
+export async function getTokenBalance(
   wallet: UtxoSource,
   category: string,
 ): Promise<bigint> {
-  const utxos = await tokenUtxos(wallet, category);
+  const utxos = await getTokenUtxos(wallet, category);
   return utxos.reduce((sum, utxo) => sum + (utxo.token?.amount ?? 0n), 0n);
 }
 
 /** The number of NFTs of a category the wallet holds */
-export async function nftTokenBalance(
+export async function getNftTokenBalance(
   wallet: UtxoSource,
   category: string,
 ): Promise<number> {
-  const utxos = await tokenUtxos(wallet, category);
+  const utxos = await getTokenUtxos(wallet, category);
   return utxos.filter((utxo) => utxo.token?.nft !== undefined).length;
 }
 
@@ -75,7 +75,7 @@ export function waitForTokenBalance(
   timeout = 10_000,
 ): Promise<bigint> {
   return poll(
-    () => tokenBalance(wallet, category),
+    () => getTokenBalance(wallet, category),
     (balance) => balance >= amount,
     timeout,
   );

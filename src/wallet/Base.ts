@@ -23,7 +23,6 @@ import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { checkUtxos } from "../util/checkUtxos.js";
 import {
   getRuntimePlatform,
-  sumTokenAmounts,
   sumUtxoValue,
   toTokenaddr,
 } from "../util/index.js";
@@ -1434,83 +1433,6 @@ export class BaseWallet {
     });
   }
 
-  /**
-   * getTokenUtxos Get unspent token outputs for the wallet
-   * will return utxos only for the specified token if `category` provided
-   * @param  {string?} category category to filter utxos by, if not set will return utxos from all tokens
-   * @returns  {Utxo[]} token utxos
-   */
-  public async getTokenUtxos(category?: string): Promise<Utxo[]> {
-    const utxos = await this.getUtxos();
-    return utxos.filter((val) =>
-      category ? val.token?.category === category : val.token,
-    );
-  }
-
-  /**
-   * getTokenBalance Gets fungible token balance
-   * for NFT token balance see @ref getNftTokenBalance
-   * @param  {string} category category to get balance for
-   * @returns  {bigint} fungible token balance
-   */
-  public async getTokenBalance(category: string): Promise<bigint> {
-    const utxos = (await this.getTokenUtxos(category)).filter(
-      (val) => val.token?.amount && val.token?.category === category,
-    );
-    return sumTokenAmounts(utxos, category);
-  }
-
-  /**
-   * getNftTokenBalance Gets non-fungible token (NFT) balance for a particular category
-   * disregards fungible token balances
-   * for fungible token balance see @ref getTokenBalance
-   * @param  {string} category category to get balance for
-   * @returns  {number} non-fungible token balance
-   */
-  public async getNftTokenBalance(category: string): Promise<number> {
-    const utxos = (await this.getTokenUtxos(category)).filter(
-      (val) => val.token?.nft?.commitment !== undefined,
-    );
-    return utxos.length;
-  }
-
-  /**
-   * getAllTokenBalances Gets all fungible token balances in this wallet
-   * @returns  {Object} a map [category => balance] for all tokens in this wallet
-   */
-  public async getAllTokenBalances(): Promise<{ [category: string]: bigint }> {
-    const result = {};
-    const utxos = (await this.getTokenUtxos()).filter(
-      (val) => val.token?.amount,
-    );
-    for (const utxo of utxos) {
-      if (!result[utxo.token!.category]) {
-        result[utxo.token!.category] = 0n;
-      }
-      result[utxo.token!.category] += utxo.token!.amount;
-    }
-    return result;
-  }
-
-  /**
-   * getAllNftTokenBalances Gets all non-fungible token (NFT) balances in this wallet
-   * @returns  {Object} a map [category => balance] for all NFTs in this wallet
-   */
-  public async getAllNftTokenBalances(): Promise<{
-    [category: string]: number;
-  }> {
-    const result = {};
-    const utxos = (await this.getTokenUtxos()).filter(
-      (val) => val.token?.nft?.commitment !== undefined,
-    );
-    for (const utxo of utxos) {
-      if (!result[utxo.token!.category]) {
-        result[utxo.token!.category] = 0;
-      }
-      result[utxo.token!.category] += 1;
-    }
-    return result;
-  }
   //#endregion Cashtokens
 }
 

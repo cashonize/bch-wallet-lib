@@ -10,6 +10,7 @@ import { Config } from "../config.js";
 import { NFTCapability } from "../interface.js";
 import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { getTokenBalance, getTokenUtxos } from "#test/balances.js";
 import { delay } from "../util/delay.js";
 import { toTokenaddr } from "../util/deriveCashaddr.js";
 import { getNextUnusedIndex, getNextUnusedIndices } from "../util/hd.js";
@@ -1010,7 +1011,7 @@ describe("HDWallet", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
 
@@ -1045,8 +1046,8 @@ describe("HDWallet", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    expect((await alice.getTokenUtxos(category)).length).toBe(0);
-    const bobTokenUtxos = await bob.getTokenUtxos(category);
+    expect((await getTokenUtxos(alice, category)).length).toBe(0);
+    const bobTokenUtxos = await getTokenUtxos(bob, category);
     expect(bobTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
   });
@@ -1081,7 +1082,7 @@ describe("HDWallet", () => {
     });
     const category = genesisResponse.categories![0];
     await alice.waitForUpdate({ depositIndex: 2, changeIndex: 1 });
-    const [baton] = await alice.getTokenUtxos(category);
+    const [baton] = await getTokenUtxos(alice, category);
 
     const bob = await RegTestWallet.newRandom();
     const response = await alice.tokenMint(
@@ -1192,7 +1193,7 @@ describe("HDWallet", () => {
       ),
     );
     await alice.waitForUpdate({ depositIndex: 12, changeIndex: 2 });
-    const coins = await alice.getTokenUtxos(category);
+    const coins = await getTokenUtxos(alice, category);
     expect(coins.length).toBe(10);
 
     const bob = await RegTestWallet.newRandom();
@@ -1238,9 +1239,9 @@ describe("HDWallet", () => {
     ]);
 
     await alice.waitForUpdate({ changeIndex: 3 });
-    expect((await alice.getTokenUtxos(category)).length).toBe(9);
-    expect(await alice.getTokenBalance(category)).toBe(370n);
-    expect(await bob.getTokenBalance(category)).toBe(180n);
+    expect((await getTokenUtxos(alice, category)).length).toBe(9);
+    expect(await getTokenBalance(alice, category)).toBe(370n);
+    expect(await getTokenBalance(bob, category)).toBe(180n);
   });
 
   test("Test enforcing token addresses", async () => {

@@ -3,6 +3,7 @@ import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { getTokenUtxos } from "#test/balances.js";
 import {
   SendRequest,
   TokenBurnRequest,
@@ -142,7 +143,7 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     await alice.send(
       new SendRequest({ cashaddr: bob.cashaddr!, value: 5000n }),
     );
-    const tokenCoins = await bob.getTokenUtxos();
+    const tokenCoins = await getTokenUtxos(bob);
     expect(tokenCoins.length).toBe(150);
 
     const bchCoins = async () =>
@@ -185,7 +186,7 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
 
     coins = await bob.getUtxos();
     funding = await bchCoins();
-    const minting = (await bob.getTokenUtxos(ownCategory))[0];
+    const minting = (await getTokenUtxos(bob, ownCategory))[0];
     const mint = await bob.tokenMint(
       new TokenMintRequest({
         category: ownCategory,
@@ -216,7 +217,7 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     expect(
       decode(sendMax.transaction).outputs.map((output) => output.valueSatoshis),
     ).toEqual([max]);
-    expect((await bob.getTokenUtxos()).length).toBe(150);
+    expect((await getTokenUtxos(bob)).length).toBe(150);
   });
 
   test("a change at or below dust is topped up when another input costs less than it", async () => {
@@ -317,7 +318,7 @@ describe("a send's outputs", () => {
   test("a send of no outputs is refused, though a token change of ensureUtxos is one", async () => {
     const { bob } = await fund(1, 20000n);
     const genesis = await bob.tokenGenesis({ amount: 10n });
-    const tokenCoins = await bob.getTokenUtxos(genesis.categories[0]);
+    const tokenCoins = await getTokenUtxos(bob, genesis.categories[0]);
     await expect(bob.send([], { broadcast: false })).rejects.toThrow(
       "A send needs at least one output",
     );

@@ -1,4 +1,5 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { getTokenBalance, getTokenUtxos } from "#test/balances.js";
 import { NFTCapability } from "../interface.js";
 import { TokenBurnError } from "./errors.js";
 import {
@@ -92,7 +93,7 @@ describe("a built transaction that burns tokens is refused", () => {
     expect(error.nft).toBeUndefined();
 
     expect(await wallet.getUtxos()).toEqual(utxosBefore);
-    expect(await bob.getTokenBalance(category)).toBe(0n);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
   });
 
   test("a send whose NFT change is dropped", async () => {
@@ -100,7 +101,7 @@ describe("a built transaction that burns tokens is refused", () => {
     const bob = await RegTestWallet.newRandom();
     const nft = { capability: NFTCapability.none, commitment: "01" };
     const category = (await wallet.tokenGenesis({ nft })).categories![0];
-    const [nftCoin] = await wallet.getTokenUtxos(category);
+    const [nftCoin] = await getTokenUtxos(wallet, category);
     dropped.tokenaddr = wallet.tokenaddr;
 
     const error = await burnError(
@@ -112,7 +113,7 @@ describe("a built transaction that burns tokens is refused", () => {
     expect(error.category).toBe(category);
     expect(error.amount).toBe(0n);
     expect(error.nft).toEqual(nft);
-    expect(await wallet.getTokenUtxos(category)).toEqual([nftCoin]);
+    expect(await getTokenUtxos(wallet, category)).toEqual([nftCoin]);
   });
 
   test("a mint whose minting NFT change is dropped", async () => {
@@ -133,7 +134,7 @@ describe("a built transaction that burns tokens is refused", () => {
     );
     expect(error.category).toBe(category);
     expect(error.nft).toEqual(nft);
-    expect(await bob.getTokenUtxos(category)).toEqual([]);
+    expect(await getTokenUtxos(bob, category)).toEqual([]);
   });
 
   test("a burn whose change is dropped burns more than it asked", async () => {
@@ -175,7 +176,7 @@ describe("token operations that conserve or explicitly burn tokens still pass", 
         nft: { capability: NFTCapability.none, commitment: "0b" },
       }),
     ]);
-    expect(await wallet.getTokenBalance(category)).toBe(10n);
+    expect(await getTokenBalance(wallet, category)).toBe(10n);
 
     await wallet.tokenBurn(
       new TokenBurnRequest({
@@ -186,10 +187,10 @@ describe("token operations that conserve or explicitly burn tokens still pass", 
     await wallet.tokenBurn(
       new TokenBurnRequest({ category, nft: minting, amount: 3n }),
     );
-    const left = await wallet.getTokenUtxos(category);
+    const left = await getTokenUtxos(wallet, category);
     expect(left.map((utxo) => utxo.token)).toEqual([
       { category, amount: 7n, nft: minting },
     ]);
-    expect(await bob.getTokenUtxos(category)).toHaveLength(1);
+    expect(await getTokenUtxos(bob, category)).toHaveLength(1);
   });
 });

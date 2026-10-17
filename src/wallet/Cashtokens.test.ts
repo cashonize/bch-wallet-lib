@@ -9,7 +9,12 @@ import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { waitForTokenBalance } from "#test/balances.js";
+import {
+  getNftTokenBalance,
+  getTokenBalance,
+  getTokenUtxos,
+  waitForTokenBalance,
+} from "#test/balances.js";
 import json from "../test/json.test.js";
 import { convert, delay } from "../util/index.js";
 import {
@@ -70,7 +75,7 @@ describe(`Test cashtokens`, () => {
     const wallet = await TestNetWallet.watchOnly(
       "bchtest:pzszr88euuuy87uarx9krcuh5psy4zzghsm2033xk4",
     );
-    const utxos = await wallet.getTokenUtxos();
+    const utxos = await getTokenUtxos(wallet);
     expect(utxos[0].token?.category).toBeDefined();
   });
 
@@ -96,9 +101,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     await alice.send([
       new SendRequest({
@@ -111,7 +116,7 @@ describe(`Test cashtokens`, () => {
         category: category,
       }),
     ]);
-    expect(await bob.getTokenBalance(category)).toBe(25n);
+    expect(await getTokenBalance(bob, category)).toBe(25n);
     expect(await bob.getBalance()).toBe(5000n + 1000n);
 
     await bob.send(
@@ -120,11 +125,11 @@ describe(`Test cashtokens`, () => {
         value: 1000n,
       }),
     );
-    expect(await bob.getTokenBalance(category)).toBe(25n);
+    expect(await getTokenBalance(bob, category)).toBe(25n);
     expect(await bob.getBalance()).toBe(3780n + 1000n);
 
     await bob.sendMax(alice.cashaddr!);
-    expect(await bob.getTokenBalance(category)).toBe(25n);
+    expect(await getTokenBalance(bob, category)).toBe(25n);
     expect(await bob.getBalance()).toBe(0n + 1000n);
   });
 
@@ -136,9 +141,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(300n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     await alice.send([
       new TokenSendRequest({
@@ -156,12 +161,12 @@ describe(`Test cashtokens`, () => {
         value: 20000n,
       }),
     ]);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(2);
-    expect(await alice.getTokenBalance(category)).toBe(275n);
-    expect(await bob.getTokenBalance(category)).toBe(25n);
-    expect(await bob.getNftTokenBalance(category)).toBe(0);
-    expect((await bob.getAllNftTokenBalances())[category] || 0).toBe(0);
+    expect(await getTokenBalance(alice, category)).toBe(275n);
+    expect(await getTokenBalance(bob, category)).toBe(25n);
+    expect(await getNftTokenBalance(bob, category)).toBe(0);
+    expect(await getNftTokenBalance(bob, category)).toBe(0);
 
     await alice.send([
       new TokenSendRequest({
@@ -181,29 +186,29 @@ describe(`Test cashtokens`, () => {
       }),
     ]);
 
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getTokenBalance(category)).toBe(300n);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    expect(await getTokenBalance(bob, category)).toBe(300n);
 
     await bob.tokenBurn({
       category: category,
       amount: 99n,
     });
 
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getTokenBalance(category)).toBe(201n);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    expect(await getTokenBalance(bob, category)).toBe(201n);
 
     await bob.tokenBurn({
       category: category,
       amount: 200n,
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(1n);
+    expect(await getTokenBalance(bob, category)).toBe(1n);
 
     await bob.tokenBurn({
       category: category,
       amount: 1n,
     });
-    expect(await bob.getTokenBalance(category)).toBe(0n);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
   });
 
   test("Test NFT cashtoken genesis and sending", async () => {
@@ -219,11 +224,11 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const nftTokenBalance = await alice.getNftTokenBalance(category);
+    const nftTokenBalance = await getNftTokenBalance(alice, category);
     expect(nftTokenBalance).toBe(1);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     const response = await alice.send([
       new TokenSendRequest({
@@ -235,13 +240,13 @@ describe(`Test cashtokens`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    expect(await alice.getNftTokenBalance(category)).toBe(0);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    expect(await getNftTokenBalance(alice, category)).toBe(0);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(0);
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    const bobTokenUtxos = await bob.getTokenUtxos(category);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    const bobTokenUtxos = await getTokenUtxos(bob, category);
     expect(bobTokenUtxos.length).toBe(1);
     expect(category).toEqual(response.categories![0]);
     expect(bobTokenUtxos[0].token?.nft?.commitment).toEqual("abcd");
@@ -258,9 +263,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     await expect(
       alice.send([
@@ -287,9 +292,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     const response = await alice.send([
       new TokenSendRequest({
@@ -301,8 +306,8 @@ describe(`Test cashtokens`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(1);
     expect(category).toEqual(response.categories![0]);
     expect(newTokenUtxos[0].token?.nft?.commitment).toEqual("abcd02");
@@ -319,9 +324,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     const response = await alice.tokenMint([
       new TokenMintRequest({
@@ -341,8 +346,8 @@ describe(`Test cashtokens`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
   });
@@ -378,7 +383,7 @@ describe(`Test cashtokens`, () => {
         },
       }),
     ]);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
 
@@ -402,8 +407,8 @@ describe(`Test cashtokens`, () => {
       }),
     ]);
 
-    expect((await alice.getTokenUtxos(category)).length).toBe(1);
-    const bobTokenUtxos = await bob.getTokenUtxos(category);
+    expect((await getTokenUtxos(alice, category)).length).toBe(1);
+    const bobTokenUtxos = await getTokenUtxos(bob, category);
     expect(bobTokenUtxos.length).toBe(2);
     expect(category).toEqual(response.categories![0]);
   });
@@ -420,9 +425,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(4n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
     // mint 2 NFTs; the minting NFT keeps its fungible tokens
@@ -444,8 +449,8 @@ describe(`Test cashtokens`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(4n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(4n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
 
@@ -468,8 +473,8 @@ describe(`Test cashtokens`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(4n);
-    const ftTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(4n);
+    const ftTokenUtxos = await getTokenUtxos(alice, category);
     expect(ftTokenUtxos.length).toBe(5);
     expect(category).toEqual(ftResponse.categories![0]);
 
@@ -500,8 +505,8 @@ describe(`Test cashtokens`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(4n);
-    const ft2TokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(4n);
+    const ft2TokenUtxos = await getTokenUtxos(alice, category);
     expect(ft2TokenUtxos.length).toBe(8);
     expect(category).toEqual(ft2Response.categories![0]);
   });
@@ -514,9 +519,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(4n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
     // burn 5 FT
@@ -534,8 +539,8 @@ describe(`Test cashtokens`, () => {
     expect(rawTx!.vout[0].scriptPubKey.hex).toContain(
       binToHex(utf8ToBin("burn")),
     );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(0);
     expect(category).toEqual(response.categories![0]);
   });
@@ -552,9 +557,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(4n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
     // burn 1 FT
@@ -576,12 +581,12 @@ describe(`Test cashtokens`, () => {
     expect(rawTx!.vout[0].scriptPubKey.hex).toContain(
       binToHex(utf8ToBin("burn")),
     );
-    expect(await alice.getTokenBalance(category)).toBe(3n);
-    expect((await alice.getAllTokenBalances())[category]).toBe(3n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(3n);
+    expect(await getTokenBalance(alice, category)).toBe(3n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await alice.getNftTokenBalance(category)).toBe(1);
-    expect((await alice.getAllNftTokenBalances())[category || 0]).toBe(1);
+    expect(await getNftTokenBalance(alice, category)).toBe(1);
+    expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(category).toEqual(response.categories![0]);
 
     // burn the rest FTs
@@ -596,8 +601,8 @@ describe(`Test cashtokens`, () => {
       },
       "burn",
     );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const ftTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const ftTokenUtxos = await getTokenUtxos(alice, category);
     expect(ftTokenUtxos.length).toBe(1);
     expect(category).toEqual(ftResponse.categories![0]);
 
@@ -612,13 +617,13 @@ describe(`Test cashtokens`, () => {
       },
       "burn",
     );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    expect((await alice.getAllTokenBalances())[category] || 0n).toBe(0n);
-    const nftTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const nftTokenUtxos = await getTokenUtxos(alice, category);
     expect(nftTokenUtxos.length).toBe(0);
     expect(category).toEqual(nftResponse.categories![0]);
-    expect(await alice.getNftTokenBalance(category)).toBe(0);
-    expect((await alice.getAllNftTokenBalances())[category] || 0).toBe(0);
+    expect(await getNftTokenBalance(alice, category)).toBe(0);
+    expect(await getNftTokenBalance(alice, category)).toBe(0);
   });
 
   test("Test cashtoken satoshi values and fee calculations", async () => {
@@ -631,9 +636,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await bob.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(bob, category);
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos.length).toBe(1);
     expect(tokenUtxos[0].satoshis).toBe(7000n);
 
@@ -646,9 +651,9 @@ describe(`Test cashtokens`, () => {
         value: 1500n,
       }),
     ]);
-    let newTokenUtxos = await bob.getTokenUtxos(category);
+    let newTokenUtxos = await getTokenUtxos(bob, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await bob.getTokenBalance(category)).toBe(100n);
+    expect(await getTokenBalance(bob, category)).toBe(100n);
 
     let bobUtxos = await bob.getUtxos();
     expect(bobUtxos.length).toBe(2);
@@ -664,9 +669,9 @@ describe(`Test cashtokens`, () => {
         value: 3000n,
       }),
     ]);
-    newTokenUtxos = await bob.getTokenUtxos(category);
+    newTokenUtxos = await getTokenUtxos(bob, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await bob.getTokenBalance(category)).toBe(100n);
+    expect(await getTokenBalance(bob, category)).toBe(100n);
 
     bobUtxos = await bob.getUtxos();
     expect(bobUtxos.length).toBe(2);
@@ -689,9 +694,9 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     expect(tokenUtxos[0].satoshis).toBe(5000n);
 
@@ -738,10 +743,10 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await bob.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(bob, category);
 
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos.length).toBe(1);
 
     const genesis2Response = await bob.tokenGenesis({
@@ -749,12 +754,12 @@ describe(`Test cashtokens`, () => {
     });
 
     const category2 = genesis2Response.categories![0];
-    const tokenBalance2 = await bob.getTokenBalance(category2);
+    const tokenBalance2 = await getTokenBalance(bob, category2);
     expect(tokenBalance2).toBe(200n);
-    const tokenUtxos2 = await bob.getTokenUtxos(category2);
+    const tokenUtxos2 = await getTokenUtxos(bob, category2);
     expect(tokenUtxos2.length).toBe(1);
 
-    expect((await bob.getTokenUtxos()).length).toBe(2);
+    expect((await getTokenUtxos(bob)).length).toBe(2);
   });
 
   test("Test sending tokens should not burn tokens", async () => {
@@ -770,10 +775,10 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await bob.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(bob, category);
 
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos.length).toBe(1);
 
     const genesis2Response = await bob.tokenGenesis({
@@ -781,12 +786,12 @@ describe(`Test cashtokens`, () => {
     });
 
     const category2 = genesis2Response.categories![0];
-    const tokenBalance2 = await bob.getTokenBalance(category2);
+    const tokenBalance2 = await getTokenBalance(bob, category2);
     expect(tokenBalance2).toBe(200n);
-    const tokenUtxos2 = await bob.getTokenUtxos(category2);
+    const tokenUtxos2 = await getTokenUtxos(bob, category2);
     expect(tokenUtxos2.length).toBe(1);
 
-    expect((await bob.getTokenUtxos()).length).toBe(2);
+    expect((await getTokenUtxos(bob)).length).toBe(2);
 
     const charlie = await RegTestWallet.newRandom();
     await bob.send({
@@ -794,10 +799,10 @@ describe(`Test cashtokens`, () => {
       category: category,
       amount: 50n,
     });
-    expect((await bob.getTokenUtxos()).length).toBe(2);
-    expect((await charlie.getTokenUtxos()).length).toBe(1);
-    expect(await bob.getTokenBalance(category)).toBe(50n);
-    expect(await charlie.getTokenBalance(category)).toBe(50n);
+    expect((await getTokenUtxos(bob)).length).toBe(2);
+    expect((await getTokenUtxos(charlie)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(50n);
+    expect(await getTokenBalance(charlie, category)).toBe(50n);
   });
 
   test("Test sending bch should not burn tokens", async () => {
@@ -812,17 +817,17 @@ describe(`Test cashtokens`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await bob.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(bob, category);
 
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos.length).toBe(1);
 
     await bob.send({ cashaddr: alice.cashaddr!, value: 1000n });
 
-    const tokenBalance2 = await bob.getTokenBalance(category);
+    const tokenBalance2 = await getTokenBalance(bob, category);
     expect(tokenBalance2).toBe(100n);
-    const tokenUtxos2 = await bob.getTokenUtxos(category);
+    const tokenUtxos2 = await getTokenUtxos(bob, category);
     expect(tokenUtxos2.length).toBe(1);
   });
 
@@ -842,9 +847,9 @@ describe(`Test cashtokens`, () => {
 
     const category = genesisResponse.categories![0];
 
-    const tokenBalance = await bob.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(bob, category);
     expect(tokenBalance).toBe(1001n);
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos.length).toBe(1);
 
     await bob.send({ cashaddr: alice.cashaddr!, value: 1000n });
@@ -877,14 +882,14 @@ describe(`Test cashtokens`, () => {
       },
     ]);
 
-    const tokenBalance2 = await bob.getTokenBalance(category);
+    const tokenBalance2 = await getTokenBalance(bob, category);
     expect(tokenBalance2).toBe(0n);
-    const tokenUtxos2 = await bob.getTokenUtxos(category);
+    const tokenUtxos2 = await getTokenUtxos(bob, category);
     expect(tokenUtxos2.length).toBe(0);
 
-    const tokenBalance3 = await charlie.getTokenBalance(category);
+    const tokenBalance3 = await getTokenBalance(charlie, category);
     expect(tokenBalance3).toBe(1001n);
-    const tokenUtxos3 = await charlie.getTokenUtxos(category);
+    const tokenUtxos3 = await getTokenUtxos(charlie, category);
     expect(tokenUtxos3.length).toBe(5);
 
     // charlie sends some: the largest coin covers it, the others are not spent (mainnet-js#246)
@@ -919,11 +924,11 @@ describe(`Test cashtokens`, () => {
       { lockingBytecode: lockingBytecodeOf(bob.cashaddr!), amount: 50n },
       { lockingBytecode: lockingBytecodeOf(charlie.cashaddr!), amount: 451n },
     ]);
-    expect(await charlie.getTokenBalance(category)).toBe(951n);
-    const tokenUtxos4 = await charlie.getTokenUtxos(category);
+    expect(await getTokenBalance(charlie, category)).toBe(951n);
+    const tokenUtxos4 = await getTokenUtxos(charlie, category);
     expect(coinAmounts(tokenUtxos4)).toEqual([5n, 95n, 100n, 300n, 451n]);
-    expect(await bob.getTokenBalance(category)).toBe(50n);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(50n);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
 
     // an amount over several coins takes the largest ones until it is covered
     const response5 = await charlie.send([
@@ -940,7 +945,7 @@ describe(`Test cashtokens`, () => {
       { lockingBytecode: lockingBytecodeOf(bob.cashaddr!), amount: 200n },
       { lockingBytecode: lockingBytecodeOf(charlie.cashaddr!), amount: 51n },
     ]);
-    const tokenUtxos5 = await charlie.getTokenUtxos(category);
+    const tokenUtxos5 = await getTokenUtxos(charlie, category);
     expect(coinAmounts(tokenUtxos5)).toEqual([5n, 51n, 95n]);
 
     // a coin in ensureUtxos counts first, no other coin is added when it covers the amount
@@ -963,8 +968,8 @@ describe(`Test cashtokens`, () => {
       ]),
     ).rejects.toThrow("Not enough token amount to send");
 
-    expect(await charlie.getTokenBalance(category)).toBe(146n);
-    expect(await bob.getTokenBalance(category)).toBe(855n);
+    expect(await getTokenBalance(charlie, category)).toBe(146n);
+    expect(await getTokenBalance(bob, category)).toBe(855n);
   });
 
   test("Test minting NFTs not burn tokens", async () => {
@@ -984,9 +989,9 @@ describe(`Test cashtokens`, () => {
 
     const category = genesisResponse.categories![0];
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
 
     await bob.tokenMint({
       category: category,
@@ -996,9 +1001,9 @@ describe(`Test cashtokens`, () => {
       },
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(2);
-    expect((await bob.getTokenUtxos(category)).length).toBe(2);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(2);
+    expect((await getTokenUtxos(bob, category)).length).toBe(2);
 
     await bob.send(
       new TokenSendRequest({
@@ -1010,13 +1015,13 @@ describe(`Test cashtokens`, () => {
         cashaddr: charlie.cashaddr!,
       }),
     );
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
 
-    expect(await charlie.getTokenBalance(category)).toBe(0n);
-    expect(await charlie.getNftTokenBalance(category)).toBe(1);
-    expect((await charlie.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(charlie, category)).toBe(0n);
+    expect(await getNftTokenBalance(charlie, category)).toBe(1);
+    expect((await getTokenUtxos(charlie, category)).length).toBe(1);
   });
 
   test("Test sending NFTs after burning minting token", async () => {
@@ -1037,9 +1042,9 @@ describe(`Test cashtokens`, () => {
 
     const category = genesisResponse.categories![0];
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
 
     await bob.tokenMint({
       category: category,
@@ -1049,9 +1054,9 @@ describe(`Test cashtokens`, () => {
       },
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(2);
-    expect((await bob.getTokenUtxos(category)).length).toBe(2);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(2);
+    expect((await getTokenUtxos(bob, category)).length).toBe(2);
 
     await bob.tokenMint({
       category: category,
@@ -1061,9 +1066,9 @@ describe(`Test cashtokens`, () => {
       },
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(3);
-    expect((await bob.getTokenUtxos(category)).length).toBe(3);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(3);
+    expect((await getTokenUtxos(bob, category)).length).toBe(3);
 
     await bob.tokenBurn({
       category: category,
@@ -1073,9 +1078,9 @@ describe(`Test cashtokens`, () => {
       },
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(2);
-    expect((await bob.getTokenUtxos(category)).length).toBe(2);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(2);
+    expect((await getTokenUtxos(bob, category)).length).toBe(2);
 
     await bob.send(
       new TokenSendRequest({
@@ -1087,13 +1092,13 @@ describe(`Test cashtokens`, () => {
         cashaddr: charlie.cashaddr!,
       }),
     );
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
 
-    expect(await charlie.getTokenBalance(category)).toBe(0n);
-    expect(await charlie.getNftTokenBalance(category)).toBe(1);
-    expect((await charlie.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(charlie, category)).toBe(0n);
+    expect(await getNftTokenBalance(charlie, category)).toBe(1);
+    expect((await getTokenUtxos(charlie, category)).length).toBe(1);
 
     await bob.send(
       new TokenSendRequest({
@@ -1105,13 +1110,13 @@ describe(`Test cashtokens`, () => {
         cashaddr: charlie.cashaddr!,
       }),
     );
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(0);
-    expect((await bob.getTokenUtxos(category)).length).toBe(0);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(0);
+    expect((await getTokenUtxos(bob, category)).length).toBe(0);
 
-    expect(await charlie.getTokenBalance(category)).toBe(0n);
-    expect(await charlie.getNftTokenBalance(category)).toBe(2);
-    expect((await charlie.getTokenUtxos(category)).length).toBe(2);
+    expect(await getTokenBalance(charlie, category)).toBe(0n);
+    expect(await getNftTokenBalance(charlie, category)).toBe(2);
+    expect((await getTokenUtxos(charlie, category)).length).toBe(2);
   });
 
   test("Test sending NFTs with empty commitment", async () => {
@@ -1131,9 +1136,9 @@ describe(`Test cashtokens`, () => {
 
     const category = genesisResponse.categories![0];
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
 
     await bob.tokenMint({
       category: category,
@@ -1143,9 +1148,9 @@ describe(`Test cashtokens`, () => {
       },
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(2);
-    expect((await bob.getTokenUtxos(category)).length).toBe(2);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(2);
+    expect((await getTokenUtxos(bob, category)).length).toBe(2);
 
     await bob.tokenMint({
       category: category,
@@ -1155,9 +1160,9 @@ describe(`Test cashtokens`, () => {
       },
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(3);
-    expect((await bob.getTokenUtxos(category)).length).toBe(3);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(3);
+    expect((await getTokenUtxos(bob, category)).length).toBe(3);
 
     await bob.tokenBurn({
       category: category,
@@ -1167,9 +1172,9 @@ describe(`Test cashtokens`, () => {
       },
     });
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    expect(await bob.getNftTokenBalance(category)).toBe(2);
-    expect((await bob.getTokenUtxos(category)).length).toBe(2);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    expect(await getNftTokenBalance(bob, category)).toBe(2);
+    expect((await getTokenUtxos(bob, category)).length).toBe(2);
 
     await expect(
       bob.send(
@@ -1207,9 +1212,9 @@ describe(`Test cashtokens`, () => {
 
     const category = genesisResponse.categories![0];
 
-    expect(await bob.getTokenBalance(category)).toBe(10000n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(10000n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
 
     // explicitly split FT amounts from NFT
     await bob.send([
@@ -1228,9 +1233,9 @@ describe(`Test cashtokens`, () => {
       }),
     ]);
 
-    expect(await bob.getTokenBalance(category)).toBe(10000n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(2);
+    expect(await getTokenBalance(bob, category)).toBe(10000n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(2);
 
     // add FT amount to an NFT
     await bob.send([
@@ -1250,10 +1255,10 @@ describe(`Test cashtokens`, () => {
       }),
     ]);
 
-    expect(await bob.getTokenBalance(category)).toBe(10000n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(2);
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    expect(await getTokenBalance(bob, category)).toBe(10000n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(2);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos[0].token?.amount).toBe(9000n);
     expect(tokenUtxos[1].token?.amount).toBe(1000n);
 
@@ -1270,9 +1275,9 @@ describe(`Test cashtokens`, () => {
       }),
     ]);
 
-    expect(await bob.getTokenBalance(category)).toBe(10000n);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect((await bob.getTokenUtxos(category)).length).toBe(1);
+    expect(await getTokenBalance(bob, category)).toBe(10000n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect((await getTokenUtxos(bob, category)).length).toBe(1);
   });
 
   test("Test enforcing token addresses", async () => {
@@ -1363,8 +1368,8 @@ describe(`Test cashtokens`, () => {
 
     const [ftCategory, nftCategory] = genesisResponse.categories!;
     expect(ftCategory).not.toBe(nftCategory);
-    expect(await bob.getTokenBalance(ftCategory)).toBe(1000n);
-    expect(await bob.getNftTokenBalance(nftCategory)).toBe(1);
+    expect(await getTokenBalance(bob, ftCategory)).toBe(1000n);
+    expect(await getNftTokenBalance(bob, nftCategory)).toBe(1);
   });
 
   test("Test genesis throws if fewer vout=0 inputs than requests", async () => {
@@ -1415,10 +1420,10 @@ describe(`Test cashtokens`, () => {
 
     expect(mintResponse.txId).toBeDefined();
     // each minting NFT keeps its fungible tokens
-    expect(await bob.getTokenBalance(catA)).toBe(10n);
-    expect(await bob.getTokenBalance(catB)).toBe(5n);
-    expect(await bob.getNftTokenBalance(catA)).toBe(3);
-    expect(await bob.getNftTokenBalance(catB)).toBe(2);
+    expect(await getTokenBalance(bob, catA)).toBe(10n);
+    expect(await getTokenBalance(bob, catB)).toBe(5n);
+    expect(await getNftTokenBalance(bob, catA)).toBe(3);
+    expect(await getNftTokenBalance(bob, catB)).toBe(2);
   });
 
   test("Test burning multiple categories in a single transaction", async () => {
@@ -1443,8 +1448,8 @@ describe(`Test cashtokens`, () => {
     );
 
     expect(burnResponse.txId).toBeDefined();
-    expect(await bob.getTokenBalance(catA)).toBe(70n);
-    expect(await bob.getTokenBalance(catB)).toBe(0n);
+    expect(await getTokenBalance(bob, catA)).toBe(70n);
+    expect(await getTokenBalance(bob, catB)).toBe(0n);
   });
 
   test("tokenMint takes its minting NFT from utxoIds only", async () => {
@@ -1462,7 +1467,7 @@ describe(`Test cashtokens`, () => {
       nft: { capability: NFTCapability.minting, commitment: "02" },
     });
 
-    const batons = (await bob.getTokenUtxos(category)).filter(
+    const batons = (await getTokenUtxos(bob, category)).filter(
       (utxo) => utxo.token?.nft?.capability === NFTCapability.minting,
     );
     expect(batons.length).toBe(2);
@@ -1502,7 +1507,7 @@ describe(`Test cashtokens`, () => {
       new TokenSendRequest({ cashaddr: bob.tokenaddr!, category, amount: 30n }),
     );
 
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos.length).toBe(2);
     const bchUtxos = (await bob.getUtxos()).filter((utxo) => !utxo.token);
     expect(bchUtxos.length).toBe(1);
@@ -1617,7 +1622,7 @@ describe("token change", () => {
 
     // a spent hybrid keeps its own amount, the rest of the change is a fungible coin
     coins = [...(await bob.getUtxos())];
-    const tokenCoins = await bob.getTokenUtxos(category);
+    const tokenCoins = await getTokenUtxos(bob, category);
     const second = await bob.send(
       new TokenSendRequest({
         cashaddr: carol.tokenaddr!,
@@ -1673,8 +1678,8 @@ describe("token change", () => {
       },
       bchChange(bob),
     ]);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
-    expect(await carol.getTokenBalance(category)).toBe(1000n);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
+    expect(await getTokenBalance(carol, category)).toBe(1000n);
   });
 
   test("sending a minting NFT leaves no copy of it on the fungible change", async () => {
@@ -1731,8 +1736,8 @@ describe("token change", () => {
       },
       bchChange(bob),
     ]);
-    expect(await bob.getNftTokenBalance(category)).toBe(0);
-    expect(await bob.getTokenBalance(category)).toBe(990n);
+    expect(await getNftTokenBalance(bob, category)).toBe(0);
+    expect(await getTokenBalance(bob, category)).toBe(990n);
   });
 
   test("an immutable NFT is sendable while the wallet holds fungible tokens of its category", async () => {
@@ -1766,7 +1771,7 @@ describe("token change", () => {
       },
       bchChange(bob),
     ]);
-    expect(await bob.getTokenBalance(category)).toBe(1000n);
+    expect(await getTokenBalance(bob, category)).toBe(1000n);
   });
 
   test("a send over several categories returns each category's own change", async () => {
@@ -1867,7 +1872,7 @@ describe("token change", () => {
     const nft = { capability: NFTCapability.none, commitment: "cc" };
     const genesis = await bob.tokenGenesis({ amount: 10n, nft, value: 2000n });
     const category = genesis.categories![0];
-    const [tokenCoin] = await bob.getTokenUtxos(category);
+    const [tokenCoin] = await getTokenUtxos(bob, category);
     const coins = [...(await bob.getUtxos())];
 
     const response = await bob.send(
@@ -1963,7 +1968,7 @@ describe("NFT requests by capability", () => {
   test("two mutable NFTs sent with new commitments spend a mutable NFT each", async () => {
     const { bob, category } = await twoMutable();
     const carol = await RegTestWallet.newRandom();
-    const mutableCoins = (await bob.getTokenUtxos(category))
+    const mutableCoins = (await getTokenUtxos(bob, category))
       .filter((utxo) => utxo.token!.nft?.capability === NFTCapability.mutable)
       .map((utxo) => `${utxo.txid}:${utxo.vout}`);
     expect(mutableCoins).toHaveLength(2);
@@ -2005,7 +2010,7 @@ describe("NFT requests by capability", () => {
         },
       },
     ]);
-    expect(await bob.getNftTokenBalance(category)).toBe(1);
+    expect(await getNftTokenBalance(bob, category)).toBe(1);
   });
 
   test("more mutable NFT requests than mutable NFTs throw before anything is built", async () => {
@@ -2050,7 +2055,7 @@ describe("NFT requests backed by a minting NFT", () => {
       }),
     );
     const carol = await RegTestWallet.newRandom();
-    const batons = await bob.getTokenUtxos(category);
+    const batons = await getTokenUtxos(bob, category);
     const keptBaton = batons.find(
       (utxo) => utxo.token!.nft?.commitment === "ee",
     )!;
@@ -2093,7 +2098,7 @@ describe("NFT requests backed by a minting NFT", () => {
         },
       },
     ]);
-    expect((await bob.getTokenUtxos(category)).map(outpoint)).toEqual([
+    expect((await getTokenUtxos(bob, category)).map(outpoint)).toEqual([
       outpoint(keptBaton),
     ]);
   });
@@ -2145,7 +2150,7 @@ describe("NFT requests backed by a minting NFT", () => {
         nft: { capability: NFTCapability.mutable, commitment: "01" },
       }),
     );
-    const mutableCoin = (await bob.getTokenUtxos(category)).find(
+    const mutableCoin = (await getTokenUtxos(bob, category)).find(
       (utxo) => utxo.token!.nft?.capability === NFTCapability.mutable,
     )!;
 
@@ -2165,7 +2170,7 @@ describe("NFT requests backed by a minting NFT", () => {
     expect(inputOutpoints(response.transaction)).not.toContain(
       outpoint(mutableCoin),
     );
-    const commitments = (await bob.getTokenUtxos(category))
+    const commitments = (await getTokenUtxos(bob, category))
       .map((utxo) => utxo.token!.nft!.commitment)
       .sort();
     expect(commitments).toEqual(["", "01", "bb"]);
@@ -2179,7 +2184,7 @@ describe("NFT requests backed by a minting NFT", () => {
         nft: { capability: NFTCapability.mutable, commitment: "01" },
       }),
     );
-    const mutableCoin = (await bob.getTokenUtxos(category)).find(
+    const mutableCoin = (await getTokenUtxos(bob, category)).find(
       (utxo) => utxo.token!.nft?.capability === NFTCapability.mutable,
     )!;
 
@@ -2199,7 +2204,7 @@ describe("NFT requests backed by a minting NFT", () => {
     expect(inputOutpoints(response.transaction)).not.toContain(
       outpoint(mutableCoin),
     );
-    const commitments = (await bob.getTokenUtxos(category))
+    const commitments = (await getTokenUtxos(bob, category))
       .map((utxo) => utxo.token!.nft!.commitment)
       .sort();
     expect(commitments).toEqual(["", "01", "bb"]);
@@ -2235,7 +2240,7 @@ describe("NFT requests backed by a minting NFT", () => {
         nft: { capability: NFTCapability.mutable, commitment: "01" },
       }),
     ]);
-    const mutableCoin = (await bob.getTokenUtxos(category)).find(
+    const mutableCoin = (await getTokenUtxos(bob, category)).find(
       (utxo) => utxo.token!.nft?.capability === NFTCapability.mutable,
     )!;
     expect(mutableCoin.token!.amount).toBe(500n);
@@ -2262,7 +2267,7 @@ describe("NFT requests backed by a minting NFT", () => {
     expect(inputOutpoints(response.transaction)).toContain(
       outpoint(mutableCoin),
     );
-    const bobCoins = (await bob.getTokenUtxos(category))
+    const bobCoins = (await getTokenUtxos(bob, category))
       .map((utxo) => ({
         nft: utxo.token!.nft,
         amount: utxo.token!.amount,
@@ -2280,7 +2285,7 @@ describe("NFT requests backed by a minting NFT", () => {
         amount: 400n,
       },
     ]);
-    const carolCoins = (await carol.getTokenUtxos(category))
+    const carolCoins = (await getTokenUtxos(carol, category))
       .map((utxo) => ({
         nft: utxo.token!.nft,
         amount: utxo.token!.amount,

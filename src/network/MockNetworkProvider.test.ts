@@ -1,3 +1,4 @@
+import { getNftTokenBalance, getTokenBalance } from "#test/balances.js";
 import { randomNFT, randomToken, randomUtxo } from "@paryonusd/mem-cash";
 import { Network } from "../interface.js";
 import { SendRequest, TokenSendRequest } from "../wallet/model.js";
@@ -286,7 +287,7 @@ describe("MockNetworkProvider", () => {
       const category = genesisResponse.categories![0];
       expect(category).toBeDefined();
 
-      expect(await alice.getTokenBalance(category)).toBe(1000n);
+      expect(await getTokenBalance(alice, category)).toBe(1000n);
 
       // Send 300 tokens to bob
       await alice.send([
@@ -297,8 +298,8 @@ describe("MockNetworkProvider", () => {
         }),
       ]);
 
-      expect(await alice.getTokenBalance(category)).toBe(700n);
-      expect(await bob.getTokenBalance(category)).toBe(300n);
+      expect(await getTokenBalance(alice, category)).toBe(700n);
+      expect(await getTokenBalance(bob, category)).toBe(300n);
 
       await alice.stop();
       await bob.stop();
@@ -325,7 +326,7 @@ describe("MockNetworkProvider", () => {
       });
 
       const category = genesisResponse.categories![0];
-      expect(await alice.getNftTokenBalance(category)).toBe(1);
+      expect(await getNftTokenBalance(alice, category)).toBe(1);
 
       // Send the NFT to bob
       await alice.send([
@@ -337,8 +338,8 @@ describe("MockNetworkProvider", () => {
         }),
       ]);
 
-      expect(await alice.getNftTokenBalance(category)).toBe(0);
-      expect(await bob.getNftTokenBalance(category)).toBe(1);
+      expect(await getNftTokenBalance(alice, category)).toBe(0);
+      expect(await getNftTokenBalance(bob, category)).toBe(1);
 
       await alice.stop();
       await bob.stop();

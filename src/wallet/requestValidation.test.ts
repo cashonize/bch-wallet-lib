@@ -1,4 +1,5 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { getTokenUtxos } from "#test/balances.js";
 import { NFTCapability } from "../interface.js";
 import { InvalidRequestError } from "./errors.js";
 import {
@@ -212,7 +213,7 @@ describe("token operations validate plain request objects before reading any coi
       value: 2000n,
       nft: { capability: NFTCapability.minting, commitment },
     });
-    const [utxo] = await alice.getTokenUtxos(genesis.categories[0]);
+    const [utxo] = await getTokenUtxos(alice, genesis.categories[0]);
     expect(utxo.token?.amount).toBe(maxAmount);
     expect(utxo.token?.nft?.commitment).toBe(commitment);
   });

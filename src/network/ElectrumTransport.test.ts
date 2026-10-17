@@ -330,6 +330,39 @@ describe("ElectrumTransport subscriptions", () => {
     expect(received[1]).toEqual([addressA, "status after reconnect"]);
     expect(fake.connects).toBe(2);
     expect(fake.calls("blockchain.address.subscribe")).toHaveLength(2);
+
+    // a round trip lets anything still under way arrive, a duplicate restore included
+    await transport.request("blockchain.relayfee");
+    expect(received).toHaveLength(2);
+  });
+
+  test("delivers each notification once after close() and connect()", async () => {
+    const fake = new FakeServer();
+    serveStatuses(fake);
+    fake.handlers.set("blockchain.relayfee", () => ({ result: 0.00001 }));
+    transport = new ElectrumTransport(asServer(fake));
+    const before: unknown[] = [];
+    await transport.subscribe("blockchain.address.subscribe", [addressA], (d) =>
+      before.push(d),
+    );
+
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await transport.close();
+      await transport.connect();
+    }
+    const received: unknown[] = [];
+    await transport.subscribe("blockchain.address.subscribe", [addressA], (d) =>
+      received.push(d),
+    );
+    fake.notify("blockchain.address.subscribe", [addressA, "new status"]);
+    await transport.request("blockchain.relayfee");
+
+    expect(received).toEqual([
+      [addressA, `status of ${addressA}`],
+      [addressA, "new status"],
+    ]);
+    // close() ended the subscription made before it
+    expect(before).toHaveLength(1);
   });
 });
 

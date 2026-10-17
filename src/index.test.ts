@@ -9,3 +9,29 @@ test("the entry exports the HD wallet's gap limit and branch constants", () => {
   const options: HDWalletOptions = { branches: [...entry.DEFAULT_BRANCHES] };
   expect(options.branches).toEqual([0, 1]);
 });
+
+test("the entry keeps the storage and cache internals out", () => {
+  expect(typeof entry.pruneWalletCaches).toBe("function");
+  expect(typeof entry.deleteNamedWallet).toBe("function");
+  for (const name of [
+    "StorageProvider",
+    "purgeWalletCache",
+    "walletCacheIdFromWalletId",
+    "deriveWalletCacheId",
+    "stringify",
+    "parse",
+    "HDWalletCache",
+    "SingleAddressWalletCache",
+    "IndexedDbCache",
+  ]) {
+    expect(entry, name).not.toHaveProperty(name);
+  }
+  for (const name of [
+    "UseLocalStorageCache",
+    "UseMemoryCache",
+    "DefaultIpfsGateway",
+    "setIpfsGateway",
+  ]) {
+    expect(entry.Config, name).not.toHaveProperty(name);
+  }
+});

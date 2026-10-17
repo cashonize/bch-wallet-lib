@@ -44,7 +44,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   private _cache: CacheProvider | undefined;
 
-  get cache(): CacheProvider | undefined {
+  private get cache(): CacheProvider | undefined {
     if (!Config.UseIndexedDBCache) {
       this._cache = undefined;
     } else if (!this._cache) {

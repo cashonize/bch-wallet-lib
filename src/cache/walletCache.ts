@@ -64,9 +64,10 @@ export interface WalletCache {
 
 // Full interface for wallet cache management
 export interface WalletCacheI extends WalletCache {
+  /** @internal Loads the stored record; the wallet calls it as it is set up */
   init(): Promise<void>;
   persist(immediate?: boolean): Promise<void>;
-  /// Writes now what a debounced persist() has yet to write, if anything
+  /** @internal Writes now what a debounced persist() has yet to write, if anything */
   flush(): Promise<void>;
   get(address: string): WalletCacheEntry | undefined;
   /**
@@ -75,12 +76,14 @@ export interface WalletCacheI extends WalletCache {
    */
   getByIndex(addressIndex: number, branch: number): WalletCacheEntry;
   /**
+   * @internal
    * Derive (or fetch from cache) the address at the given relative derivation
    * path. The cache is policy-free -- the caller decides what path to ask
    * for (e.g. a depth-4 wallet with a bare-index chain, or arbitrary integer
    * branches).
    */
   getByPath(relativePath: string): WalletCacheEntry;
+  /** @internal The wallet's status watch records what it fetched for an address */
   setStatusAndUtxos(
     address: string,
     status: string | null,

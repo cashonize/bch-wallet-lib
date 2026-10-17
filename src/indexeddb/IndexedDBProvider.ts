@@ -1,4 +1,5 @@
-import { StorageProvider, WalletDbEntryI } from "../index.js";
+import type StorageProvider from "../db/StorageProvider.js";
+import type { WalletDbEntryI } from "../db/interface.js";
 
 // the object store mainnet-js 3.1.7 keeps its rows in, keyed by name
 const STORE_NAME = "wallet";

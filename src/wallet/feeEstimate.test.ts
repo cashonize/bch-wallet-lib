@@ -1,4 +1,5 @@
 import { binToHex, decodeTransaction, hexToBin } from "@bitauth/libauth";
+import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import {
@@ -275,5 +276,29 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     expect(decode(absolute.transaction).inputs.length).toBe(8);
     expect(await paidOf(absolute.transaction)).toBe(4000n);
     expect(outputValues(absolute.transaction)).toEqual([3000n, 1000n]);
+  });
+
+  test("sendMax spends every coin, also those worth less than their input fee", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send([
+      new SendRequest({ cashaddr: bob.cashaddr!, value: 20000n }),
+      ...Array.from(
+        { length: 20 },
+        () => new SendRequest({ cashaddr: bob.cashaddr!, value: 600n }),
+      ),
+    ]);
+    const coins = await bob.getUtxos();
+    // at 5 sat/byte a 600 sat coin costs more than it holds; the 20000 sat coin alone covers the
+    // amount, and spending only it paid 3960 sats for 185 bytes and kept the small coins
+    Config.RelayFeePerByte = 5;
+    try {
+      const max = await bob.getMaxAmountToSend();
+      const response = await bob.sendMax(alice.cashaddr!, { broadcast: false });
+      expect(inputOutpoints(response.transaction)).toEqual(outpointsOf(coins));
+      expect(outputValues(response.transaction)).toEqual([max]);
+    } finally {
+      Config.RelayFeePerByte = undefined;
+    }
   });
 });

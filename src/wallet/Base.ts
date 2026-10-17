@@ -879,7 +879,13 @@ export class BaseWallet implements WalletI {
       },
     );
 
-    options = { ...options, utxoIds: utxos };
+    // pinned as well: the selection would stop at the coins that cover the amount, leaving the
+    // ones worth less than their own input fee unspent and their share of the fee to the miners
+    options = {
+      ...options,
+      utxoIds: utxos,
+      ensureUtxos: [...(options?.ensureUtxos ?? []), ...utxos],
+    };
 
     const sendRequest = new SendRequest({
       cashaddr: cashaddr,

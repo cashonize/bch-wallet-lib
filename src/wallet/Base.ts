@@ -88,6 +88,8 @@ export class BaseWallet implements WalletI {
   readonly isTestnet: boolean;
   name: string = "";
   private subscriptions = new Set<WalletSubscription>();
+  // Bumped by stop(), so that a subscription still being made when it ran is ended, not kept
+  private stops = 0;
   private providerSwitch: Promise<void> = Promise.resolve();
 
   /** The electrum provider this wallet talks to; change it with setProvider() */
@@ -433,6 +435,7 @@ export class BaseWallet implements WalletI {
   protected async subscribe(
     subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>,
   ): Promise<CancelFn> {
+    const stops = this.stops;
     let provider = this.provider;
     const subscription = {
       subscribe,
@@ -440,11 +443,15 @@ export class BaseWallet implements WalletI {
       cancel: once(await subscribe(provider)),
     };
     // setProvider ran while subscribing
-    while (provider !== this.provider) {
+    while (provider !== this.provider && stops === this.stops) {
       await subscription.cancel();
       provider = this.provider;
       subscription.provider = provider;
       subscription.cancel = once(await subscribe(provider));
+    }
+    if (stops !== this.stops) {
+      await subscription.cancel();
+      return subscription.cancel;
     }
     this.subscriptions.add(subscription);
     return async () => {
@@ -513,9 +520,10 @@ export class BaseWallet implements WalletI {
   }
 
   /**
-   * Stop all active subscriptions on this wallet
+   * Stop all active subscriptions on this wallet, also those still being made
    */
   public async stop(): Promise<void> {
+    this.stops++;
     const subscriptions = [...this.subscriptions];
     this.subscriptions.clear();
     await Promise.all(subscriptions.map((s) => s.cancel()));

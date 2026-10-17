@@ -186,3 +186,22 @@ describe("waitForTransaction", () => {
     await wallet.stop();
   });
 });
+
+describe("stop", () => {
+  test("ends a watch that was still subscribing when it ran", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    const headers: number[] = [];
+
+    const watching = wallet.watchBlocks((header) =>
+      headers.push(header.height),
+    );
+    await wallet.stop();
+    const cancel = await watching;
+    expect(oldProvider.subscriptions).toBe(0);
+
+    await oldProvider.mine(miner, 1);
+    await delay(200);
+    expect(headers).toEqual([]);
+    await cancel();
+  });
+});

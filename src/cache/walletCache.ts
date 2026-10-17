@@ -102,8 +102,10 @@ function getStorage(): CacheProvider | undefined {
 
 const CACHE_KEY_PREFIX = "walletCache-";
 
-// Per cache id, bumped by each purge: an HDWalletCache made before a purge of its id writes no more
-const purgeCounts = new Map<string, number>();
+// Per cache id, the purges running and the purges completed: no HDWalletCache of the id writes
+// while one runs, and one made before a purge completed, or while it ran, writes no more
+const purgesRunning = new Map<string, number>();
+const purgesDone = new Map<string, number>();
 
 /// The id an HD wallet's cache record is keyed by: a hash of what the wallet derives its addresses
 /// from (its seed and derivation path, or its extended key) and its network
@@ -160,25 +162,37 @@ export function walletCacheIdFromWalletId(
 /**
  * Removes the cache record of an HD wallet (its derived addresses with their private keys, status,
  * utxos and history) from the cache storage that `Config` selects; a single-address wallet has
- * none. Use it when deleting a wallet, which {@link deleteNamedWallet} does. Wallets of that id made
- * before the call, running or stopped, write the record no more: from then on they keep their cache
- * in memory only.
+ * none. Use it when deleting a wallet, which {@link deleteNamedWallet} does. Once it resolves,
+ * wallets of that id made before it resolved, running or stopped, write the record no more: from
+ * then on they keep their cache in memory only. If it rejects, the record may still be there, and
+ * those wallets go on writing it.
+ *
+ * That holds in this JavaScript process only: a wallet of that id open in another browser tab
+ * still writes its record back. {@link pruneWalletCaches} at a later start removes it.
  *
  * @param walletId the wallet's stored id, as `toDbString()` returns it and a database row holds it
  */
 export async function purgeWalletCache(walletId: string): Promise<void> {
   const cacheId = walletCacheIdFromWalletId(walletId);
   if (cacheId === undefined) return;
-  purgeCounts.set(cacheId, (purgeCounts.get(cacheId) ?? 0) + 1);
-  // a write already started lands before the removal: IndexedDB runs a store's readwrite
-  // transactions in the order they were made
   const storage = getStorage();
-  if (!storage) return;
-  await storage.init();
+  purgesRunning.set(cacheId, (purgesRunning.get(cacheId) ?? 0) + 1);
   try {
-    await storage.removeItem(CACHE_KEY_PREFIX + cacheId);
+    if (storage) {
+      // a write already started lands before the removal: IndexedDB runs a store's readwrite
+      // transactions in the order they were made
+      await storage.init();
+      try {
+        await storage.removeItem(CACHE_KEY_PREFIX + cacheId);
+      } finally {
+        await storage.close();
+      }
+    }
+    purgesDone.set(cacheId, (purgesDone.get(cacheId) ?? 0) + 1);
   } finally {
-    await storage.close();
+    const running = purgesRunning.get(cacheId)! - 1;
+    if (running === 0) purgesRunning.delete(cacheId);
+    else purgesRunning.set(cacheId, running);
   }
 }
 
@@ -291,8 +305,8 @@ export class HDWalletCache implements WalletCacheI {
   // address -> relative path of the entries in memoryCache
   private memoryPaths: Record<string, string> = {};
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
-  // purges of walletId before this cache was made; a later one stops its writes
-  private readonly purgeCount: number;
+  // purges of walletId completed before this cache was made; a later one stops its writes
+  private readonly purgesDoneAtStart: number;
 
   constructor(
     public readonly walletId: string,
@@ -303,7 +317,7 @@ export class HDWalletCache implements WalletCacheI {
     if (!this.hdNode) {
       throw new Error("HDNode is undefined");
     }
-    this.purgeCount = purgeCounts.get(walletId) ?? 0;
+    this.purgesDoneAtStart = purgesDone.get(walletId) ?? 0;
   }
 
   public async init() {
@@ -349,8 +363,10 @@ export class HDWalletCache implements WalletCacheI {
   }
 
   private write(): Promise<void> {
-    const purged = (purgeCounts.get(this.walletId) ?? 0) !== this.purgeCount;
-    if (!this._storage || purged) return Promise.resolve();
+    const stopped =
+      purgesRunning.has(this.walletId) ||
+      (purgesDone.get(this.walletId) ?? 0) !== this.purgesDoneAtStart;
+    if (!this._storage || stopped) return Promise.resolve();
     return this._storage.setItem(
       CACHE_KEY_PREFIX + this.walletId,
       stringify({

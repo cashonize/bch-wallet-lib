@@ -335,6 +335,67 @@ describe("wallet cache records in indexeddb", () => {
       }
     }));
 
+  test("a wallet opened while a purge runs writes no record after it", () =>
+    withIndexedDbCache(async (storage) => {
+      const first = await quickWritingWallet();
+      const walletId = first.toDbString();
+      const key = `walletCache-${cacheIdOf(first)}`;
+      await first.walletCache.persist(true);
+      await first.stop();
+
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      // the removal waits for the gate, then runs as usual
+      const removeItem = Object.getOwnPropertyDescriptor(
+        IndexedDbCache.prototype,
+        "removeItem",
+      )!.value as (this: IndexedDbCache, key: string) => Promise<void>;
+      const held = vi
+        .spyOn(IndexedDbCache.prototype, "removeItem")
+        .mockImplementationOnce(async function (this: IndexedDbCache, k) {
+          await gate;
+          return removeItem.call(this, k);
+        });
+      let opened: RegTestHDWallet | undefined;
+      try {
+        const purge = purgeWalletCache(walletId);
+        opened = await quickWritingWallet(walletId);
+        opened.getDepositAddress(500);
+        await opened.walletCache.persist(true);
+        release();
+        await purge;
+
+        opened.getDepositAddress(501);
+        await opened.walletCache.persist(true);
+        expect(await storage.getItem(key)).toBeNull();
+      } finally {
+        held.mockRestore();
+        await opened?.stop();
+      }
+      expect(await storage.getItem(key)).toBeNull();
+    }));
+
+  test("a wallet goes on writing its record after a purge that failed", () =>
+    withIndexedDbCache(async (storage) => {
+      const wallet = await quickWritingWallet();
+      const key = `walletCache-${cacheIdOf(wallet)}`;
+      const failing = vi
+        .spyOn(IndexedDbCache.prototype, "removeItem")
+        .mockRejectedValueOnce(new Error("storage unavailable"));
+      try {
+        await expect(purgeWalletCache(wallet.toDbString())).rejects.toThrow(
+          "storage unavailable",
+        );
+        const address = wallet.getDepositAddress(500);
+        await wallet.walletCache.persist(true);
+        expect(await storage.getItem(key)).toContain(address);
+      } finally {
+        failing.mockRestore();
+        await wallet.stop();
+        await purgeWalletCache(wallet.toDbString());
+      }
+    }));
+
   test("purgeWalletCache removes the record of a stored wallet id", () =>
     withIndexedDbCache(async (storage) => {
       const wallet = await RegTestHDWallet.newRandom();

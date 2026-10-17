@@ -1605,7 +1605,9 @@ export async function saveNamedWallet(
  *
  * `StorageProvider.deleteWallet` removes only the row; the wallet's cache record (its derived
  * private keys and history, see {@link purgeWalletCache}) is removed here too, before the row,
- * and a loaded wallet of that id no longer writes it. No-op for a missing name.
+ * and a loaded wallet of that id no longer writes it. That holds in this JavaScript process only:
+ * a wallet of that id open in another browser tab can write the record back, which
+ * `pruneWalletCaches` at a later start removes. No-op for a missing name.
  *
  * @param name   user friendly wallet alias
  * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default

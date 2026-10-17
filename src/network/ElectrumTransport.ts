@@ -63,8 +63,9 @@ interface Subscription {
  * first one that connects: electrum-cash reconnects to that server after a failure and restores its
  * subscriptions there. Only after close() does a connect() go through the list again.
  *
- * A request that times out or loses its connection is sent once more (a broadcast is not); an
- * error response from the server is not retried.
+ * A request that times out or loses its connection is sent once more (a broadcast is not), and
+ * a late answer to the first attempt is taken as well; an error response from the server is not
+ * retried.
  */
 export class ElectrumTransport implements Transport {
   private readonly servers: { name: string; client: Client }[];
@@ -231,15 +232,20 @@ export class ElectrumTransport implements Transport {
     let attempts = 2;
     if (NOT_RETRIED.has(method)) attempts = 1;
 
+    let earlier: Promise<T> | undefined;
     for (let tried = 1; ; tried++) {
       await this.connect();
       const client = this.client;
       if (!client || epoch !== this.epoch) {
         throw new Error("The electrum transport was closed.");
       }
+      let answer = attempt(client);
+      // A slow server may still answer the attempt that timed out, and that answer is as good
+      if (earlier) answer = firstAnswer(earlier, answer);
+      earlier = answer;
       try {
         return await withTimeout(
-          attempt(client),
+          answer,
           this.requestTimeout,
           () =>
             new ElectrumTimeoutError(
@@ -346,6 +352,14 @@ function subscriptionKey(method: string, params: unknown[]): string {
 function toError(error: unknown): Error {
   if (error instanceof Error) return error;
   return new Error(String(error));
+}
+
+// Settles as `latest` does, unless `earlier` resolves first
+function firstAnswer<T>(earlier: Promise<T>, latest: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    earlier.then(resolve, () => {});
+    latest.then(resolve, reject);
+  });
 }
 
 async function withTimeout<T>(

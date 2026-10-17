@@ -91,6 +91,10 @@ class FakeServer extends EventEmitter {
     return true;
   }
 
+  respond(id: unknown, reply: Reply): void {
+    this.reply({ id, ...reply });
+  }
+
   notify(method: string, params: unknown[]): void {
     this.reply({ method, params });
   }
@@ -200,6 +204,21 @@ describe("ElectrumTransport requests", () => {
 
     expect(result).toEqual([]);
     expect(fake.calls("blockchain.address.get_history")).toHaveLength(2);
+  });
+
+  test("resolves with a late answer to the request that timed out", async () => {
+    const fake = new FakeServer();
+    transport = new ElectrumTransport(asServer(fake), { requestTimeout: 50 });
+
+    const request = transport.request("blockchain.address.get_history", [
+      addressA,
+    ]);
+    await delay(70);
+    const [first, second] = fake.calls("blockchain.address.get_history");
+    expect(second).toBeDefined();
+    fake.respond(first.id, { result: ["first"] });
+
+    expect(await request).toEqual(["first"]);
   });
 
   test("does not send a timed out broadcast again", async () => {

@@ -156,6 +156,47 @@ export function walletSpecs({ network, prefix }) {
       walletId: `hd:${network}:${xPubOf(MNEMONIC_LEGAL, STANDARD, network)}:0:0`,
       used: [{ address: hdAddress(MNEMONIC_LEGAL, STANDARD, "0/0", prefix) }],
     },
+    {
+      // nodes deeper than an account, which 3.1.7 stores as given (fromId, then replaceNamed)
+      // and derives `branch/index` below like any other node
+      name: "hd depth 4",
+      kind: "hd",
+      walletId: `hd:${network}:${MNEMONIC_LEGAL}:${STANDARD}/0:0:0`,
+      used: [
+        { address: hdAddress(MNEMONIC_LEGAL, `${STANDARD}/0`, "0/0", prefix) },
+        { address: hdAddress(MNEMONIC_LEGAL, `${STANDARD}/0`, "1/0", prefix) },
+      ],
+    },
+    {
+      name: "hd watch depth 4",
+      kind: "hd",
+      walletId: `hd:${network}:${xPubOf(MNEMONIC_LETTER, `${BITCOINDOTCOM}/0`, network)}:0:0`,
+      used: [
+        {
+          address: hdAddress(
+            MNEMONIC_LETTER,
+            `${BITCOINDOTCOM}/0`,
+            "0/1",
+            prefix,
+          ),
+        },
+      ],
+    },
+    {
+      name: "hd depth 5",
+      kind: "hd",
+      walletId: `hd:${network}:${MNEMONIC_ABANDON}:${STANDARD}/0/0:0:0`,
+      used: [
+        {
+          address: hdAddress(
+            MNEMONIC_ABANDON,
+            `${STANDARD}/0/0`,
+            "0/0",
+            prefix,
+          ),
+        },
+      ],
+    },
   ];
 }
 

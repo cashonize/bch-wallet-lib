@@ -52,9 +52,6 @@ export interface HDWalletOptions {
    * path `N/i` (where `i` is the address index). Default `[0, 1]` -- deposit
    * (0) and change (1) -- matching the BIP-44 convention.
    *
-   * Wallets rooted at a depth-4 (change-level) node have a single chain of
-   * addresses and ignore this option; their `branches` is fixed at `[0]`.
-   *
    * Must contain at least one branch.
    */
   branches?: number[];
@@ -91,17 +88,9 @@ export class HDWallet extends BaseWallet {
 
   /**
    * Integer branches this wallet tracks. Set at construction; defaults to
-   * `[0, 1]` (deposit, change). Wallets rooted at a depth-4 node have a
-   * single chain and use `[0]`.
+   * `[0, 1]` (deposit, change).
    */
   private branches!: ReadonlyArray<number>;
-
-  /**
-   * True when the wallet is rooted at a depth-4 (change-level) XPub/XPriv.
-   * Only one address chain is reachable; the cache is queried with the bare
-   * address index instead of `${branch}/${index}`.
-   */
-  private singleBranch: boolean = false;
 
   /** Per-branch: max index used for address derivation. */
   indices: Map<number, number> = new Map();
@@ -262,24 +251,12 @@ export class HDWallet extends BaseWallet {
         this.xPub,
       this.network,
     );
-    // Resolve the effective branches.
+    // Every node derives `branch/index` below it, whatever its depth, as mainnet-js 3.1.7 did:
+    // a stored id of a deeper node (a depth-4 path or xpub) must keep giving the same addresses
     const cacheNode = this.xPrivNode ?? this.xPubNode;
-    if (cacheNode.depth > 4) {
-      throw new Error(
-        `HDWallet: HD node depth ${cacheNode.depth} is too deep; address-level keys cannot derive further children`,
-      );
-    }
-    this.singleBranch = cacheNode.depth === 4;
-    if (this.singleBranch) {
-      // Depth-4 wallets are a single chain; the branch axis doesn't apply.
-      // We expose a `[0]` branch list so the rest of the wallet code can treat
-      // them uniformly (with derivation taking the bare index, no prefix).
-      this.branches = Object.freeze([0]);
-    } else {
-      this.branches = Object.freeze(
-        branches !== undefined ? [...branches] : [...DEFAULT_BRANCHES],
-      );
-    }
+    this.branches = Object.freeze(
+      branches !== undefined ? [...branches] : [...DEFAULT_BRANCHES],
+    );
     for (const branch of this.branches) {
       this.indices.set(branch, indices?.[branch] ?? 0);
       this.statuses.set(branch, []);
@@ -393,7 +370,7 @@ export class HDWallet extends BaseWallet {
     const stopIndex = getCurrentIndex() + gapSize;
 
     const addresses = arrayRange(startIndex, stopIndex).map(
-      (i) => this.walletCache.getByPath(this.addressPath(branch, i)).address,
+      (i) => this.walletCache.getByIndex(i, branch).address,
     );
 
     const results = await Promise.allSettled(
@@ -414,7 +391,7 @@ export class HDWallet extends BaseWallet {
               utxos: prevUtxos,
               rawHistory: prevRawHistory,
               lastConfirmedHeight: prevLastConfirmedHeight,
-            } = this.walletCache.getByPath(this.addressPath(branch, index));
+            } = this.walletCache.getByIndex(index, branch);
             statuses[index] = prevStatus;
             utxosArray[index] = prevUtxos;
             historyArray[index] = prevRawHistory;
@@ -702,13 +679,6 @@ export class HDWallet extends BaseWallet {
     return sumUtxoValue(this.collectUtxosFromBranches());
   }
 
-  /// Relative derivation path for an address slot. Single-branch (depth-4)
-  /// wallets ignore the branch component and derive at just the address
-  /// index. Otherwise the standard `${branch}/${index}` convention is used.
-  private addressPath(branch: number, index: number): string {
-    return this.singleBranch ? `${index}` : `${branch}/${index}`;
-  }
-
   /// Throw if the wallet does not track the requested branch.
   private requireBranch(branch: number): void {
     if (!this.branches.includes(branch)) {
@@ -728,7 +698,7 @@ export class HDWallet extends BaseWallet {
     this.requireBranch(branch);
     const statuses = this.statuses.get(branch)!;
     index = getNextUnusedIndex(index, statuses);
-    return this.walletCache.getByPath(this.addressPath(branch, index)).address;
+    return this.walletCache.getByIndex(index, branch).address;
   }
 
   /** Same as {@link getAddressByBranch} but returning the token-address form. */
@@ -736,8 +706,7 @@ export class HDWallet extends BaseWallet {
     this.requireBranch(branch);
     const statuses = this.statuses.get(branch)!;
     index = getNextUnusedIndex(index, statuses);
-    return this.walletCache.getByPath(this.addressPath(branch, index))
-      .tokenAddress;
+    return this.walletCache.getByIndex(index, branch).tokenAddress;
   }
 
   /// Get next unused deposit address (branch 0), or the address at the
@@ -761,20 +730,20 @@ export class HDWallet extends BaseWallet {
   }
 
   /// Get next unused change address (branch 1), or the address at the
-  /// specified index. For depth-4 (single-branch) wallets branch 1 is not
-  /// tracked; the deposit branch is used instead.
+  /// specified index. When branch 1 is not
+  /// tracked, the deposit branch is used instead.
   public getChangeAddress(index: number = -1): string {
-    if (this.singleBranch || !this.branches.includes(CHANGE_BRANCH)) {
+    if (!this.branches.includes(CHANGE_BRANCH)) {
       return this.getDepositAddress(index);
     }
     return this.getAddressByBranch(CHANGE_BRANCH, index);
   }
 
   /// Get next unused token change address (branch 1), or the token address at
-  /// the specified index. For depth-4 (single-branch) wallets branch 1 is not
-  /// tracked; the deposit branch is used instead.
+  /// the specified index. When branch 1 is not
+  /// tracked, the deposit branch is used instead.
   protected getTokenChangeAddress(index: number = -1): string {
-    if (this.singleBranch || !this.branches.includes(CHANGE_BRANCH)) {
+    if (!this.branches.includes(CHANGE_BRANCH)) {
       return this.getTokenDepositAddress(index);
     }
     return this.getTokenAddressByBranch(CHANGE_BRANCH, index);
@@ -980,9 +949,7 @@ export class HDWallet extends BaseWallet {
       const maxIdx = this.indices.get(branch) ?? 0;
       for (let i = 0; i < statuses.length; i++) {
         if (statuses[i] !== null && i < maxIdx) {
-          addrs.push(
-            this.walletCache.getByPath(this.addressPath(branch, i)).address,
-          );
+          addrs.push(this.walletCache.getByIndex(i, branch).address);
         }
       }
     }

@@ -2,8 +2,14 @@ import {
   assertSuccess,
   binToHex,
   decodeTransaction,
+  deriveHdPath,
+  deriveHdPrivateNodeFromBip39Mnemonic,
+  encodeCashAddress,
+  hash160,
+  HdPrivateNodeValid,
   hexToBin,
   lockingBytecodeToCashAddress,
+  secp256k1,
 } from "@bitauth/libauth";
 import { stringify } from "../cache/walletCache.js";
 import { Config } from "../config.js";
@@ -62,37 +68,48 @@ describe("HDWallet", () => {
     expect(walletSeed.getChangeAddress()).toBe(walletPub.getChangeAddress());
   });
 
-  it("should derive matching addresses from a depth-4 (change-level) wallet", async () => {
-    // A wallet rooted at the change branch (depth 4) reaches the same N-th
-    // address as the account wallet's deposit branch -- just by appending the
-    // index (no branch component).
+  it("derives branch/index below a depth-4 or depth-5 node, as mainnet-js 3.1.7 did", async () => {
+    // A stored id may hold a node deeper than an account (a depth-4 derivation path, or the
+    // xpub of one); 3.1.7 derived `branch/index` below it like below any other node, and the
+    // addresses of a stored id must not change.
     const mnemonic =
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
+    const root = deriveHdPrivateNodeFromBip39Mnemonic(mnemonic);
+    const addressAt = (path: string) =>
+      assertSuccess(
+        encodeCashAddress({
+          prefix: "bitcoincash",
+          type: "p2pkh",
+          payload: hash160(
+            secp256k1.derivePublicKeyCompressed(
+              (deriveHdPath(root, path) as HdPrivateNodeValid).privateKey,
+            ) as Uint8Array,
+          ),
+        }),
+      ).address;
 
-    const accountWallet = await HDWallet.fromId(`hd:mainnet:${mnemonic}`);
-    expect(accountWallet["singleBranch"]).toBe(false);
-    expect([...accountWallet["branches"]]).toEqual([0, 1]);
-
-    const singleBranchWallet = await HDWallet.fromId(
-      `hd:mainnet:${mnemonic}:m/44'/0'/0'/0`,
-    );
-    expect(singleBranchWallet["singleBranch"]).toBe(true);
-    expect([...singleBranchWallet["branches"]]).toEqual([0]);
-
-    for (const i of [0, 1, 2, 3, 4, 5]) {
-      expect(singleBranchWallet.getDepositAddress(i)).toBe(
-        accountWallet.getDepositAddress(i),
+    for (const parent of ["m/44'/0'/0'/0", "m/44'/0'/0'/0/0"]) {
+      const fromMnemonic = await HDWallet.fromId(
+        `hd:mainnet:${mnemonic}:${parent}`,
       );
-      expect(singleBranchWallet.getTokenDepositAddress(i)).toBe(
-        accountWallet.getTokenDepositAddress(i),
-      );
+      const fromXPub = await HDWallet.fromId(`hd:mainnet:${fromMnemonic.xPub}`);
+      try {
+        for (const wallet of [fromMnemonic, fromXPub]) {
+          expect([...wallet["branches"]]).toEqual([0, 1]);
+          for (const i of [0, 1, 5]) {
+            expect(wallet.getDepositAddress(i)).toBe(
+              addressAt(`${parent}/0/${i}`),
+            );
+            expect(wallet.getChangeAddress(i)).toBe(
+              addressAt(`${parent}/1/${i}`),
+            );
+          }
+        }
+      } finally {
+        await fromMnemonic.stop();
+        await fromXPub.stop();
+      }
     }
-
-    // Change branch is unreachable from a depth-4 root; the wallet collapses
-    // change requests to the deposit branch.
-    expect(singleBranchWallet.getChangeAddress(0)).toBe(
-      singleBranchWallet.getDepositAddress(0),
-    );
   });
 
   it("should track arbitrary integer branches via the `branches` option", async () => {
@@ -132,15 +149,6 @@ describe("HDWallet", () => {
     await expect((w as any).initialize({ branches: [] })).rejects.toThrow(
       /at least one/i,
     );
-  });
-
-  it("rejects construction from a depth-5 (address-level) node", async () => {
-    // m/44'/0'/0'/0/0 is depth 5; the node can't derive further children.
-    await expect(
-      HDWallet.fromId(
-        `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0'/0/0`,
-      ),
-    ).rejects.toThrow(/too deep/i);
   });
 
   it("getChangeAddress falls back to deposit when branch 1 is not tracked", async () => {
@@ -204,13 +212,12 @@ describe("HDWallet", () => {
     expect(() => w.getTokenAddressByBranch(99, 0)).toThrow(/not tracked/);
   });
 
-  it("toDbString for a depth-4 wallet round-trips into a single-branch wallet", async () => {
+  it("toDbString for a depth-4 wallet round-trips", async () => {
     const mnemonic =
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
     const original = await HDWallet.fromId(
       `hd:mainnet:${mnemonic}:m/44'/0'/0'/0`,
     );
-    expect(original["singleBranch"]).toBe(true);
 
     const dbString = original.toDbString();
     // hd:mainnet:<mnemonic>:<derivation>:<depositIdx>:<changeIdx>
@@ -218,9 +225,8 @@ describe("HDWallet", () => {
     expect(parts[3]).toBe("m/44'/0'/0'/0");
 
     const restored = await HDWallet.fromId(dbString);
-    expect(restored["singleBranch"]).toBe(true);
-    expect([...restored["branches"]]).toEqual([0]);
     expect(restored.getDepositAddress(0)).toBe(original.getDepositAddress(0));
+    expect(restored.getChangeAddress(0)).toBe(original.getChangeAddress(0));
   });
 
   it("end-to-end: tracks a [0, 1, 7] wallet and counts branch 7's coins", async () => {
@@ -250,7 +256,7 @@ describe("HDWallet", () => {
     expect(await w.getBalance()).toBe(50_000n);
   });
 
-  it("end-to-end: a depth-4 wallet advances its single branch on receipt", async () => {
+  it("end-to-end: a depth-4 wallet advances its deposit branch on receipt", async () => {
     const fundingWallet = await RegTestWallet.fromId(
       "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
     );
@@ -259,8 +265,7 @@ describe("HDWallet", () => {
     const w = await RegTestHDWallet.fromId(
       `hd:regtest:${seedWallet.mnemonic!}:m/44'/0'/0'/0`,
     );
-    expect(w["singleBranch"]).toBe(true);
-    expect([...w["branches"]]).toEqual([0]);
+    expect([...w["branches"]]).toEqual([0, 1]);
 
     await fundingWallet.send({
       cashaddr: w.getDepositAddress(0),

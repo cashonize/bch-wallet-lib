@@ -81,8 +81,7 @@ export interface WalletCacheI extends WalletCache {
    * @internal
    * Derive (or fetch from cache) the address at the given relative derivation
    * path. The cache is policy-free -- the caller decides what path to ask
-   * for (e.g. a depth-4 wallet with a bare-index chain, or arbitrary integer
-   * branches).
+   * for (e.g. arbitrary integer branches).
    */
   getByPath(relativePath: string): WalletCacheEntry;
   /** @internal The wallet's status watch records what it fetched for an address */
@@ -293,8 +292,8 @@ export class SingleAddressWalletCache implements WalletCacheI {
 
 // HD cache records keep mainnet-js 3.1.7's form, which Cashonize users' storage holds and a rollback
 // reads: entries keyed `${walletId}-${index}-${change}` and an address -> {index, change} map. Only
-// the paths `0/index` and `1/index` have a place in it; others (more branches, a depth-4 node's bare
-// index) are cached in memory only.
+// the paths `0/index` and `1/index` have a place in it; others (more branches) are cached in memory
+// only.
 const STORED_PATH = /^([01])\/(\d+)$/;
 
 export class HDWalletCache implements WalletCacheI {
@@ -427,8 +426,7 @@ export class HDWalletCache implements WalletCacheI {
   /**
    * Derive (or fetch from cache) the address at the given relative derivation
    * path. The cache is policy-free -- the caller decides what path to ask
-   * for (e.g. a depth-4 wallet with a bare-index chain, or arbitrary integer
-   * branches).
+   * for (e.g. arbitrary integer branches).
    */
   public getByPath(relativePath: string): WalletCacheEntry {
     const match = STORED_PATH.exec(relativePath);

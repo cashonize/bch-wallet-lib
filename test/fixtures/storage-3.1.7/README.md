@@ -29,7 +29,7 @@ In one process with fake-indexeddb, the library stores and opens the wallets of 
 - `expected`: what 3.1.7 derived for each wallet (type, ids, addresses and keys of the first deposit and change indices, discovery indices, balance, utxos);
 - `chain`: the fake server's data, which the test serves again, and `electrumCache`: which transactions and headers were cached.
 
-The wallets: single-address seed wallets on the standard and the bitcoin.com path (what Cashonize's create and import flows store), a WIF, a private key and a watch-only address wallet, HD wallets from a mnemonic on the standard path (12 and 24 words) and on mainnet-js's default path `m/44'/0'/0'` (with discovery past the first gap), and a watch-only HD wallet from an account xpub. Keys are BIP39 test vectors and the private keys 1 to 3, never real ones.
+The wallets: single-address seed wallets on the standard and the bitcoin.com path (what Cashonize's create and import flows store), a WIF, a private key and a watch-only address wallet, HD wallets from a mnemonic on the standard path (12 and 24 words) and on mainnet-js's default path `m/44'/0'/0'` (with discovery past the first gap), a watch-only HD wallet from an account xpub, and HD wallets on nodes deeper than an account (a mnemonic on a depth-4 and a depth-5 path, the xpub of a depth-4 node), below which 3.1.7 derives `branch/index` as below any node. Keys are BIP39 test vectors and the private keys 1 to 3, never real ones.
 
 ## Left out
 

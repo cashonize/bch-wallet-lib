@@ -102,7 +102,7 @@ describe("HDWalletCache", () => {
     expect(b1).not.toBe(b7);
   });
 
-  test("the cache is depth-agnostic: a depth-4 XPub derives by bare index", () => {
+  test("the cache is depth-agnostic: it derives the relative path it is given", () => {
     const accountCache = new HDWalletCache(
       "wallet-acc",
       publicNodeOf(xpubAt(ACCOUNT_PATH)),
@@ -114,8 +114,7 @@ describe("HDWalletCache", () => {
       "bitcoincash",
     );
 
-    // The caller (HDWallet) chooses the path. At depth 4 the caller asks for
-    // the bare index; at depth 3 it prefixes with the branch.
+    // The cache derives whatever relative path the caller asks for.
     for (const i of [0, 1, 5, 19]) {
       const fromAccount = accountCache.getByPath(`0/${i}`).address;
       const fromChange = changeCache.getByPath(`${i}`).address;

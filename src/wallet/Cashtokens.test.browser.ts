@@ -6,6 +6,7 @@ import {
 } from "#test/balances.js";
 import { binToHex, utf8ToBin } from "@bitauth/libauth";
 import { NFTCapability } from "../interface.js";
+import { InsufficientFundsError } from "./errors.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
 
@@ -295,17 +296,23 @@ describe(`Cashtokens should function in the browser`, () => {
     const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
-    // burn 5 FT
+    // more than the wallet holds is refused, not burned as all of it
+    await expect(
+      alice.tokenBurn({ category: category, amount: 5n }, "burn"),
+    ).rejects.toThrow(InsufficientFundsError);
+
+    // burn all 4 FT
     const response = await alice.tokenBurn(
       {
         category: category,
-        amount: 5n,
+        amount: 4n,
       },
       "burn",
     );
 
     const rawTx = await alice.provider!.getRawTransactionObject(response.txId!);
-    expect(rawTx.vout.length).toEqual(3);
+    // the OP_RETURN and the BCH change, the burned coin's sats included
+    expect(rawTx.vout.length).toEqual(2);
     expect(rawTx.vout[0].scriptPubKey.type).toEqual("nulldata");
     expect(rawTx.vout[0].scriptPubKey.hex).toContain(
       binToHex(utf8ToBin("burn")),
@@ -358,11 +365,23 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(category).toEqual(response.categories![0]);
 
+    // more than the NFT's coin carries is refused
+    await expect(
+      alice.tokenBurn(
+        {
+          category,
+          amount: 5n,
+          nft: { capability: NFTCapability.minting, commitment: "abcd" },
+        },
+        "burn",
+      ),
+    ).rejects.toThrow(InsufficientFundsError);
+
     // burn the rest FTs
     const ftResponse = await alice.tokenBurn(
       {
         category: category,
-        amount: 5n,
+        amount: 3n,
         nft: {
           capability: NFTCapability.minting,
           commitment: "abcd",

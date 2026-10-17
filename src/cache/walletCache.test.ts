@@ -104,7 +104,7 @@ describe("HDWalletCache", () => {
     expect(found?.tokenAddress).toBe(entry.tokenAddress);
   });
 
-  test("persists entries keyed by arbitrary paths and reloads them on init", async () => {
+  test("persists branches 0 and 1 in mainnet-js 3.1.7's form, and other paths in memory only", async () => {
     // Use the process-wide MemoryCache so a second HDWalletCache instance can
     // read what the first persisted.
     const prevMemory = Config.UseMemoryCache;
@@ -120,52 +120,106 @@ describe("HDWalletCache", () => {
       );
       await writer.init();
 
-      // Populate entries across branches 0, 1 and the non-default 7, plus a
-      // bare-index path that a depth-4 wallet would use.
       const a0 = writer.getByPath("0/0").address;
       const a1 = writer.getByPath("1/2").address;
       const a7 = writer.getByPath("7/5").address;
+      const bare = writer.getByPath("3").address;
+      expect(writer.get(a7)?.address).toBe(a7);
+      expect(writer.get(bare)?.address).toBe(bare);
       await writer.persist(true);
+
+      const stored = parse(
+        (await new MemoryCache().getItem("walletCache-wallet-persist"))!,
+      );
+      expect(Object.keys(stored)).toEqual(["walletCache", "indexCache"]);
+      expect(Object.keys(stored.walletCache)).toEqual([
+        "wallet-persist-0-false",
+        "wallet-persist-2-true",
+      ]);
+      expect(stored.walletCache["wallet-persist-2-true"]).toMatchObject({
+        address: a1,
+        index: 2,
+        change: true,
+      });
+      expect(stored.indexCache).toEqual({
+        [a0]: { index: 0, change: false },
+        [a1]: { index: 2, change: true },
+      });
 
       const reader = new HDWalletCache("wallet-persist", node, "bitcoincash");
       await reader.init();
-
-      // Reverse-lookup works for every path that was previously written.
       expect(reader.get(a0)?.address).toBe(a0);
       expect(reader.get(a1)?.address).toBe(a1);
-      expect(reader.get(a7)?.address).toBe(a7);
+      expect(reader.get(a7)).toBeUndefined();
+      expect(reader.get(bare)).toBeUndefined();
     } finally {
       Config.UseMemoryCache = prevMemory;
     }
   });
 
-  test("drops entries in the pre-next.14 index format on load", async () => {
+  test("loads a mainnet-js 3.1.7 record without writing, and writes back only its form", async () => {
     const prevMemory = Config.UseMemoryCache;
     Config.UseMemoryCache = true;
     try {
       const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
-      const walletId = "wallet-old-format";
-      const current = new HDWalletCache("wallet-current", node, "bitcoincash");
-      const entry = current.getByPath("0/0");
-      const oldEntry = { ...entry, privateKey: new Uint8Array(32).fill(7) };
+      const walletId = "wallet-3.1.7";
+      const derived = new HDWalletCache("wallet-derived", node, "bitcoincash");
+      const entry = {
+        ...derived.getByPath("0/0"),
+        index: 0,
+        change: false,
+        status: "status",
+      };
+      const nextEntry = derived.getByPath("0/1");
 
       const storage = new MemoryCache();
-      await storage.setItem(
+      const record = stringify({
+        walletCache: {
+          [`${walletId}-0-false`]: entry,
+          // the form next.14 wrote, which 3.1.7 carried along unread
+          [`${walletId}-0/1`]: nextEntry,
+        },
+        indexCache: { [entry.address]: { index: 0, change: false } },
+      });
+      await storage.setItem(`walletCache-${walletId}`, record);
+
+      const cache = new HDWalletCache(walletId, node, "bitcoincash");
+      await cache.init();
+      expect(await storage.getItem(`walletCache-${walletId}`)).toBe(record);
+      expect(cache.get(entry.address)?.status).toBe("status");
+      expect(cache.getByPath("0/0").status).toBe("status");
+      expect(cache.get(nextEntry.address)).toBeUndefined();
+
+      await cache.persist(true);
+      const stored = parse((await storage.getItem(`walletCache-${walletId}`))!);
+      expect(stored).toEqual({
+        walletCache: { [`${walletId}-0-false`]: parse(stringify(entry)) },
+        indexCache: { [entry.address]: { index: 0, change: false } },
+      });
+    } finally {
+      Config.UseMemoryCache = prevMemory;
+    }
+  });
+
+  test("get() returns only the entry of the address asked for", async () => {
+    const prevMemory = Config.UseMemoryCache;
+    Config.UseMemoryCache = true;
+    try {
+      const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
+      const walletId = "wallet-bad-index";
+      const other = new HDWalletCache("wallet-other", node, "bitcoincash");
+      const stranger = other.getByPath("0/5").address;
+      await new MemoryCache().setItem(
         `walletCache-${walletId}`,
         stringify({
-          walletCache: { [`${walletId}-0-false`]: oldEntry },
-          indexCache: { [entry.address]: { index: 0, change: false } },
+          walletCache: {},
+          indexCache: { [stranger]: { index: 0, change: false } },
         }),
       );
 
       const cache = new HDWalletCache(walletId, node, "bitcoincash");
       await cache.init();
-      expect(cache.getByPath("0/0").address).toBe(entry.address);
-      await cache.persist(true);
-
-      const stored = parse((await storage.getItem(`walletCache-${walletId}`))!);
-      expect(Object.keys(stored.walletCache)).toEqual([`${walletId}-0/0`]);
-      expect(stored.indexCache).toBeUndefined();
+      expect(cache.get(stranger)).toBeUndefined();
     } finally {
       Config.UseMemoryCache = prevMemory;
     }

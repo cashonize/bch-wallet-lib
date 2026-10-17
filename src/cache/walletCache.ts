@@ -49,6 +49,9 @@ export interface WalletCacheEntry {
   privateKey: Uint8Array | undefined;
   publicKey: Uint8Array;
   publicKeyHash: Uint8Array;
+  // An HD entry's place in mainnet-js 3.1.7's stored form: index on branch 0 (false) or 1 (true)
+  index?: number;
+  change?: boolean;
   status: string | null;
   utxos: Utxo[];
   rawHistory: TxI[];
@@ -233,12 +236,19 @@ export class SingleAddressWalletCache implements WalletCacheI {
   }
 }
 
+// HD cache records keep mainnet-js 3.1.7's form, which Cashonize users' storage holds and a rollback
+// reads: entries keyed `${walletId}-${index}-${change}` and an address -> {index, change} map. Only
+// the paths `0/index` and `1/index` have a place in it; others (more branches, a depth-4 node's bare
+// index) are cached in memory only.
+const STORED_PATH = /^([01])\/(\d+)$/;
+
 export class HDWalletCache implements WalletCacheI {
   private _storage: CacheProvider | undefined;
   private walletCache: Record<string, WalletCacheEntry> = {};
-  // Address -> relative derivation path. Used to find the cache key for a
-  // given address; independent of any branch / change-axis semantics.
-  private pathCache: Record<string, string> = {};
+  private indexCache: Record<string, { index: number; change: boolean }> = {};
+  private memoryCache: Record<string, WalletCacheEntry> = {};
+  // address -> relative path of the entries in memoryCache
+  private memoryPaths: Record<string, string> = {};
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -256,31 +266,24 @@ export class HDWalletCache implements WalletCacheI {
     this._storage = getStorage();
     await this._storage?.init();
     const data = await this._storage?.getItem(CACHE_KEY_PREFIX + this.walletId);
-    let migrated = false;
     if (data) {
       try {
         const parsed = parse(data);
-        this.pathCache = parsed.pathCache || {};
-        // Keep only entries reachable through pathCache: the pre-next.14 format keyed them
-        // `${walletId}-${index}-${change}` (with an indexCache), private keys included, and
-        // would otherwise be carried forward on every write without ever being read
-        const stored: Record<string, WalletCacheEntry> =
-          parsed.walletCache || {};
-        let dropped = false;
-        for (const [key, entry] of Object.entries(stored)) {
-          const path = this.pathCache[entry?.address];
-          if (path !== undefined && key === `${this.walletId}-${path}`) {
+        // entries in another form (next.14 keyed them by path) are not read, and so not written back
+        const prefix = `${this.walletId}-`;
+        for (const [key, entry] of Object.entries<WalletCacheEntry>(
+          parsed.walletCache || {},
+        )) {
+          const place = key.slice(prefix.length);
+          if (key.startsWith(prefix) && /^\d+-(true|false)$/.test(place)) {
             this.walletCache[key] = entry;
-          } else {
-            dropped = true;
           }
         }
-        migrated = dropped || parsed.indexCache !== undefined;
+        this.indexCache = parsed.indexCache || {};
       } catch {
         // ignore
       }
     }
-    if (migrated) await this.persist(true);
   }
 
   public async persist(immediate = false) {
@@ -290,7 +293,7 @@ export class HDWalletCache implements WalletCacheI {
         CACHE_KEY_PREFIX + this.walletId,
         stringify({
           walletCache: this.walletCache,
-          pathCache: this.pathCache,
+          indexCache: this.indexCache,
         }),
       );
     if (immediate) {
@@ -305,6 +308,51 @@ export class HDWalletCache implements WalletCacheI {
     }
   }
 
+  private derive(
+    relativePath: string,
+    place?: { index: number; change: boolean },
+  ): WalletCacheEntry {
+    const node = deriveHdPathRelative(this.hdNode, relativePath);
+
+    const privateKey = "privateKey" in node ? node.privateKey : undefined;
+    const publicKey =
+      "publicKey" in node
+        ? node.publicKey
+        : assertSuccess(secp256k1.derivePublicKeyUncompressed(privateKey!));
+    const publicKeyCompressed = assertSuccess(
+      secp256k1.compressPublicKey(publicKey),
+    );
+    const publicKeyHash = hash160(publicKeyCompressed);
+
+    const address = encodeCashAddress({
+      throwErrors: true,
+      prefix: this.networkPrefix as CashAddressNetworkPrefix,
+      type: CashAddressType.p2pkh,
+      payload: publicKeyHash,
+    }).address;
+
+    const tokenAddress = encodeCashAddress({
+      throwErrors: true,
+      prefix: this.networkPrefix as CashAddressNetworkPrefix,
+      type: CashAddressType.p2pkhWithTokens,
+      payload: publicKeyHash,
+    }).address;
+
+    // in 3.1.7's field order
+    return {
+      address,
+      tokenAddress,
+      privateKey,
+      publicKey,
+      publicKeyHash,
+      ...place,
+      status: null,
+      utxos: [],
+      rawHistory: [],
+      lastConfirmedHeight: 0,
+    };
+  }
+
   /**
    * Derive (or fetch from cache) the address at the given relative derivation
    * path. The cache is policy-free -- the caller decides what path to ask
@@ -312,47 +360,23 @@ export class HDWalletCache implements WalletCacheI {
    * branches).
    */
   public getByPath(relativePath: string): WalletCacheEntry {
-    const id = `${this.walletId}-${relativePath}`;
+    const match = STORED_PATH.exec(relativePath);
+    if (!match) {
+      if (!this.memoryCache[relativePath]) {
+        const entry = this.derive(relativePath);
+        this.memoryCache[relativePath] = entry;
+        this.memoryPaths[entry.address] = relativePath;
+      }
+      return this.memoryCache[relativePath];
+    }
+
+    const index = Number(match[2]);
+    const change = match[1] === "1";
+    const id = `${this.walletId}-${index}-${change}`;
     if (!this.walletCache[id]) {
-      const node = deriveHdPathRelative(this.hdNode, relativePath);
-
-      const privateKey = "privateKey" in node ? node.privateKey : undefined;
-      const publicKey =
-        "publicKey" in node
-          ? node.publicKey
-          : assertSuccess(secp256k1.derivePublicKeyUncompressed(privateKey!));
-      const publicKeyCompressed = assertSuccess(
-        secp256k1.compressPublicKey(publicKey),
-      );
-      const publicKeyHash = hash160(publicKeyCompressed);
-
-      const address = encodeCashAddress({
-        throwErrors: true,
-        prefix: this.networkPrefix as CashAddressNetworkPrefix,
-        type: CashAddressType.p2pkh,
-        payload: publicKeyHash,
-      }).address;
-
-      const tokenAddress = encodeCashAddress({
-        throwErrors: true,
-        prefix: this.networkPrefix as CashAddressNetworkPrefix,
-        type: CashAddressType.p2pkhWithTokens,
-        payload: publicKeyHash,
-      }).address;
-
-      this.walletCache[id] = {
-        address,
-        tokenAddress,
-        privateKey: privateKey,
-        publicKey,
-        publicKeyHash,
-        status: null,
-        utxos: [],
-        rawHistory: [],
-        lastConfirmedHeight: 0,
-      };
-
-      this.pathCache[address] = relativePath;
+      const entry = this.derive(relativePath, { index, change });
+      this.walletCache[id] = entry;
+      this.indexCache[entry.address] = { index, change };
 
       void this.persist(); // debounced, only schedules the write
     }
@@ -369,9 +393,15 @@ export class HDWalletCache implements WalletCacheI {
   }
 
   public get(address: string) {
-    const path = this.pathCache[address];
+    const place = this.indexCache[address];
+    if (place) {
+      const entry = this.getByPath(`${place.change ? 1 : 0}/${place.index}`);
+      // only the entry of that address, whatever the stored map says
+      if (entry.address === address) return entry;
+    }
+    const path = this.memoryPaths[address];
     if (path === undefined) return undefined;
-    return this.walletCache[`${this.walletId}-${path}`];
+    return this.memoryCache[path];
   }
 
   public setStatusAndUtxos(
@@ -381,18 +411,14 @@ export class HDWalletCache implements WalletCacheI {
     rawHistory: TxI[],
     lastConfirmedHeight: number,
   ) {
-    const path = this.pathCache[address];
-    if (path === undefined) {
+    const entry = this.get(address);
+    if (!entry) {
       return;
     }
-    const key = `${this.walletId}-${path}`;
-    if (!this.walletCache[key]) {
-      return;
-    }
-    this.walletCache[key].status = status;
-    this.walletCache[key].utxos = utxos;
-    this.walletCache[key].rawHistory = rawHistory;
-    this.walletCache[key].lastConfirmedHeight = lastConfirmedHeight;
+    entry.status = status;
+    entry.utxos = utxos;
+    entry.rawHistory = rawHistory;
+    entry.lastConfirmedHeight = lastConfirmedHeight;
 
     void this.persist(); // debounced, only schedules the write
   }

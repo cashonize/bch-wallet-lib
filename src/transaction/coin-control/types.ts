@@ -49,6 +49,7 @@ export interface InputOrderingContext {
   inputs: Utxo[];
 }
 
+/** Called once for each selection whose fee is checked, so possibly more than once per send. */
 export type InputOrderingFn = (ctx: InputOrderingContext) => Utxo[];
 
 // ---------- Output ordering ----------
@@ -81,4 +82,5 @@ export interface FeeContext {
   relayFeePerByte: number;
 }
 
+/** Called once for each selection whose fee is checked, so possibly more than once per send. */
 export type FeeFn = (ctx: FeeContext) => bigint;

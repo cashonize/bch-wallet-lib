@@ -29,8 +29,9 @@ import { derivePrefix } from "../util/derivePublicKeyHash.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { CancelFn, WalletInfoI } from "./interface.js";
+import { CancelFn, WalletInfoI, WatchOptions } from "./interface.js";
 import { networkPrefixError } from "../util/networkPrefixError.js";
+import { runCallback } from "../util/watch.js";
 
 export interface WatchWalletOptions {
   name?: string;
@@ -55,9 +56,10 @@ export class WatchWallet extends BaseWallet {
   static walletType = WalletTypeEnum.Watch;
 
   // Subscription-first infrastructure: single subscription shared by all watchers
-  private watchCallbacks: Array<
-    (status: string | null, address: string) => void
-  > = [];
+  private watchCallbacks: Array<{
+    callback: (status: string | null, address: string) => unknown;
+    onError?: (error: unknown) => void;
+  }> = [];
   private baseCancelFn?: CancelFn;
   /** Settles when the latest status watch is in place or has failed, and never rejects. */
   watchPromise?: Promise<void>;
@@ -320,24 +322,22 @@ export class WatchWallet extends BaseWallet {
   }
 
   private notifyWatchCallbacks(status: string | null, address: string) {
-    for (const callback of this.watchCallbacks) {
-      try {
-        callback(status, address);
-      } catch {
-        // Ignore callback errors to not break other watchers
-      }
+    for (const { callback, onError } of this.watchCallbacks) {
+      runCallback(() => callback(status, address), onError);
     }
   }
 
   public override async watchStatus(
-    callback: (status: string | null, address: string) => void,
+    callback: (status: string | null, address: string) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     await this.watched();
 
-    this.watchCallbacks.push(callback);
+    const watcher = { callback, onError: options.onError };
+    this.watchCallbacks.push(watcher);
 
     return async () => {
-      const index = this.watchCallbacks.indexOf(callback);
+      const index = this.watchCallbacks.indexOf(watcher);
       if (index > -1) {
         this.watchCallbacks.splice(index, 1);
       }

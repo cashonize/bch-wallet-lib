@@ -159,7 +159,7 @@ export default interface NetworkProvider {
    */
   subscribeToAddress(
     cashaddr: string,
-    callback: (data: any) => void,
+    callback: (data: any) => unknown,
   ): Promise<CancelFn>;
 
   /**
@@ -170,7 +170,7 @@ export default interface NetworkProvider {
    */
   subscribeToTransaction(
     txHash: string,
-    callback: (data: any) => void,
+    callback: (data: any) => unknown,
   ): Promise<CancelFn>;
 
   /**

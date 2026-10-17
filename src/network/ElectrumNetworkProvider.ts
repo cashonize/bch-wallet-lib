@@ -15,6 +15,7 @@ import {
 import { decodeHeader } from "../util/header.js";
 import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { getTransactionHash } from "../util/transaction.js";
+import { runCallback } from "../util/watch.js";
 import { CancelFn } from "../wallet/interface.js";
 import {
   ElectrumRawTransaction,
@@ -454,19 +455,17 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   public async watchAddressStatus(
     cashaddr: string,
-    callback: (status: string | null) => void,
+    callback: (status: string | null) => unknown,
   ): Promise<CancelFn> {
-    const watchAddressStatusCallback = async (
+    const watchAddressStatusCallback = (
       data: [address: string, status: string | null],
     ) => {
       // subscription acknowledgement is the latest known status or null if no status is known
       // status is an array: [ cashaddr, statusHash ]
-      if (data instanceof Array) {
-        if (data[0] !== cashaddr) {
-          return;
-        }
-        callback(data[1]);
+      if (data instanceof Array && data[0] === cashaddr) {
+        return callback(data[1]);
       }
+      return undefined;
     };
 
     return this.subscribeToAddress(cashaddr, watchAddressStatusCallback);
@@ -474,7 +473,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   // watch for block headers and block height, if `skipCurrentHeight` is set, the notification about current block will not arrive
   public async watchBlocks(
-    callback: (header: HexHeaderI) => void,
+    callback: (header: HexHeaderI) => unknown,
     skipCurrentHeight: boolean = true,
   ): Promise<CancelFn> {
     let acknowledged = !skipCurrentHeight;
@@ -485,7 +484,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
       }
 
       _header = _header instanceof Array ? _header[0] : _header;
-      callback(_header);
+      return callback(_header);
     };
     return this.subscribeToHeaders(waitForBlockCallback);
   }
@@ -517,16 +516,16 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   // subscribe to notifications sent when new block is found, the block header is sent to callback
   async subscribeToHeaders(
-    callback: (header: HexHeaderI) => void,
+    callback: (header: HexHeaderI) => unknown,
   ): Promise<CancelFn> {
-    return this.subscribeRequest("blockchain.headers.subscribe", [], (data) => {
-      callback(data[0]);
-    });
+    return this.subscribeRequest("blockchain.headers.subscribe", [], (data) =>
+      callback(data[0]),
+    );
   }
 
   async subscribeToAddress(
     cashaddr: string,
-    callback: (data: [address: string, status: string | null]) => void,
+    callback: (data: [address: string, status: string | null]) => unknown,
   ): Promise<CancelFn> {
     return this.subscribeRequest(
       "blockchain.address.subscribe",
@@ -537,7 +536,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   async subscribeToTransaction(
     txHash: string,
-    callback: (data: [txHash: string, confirmations: number | null]) => void,
+    callback: (data: [txHash: string, confirmations: number | null]) => unknown,
   ): Promise<CancelFn> {
     return this.subscribeRequest(
       "blockchain.transaction.subscribe",
@@ -548,7 +547,7 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
 
   async subscribeToDsproof(
     txHash: string,
-    callback: (data: [txHash: string, dsproof: DsproofData | null]) => void,
+    callback: (data: [txHash: string, dsproof: DsproofData | null]) => unknown,
   ): Promise<CancelFn> {
     return this.subscribeRequest(
       "blockchain.transaction.dsproof.subscribe",
@@ -605,14 +604,15 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
   public async subscribeRequest(
     method: string,
     parameters: unknown[],
-    callback: (data: any) => void,
+    callback: (data: any) => unknown,
   ): Promise<CancelFn> {
     await this.ready();
 
+    // a callback's throw or rejection is reported, and it stays subscribed
     const unsubscribe = await this.transport.subscribe(
       method,
       parameters,
-      callback,
+      (data) => runCallback(() => callback(data)),
     );
     this.subscriptions++;
 

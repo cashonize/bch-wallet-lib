@@ -38,6 +38,7 @@ import {
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
+import { runCallback } from "../util/watch.js";
 import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
 import { InsufficientFundsError } from "./errors.js";
 import { decodeTransaction } from "./Util.js";
@@ -48,6 +49,7 @@ import {
   WaitForTransactionResponse,
   WalletI,
   WalletInfoI,
+  WatchOptions,
 } from "./interface.js";
 import {
   fromUtxoId,
@@ -555,15 +557,19 @@ export class BaseWallet implements WalletI {
   /**
    * Watch wallet for any activity (status changes)
    * This is the foundation for watchWalletBalance and watchWalletTransactions
-   * @param callback - Called when  the wallet has a status change
+   * @param callback - Called when  the wallet has a status change; its errors go to `options.onError`
    * @returns Cancel function to stop watching
    */
   public async watchStatus(
-    callback: (status: string | null, address: string) => void,
+    callback: (status: string | null, address: string) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.subscribe((provider) =>
       provider.watchAddressStatus(this.getDepositAddress(), (status) =>
-        callback(status, this.getDepositAddress()),
+        runCallback(
+          () => callback(status, this.getDepositAddress()),
+          options.onError,
+        ),
       ),
     );
   }
@@ -582,13 +588,15 @@ export class BaseWallet implements WalletI {
 
   // sets up a callback to be called upon wallet's balance change
   // can be cancelled by calling the function returned from this one
+  // a failed balance read goes to options.onError, as the callback's own errors do
   public async watchBalance(
-    callback: (balance: bigint) => void,
+    callback: (balance: bigint) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.watchStatus(async () => {
       const balance = await this.getBalance();
-      callback(balance);
-    });
+      await callback(balance);
+    }, options);
   }
 
   // waits for address balance to be greater than or equal to the target value
@@ -615,14 +623,16 @@ export class BaseWallet implements WalletI {
 
   // sets up a callback to be called upon wallet's token balance change
   // can be cancelled by calling the function returned from this one
+  // a failed balance read goes to options.onError, as the callback's own errors do
   public async watchTokenBalance(
     category: string,
-    callback: (balance: bigint) => void,
+    callback: (balance: bigint) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return await this.watchStatus(async () => {
       const balance = await this.getTokenBalance(category);
-      callback(balance);
-    });
+      await callback(balance);
+    }, options);
   }
 
   // waits for address token balance to be greater than or equal to the target amount
@@ -653,11 +663,13 @@ export class BaseWallet implements WalletI {
   /**
    * Watch wallet for new transactions. Transactions already in the history
    * when the watch starts are not reported; each new one is reported once.
-   * @param callback - Called with new transaction hashes when they appear
+   * @param callback - Called with new transaction hashes when they appear; its errors, and a
+   * failed history read, go to `options.onError`
    * @returns Cancel function to stop watching
    */
   public async watchTransactionHashes(
-    callback: (txHash: string) => void,
+    callback: (txHash: string) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     // Seeded before subscribing so the history at setup is not reported as new
     const existing = await this.getRawHistory();
@@ -688,35 +700,40 @@ export class BaseWallet implements WalletI {
         }
       }
 
-      if (newTxHashes.length > 0) {
-        newTxHashes.forEach((txHash) => callback(txHash));
+      // each on its own, so that one failing does not keep the others from being reported
+      for (const txHash of newTxHashes) {
+        runCallback(() => callback(txHash), options.onError);
       }
-    });
+    }, options);
   }
 
   /**
    * Watch wallet for new transactions
-   * @param callback - Called with new transaction hashes when they appear
+   * @param callback - Called with each new transaction; its errors, and a failed read of the
+   * transaction or the history, go to `options.onError`
    * @returns Cancel function to stop watching
    */
   public async watchTransactions(
-    callback: (transaction: ElectrumRawTransaction) => void,
+    callback: (transaction: ElectrumRawTransaction) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.watchTransactionHashes(async (txHash: string) => {
       const tx = await this.provider.getRawTransactionObject(txHash);
-      callback(tx);
-    });
+      await callback(tx);
+    }, options);
   }
 
   public async watchTokenTransactions(
-    callback: (tx: ElectrumRawTransaction) => void,
+    callback: (tx: ElectrumRawTransaction) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.watchTransactions(
       async (transaction: ElectrumRawTransaction) => {
         if (transaction.vout.some((val) => val.tokenData)) {
-          callback(transaction);
+          await callback(transaction);
         }
       },
+      options,
     );
   }
 
@@ -725,25 +742,27 @@ export class BaseWallet implements WalletI {
    * For each new unconfirmed transaction, subscribes to its dsproof
    * for a short window. If a dsproof arrives, the callback is invoked.
    *
-   * @param callback - Called with the dsproof data when a double-spend is detected
+   * @param callback - Called with the dsproof data when a double-spend is detected; its errors,
+   * and a failed dsproof subscription, go to `options.onError`
    * @param window - How long (ms) to watch each transaction for dsproofs (default 5000)
    * @returns Cancel function to stop watching
    */
   public async watchDoubleSpends(
-    callback: (dsproof: DsproofData) => void,
+    callback: (dsproof: DsproofData) => unknown,
     window: number = 5000,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     return this.watchTransactionHashes(async (txHash: string) => {
       const cancel = await this.subscribe((provider) =>
         provider.subscribeToDsproof(txHash, ([proofTxHash, dsproof]) => {
           if (txHash === proofTxHash && dsproof !== null) {
-            callback(dsproof);
+            runCallback(() => callback(dsproof), options.onError);
           }
         }),
       );
 
-      setTimeout(() => cancel(), window);
-    });
+      setTimeout(() => runCallback(cancel, options.onError), window);
+    }, options);
   }
 
   protected async _getMaxAmountToSend(
@@ -1350,8 +1369,9 @@ export class BaseWallet implements WalletI {
    * @returns a function which will cancel watching upon evaluation
    */
   public async watchBlocks(
-    callback: (header: HexHeaderI) => void,
+    callback: (header: HexHeaderI) => unknown,
     skipCurrentHeight: boolean = true,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     // the skip is done here rather than by the provider, so a move to another provider can tell
     // its current tip, delivered on subscribing, from the header already seen
@@ -1365,7 +1385,7 @@ export class BaseWallet implements WalletI {
           skip = false;
           return;
         }
-        if (!seen) callback(header);
+        if (!seen) runCallback(() => callback(header), options.onError);
       }, false),
     );
   }

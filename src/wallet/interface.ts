@@ -121,3 +121,12 @@ export interface WaitForTransactionResponse {
 }
 
 export type CancelFn = () => Promise<void>;
+
+/** Options of a watch, whose callback may be async: its rejection is handled as a throw. */
+export interface WatchOptions {
+  /**
+   * Receives each error of the watch's callback, and of a read the watch makes for it, in place
+   * of the default console.error; the watch goes on.
+   */
+  onError?: (error: unknown) => void;
+}

@@ -31,9 +31,15 @@ import {
   getNextUnusedIndices,
 } from "../util/hd.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
+import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { CancelFn, SendRequestOptionsI, WalletInfoI } from "./interface.js";
+import {
+  CancelFn,
+  SendRequestOptionsI,
+  WalletInfoI,
+  WatchOptions,
+} from "./interface.js";
 import {
   OpReturnData,
   SendRequest,
@@ -582,13 +588,23 @@ export class HDWallet extends BaseWallet {
   /**
    * Watch wallet for any activity (status changes on any address)
    * This is the foundation for watchWalletBalance and watchWalletTransactions
-   * @param callback - Called when any address in the wallet has a status change
+   * @param callback - Called when any address in the wallet has a status change; its errors go to
+   * `options.onError`
+   * @param options - `debounce` (ms, default 100), or the debounce alone as a number
    * @returns Cancel function to stop watching
    */
-  public async watchStatus(
-    callback: (status: string | null, address: string) => void,
-    debounce: number = 100,
+  public override async watchStatus(
+    callback: (status: string | null, address: string) => unknown,
+    options: (WatchOptions & { debounce?: number }) | number = {},
   ): Promise<CancelFn> {
+    let debounce = 100;
+    let onError: WatchOptions["onError"];
+    if (typeof options === "number") {
+      debounce = options;
+    } else {
+      debounce = options.debounce ?? debounce;
+      onError = options.onError;
+    }
     await this.discovered();
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -602,9 +618,7 @@ export class HDWallet extends BaseWallet {
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
         // the Base watchers read in their callback, which rejects while discovery is failed
-        new Promise<void>((resolve) =>
-          resolve(callback(pendingStatus, pendingAddress)),
-        ).catch(() => {});
+        runCallback(() => callback(pendingStatus, pendingAddress), onError);
       }, debounce);
     };
 
@@ -688,7 +702,8 @@ export class HDWallet extends BaseWallet {
    * tracked branch's index advances and widens getRawHistory's scope.
    */
   public override async watchTransactionHashes(
-    callback: (txHash: string) => void,
+    callback: (txHash: string) => unknown,
+    options: WatchOptions = {},
   ): Promise<CancelFn> {
     // Seeded before subscribing so the history at setup is not reported as new
     const existing = await this.getRawHistory();
@@ -706,10 +721,11 @@ export class HDWallet extends BaseWallet {
         }
       }
 
-      if (newTxHashes.length > 0) {
-        newTxHashes.forEach((txHash) => callback(txHash));
+      // each on its own, so that one failing does not keep the others from being reported
+      for (const txHash of newTxHashes) {
+        runCallback(() => callback(txHash), options.onError);
       }
-    });
+    }, options);
   }
 
   /// Branch indices to scan. Defaults to every tracked branch. Throws on

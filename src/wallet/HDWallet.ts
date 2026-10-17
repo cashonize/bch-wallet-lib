@@ -362,7 +362,8 @@ export class HDWallet extends BaseWallet {
   private async makeWatchPromise(gapSize: number = GAP_SIZE) {
     let needsMore = true;
     while (needsMore) {
-      // every branch settles before this fails, so no address is still being watched when a retry starts
+      // every branch settles before this fails; an address whose first status failed before its
+      // subscribe resolved ends that subscription itself once it does
       const results = await Promise.allSettled(
         this.branches.map((branch) => this.watchBranch(branch, gapSize)),
       );
@@ -435,6 +436,8 @@ export class HDWallet extends BaseWallet {
             // An address whose subscription or first status fails is left unwatched, so that the
             // next discovery subscribes it again
             const fail = (error: unknown) => {
+              // only the first failure: a retry may already be watching the address again
+              if (failed) return;
               failed = true;
               statuses[index] = undefined as any;
               watchCancels[index]?.().catch(() => {});
@@ -479,6 +482,8 @@ export class HDWallet extends BaseWallet {
                   // Fetch only from last confirmed height to reduce server load
                   this.provider.getHistory(addr, fromHeight),
                 ]);
+                // failed while fetching, so the address must stay unwatched for a retry
+                if (failed) return;
 
                 // Merge: keep confirmed items from current history, add new items
                 const confirmedFromHistory = currentHistory.filter(
@@ -536,8 +541,11 @@ export class HDWallet extends BaseWallet {
             this.subscribe((provider) =>
               provider.subscribeToAddress(addr, callback as any),
             ).then((cancel) => {
-              watchCancels[index] = cancel;
-              if (failed) cancel().catch(() => {});
+              if (failed) {
+                cancel().catch(() => {});
+              } else {
+                watchCancels[index] = cancel;
+              }
             }, fail);
           }),
       ),

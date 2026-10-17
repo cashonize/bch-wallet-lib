@@ -247,4 +247,53 @@ describe("a fetch that fails during HD address discovery", () => {
     expect(await wallet.getBalance()).toBe(12_000n);
     await wallet.stop();
   }, 5000);
+
+  test("leaves an address unwatched when it fails while its first fetch is in flight", async () => {
+    const seedWallet = await RegTestHDWallet.newRandom();
+    await seedWallet.watchPromise;
+    await seedWallet.stop();
+    await fund(seedWallet.getDepositAddress(0), 5_000n);
+
+    // the subscriptions deliver their status here, then move to a provider that refuses them
+    const subscribeToAddress = provider.subscribeToAddress.bind(provider);
+    provider.subscribeToAddress = async (...args) => {
+      const cancel = await subscribeToAddress(...args);
+      await delay(100);
+      return cancel;
+    };
+    const newProvider = new MockNetworkProvider();
+    await newProvider.ready();
+    let refuseNew = true;
+    const subscribeNew = newProvider.subscribeToAddress.bind(newProvider);
+    newProvider.subscribeToAddress = async (...args) => {
+      if (refuseNew) throw new Error("subscription refused");
+      return subscribeNew(...args);
+    };
+    const getUtxosNew = newProvider.getUtxos.bind(newProvider);
+    newProvider.getUtxos = async (...args) => {
+      await delay(200);
+      return getUtxosNew(...args);
+    };
+
+    const wallet = await RegTestHDWallet.fromSeed(
+      seedWallet.mnemonic!,
+      seedWallet.derivation,
+    );
+    await wallet.setProvider(newProvider);
+    await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
+    // the fetch of the address's first status ends after it failed
+    await delay(250);
+
+    refuseNew = false;
+    expect(await wallet.getBalance()).toBe(0n);
+    expect(newProvider.subscriptions).toBe(40);
+    // the address is watched on the new provider
+    await newProvider.addUtxo(wallet.getDepositAddress(0), {
+      ...randomUtxo({ vout: 0, satoshis: 3_000n }),
+      height: 100,
+    });
+    await wallet.waitForUpdate({ depositIndex: 1, timeout: 1000 });
+    expect(await wallet.getBalance()).toBe(3_000n);
+    await wallet.stop();
+  }, 5000);
 });

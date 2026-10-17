@@ -1,4 +1,9 @@
-import { assertSuccess, decodeTransaction, hexToBin } from "@bitauth/libauth";
+import {
+  assertSuccess,
+  decodeTransaction,
+  hexToBin,
+  lockingBytecodeToCashAddress,
+} from "@bitauth/libauth";
 import { stringify } from "../cache/index.js";
 import { Config } from "../config.js";
 import { NFTCapability } from "../interface.js";
@@ -1045,6 +1050,57 @@ describe("HDWallet", () => {
     const bobTokenUtxos = await bob.getTokenUtxos(category);
     expect(bobTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
+  });
+
+  const outputAddresses = (wallet: HDWallet, transactionHex: string) =>
+    assertSuccess(decodeTransaction(hexToBin(transactionHex))).outputs.map(
+      (output) => ({
+        address: assertSuccess(
+          lockingBytecodeToCashAddress({
+            bytecode: output.lockingBytecode,
+            prefix: wallet.networkPrefix,
+            tokenSupport: true,
+          }),
+        ).address,
+        token: output.token,
+      }),
+    );
+
+  it("tokenMint sends the minting NFT to a fresh token change address", async () => {
+    const fundingWallet = await RegTestWallet.fromId(
+      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
+    );
+    const alice = await RegTestHDWallet.newRandom();
+    await fundingWallet.send({
+      cashaddr: alice.getDepositAddress(),
+      value: 100000n,
+    });
+    await alice.waitForUpdate({ depositIndex: 1 });
+
+    const genesisResponse = await alice.tokenGenesis({
+      nft: { capability: NFTCapability.minting, commitment: "" },
+    });
+    const category = genesisResponse.categories![0];
+    await alice.waitForUpdate({ depositIndex: 2, changeIndex: 1 });
+    const [baton] = await alice.getTokenUtxos(category);
+
+    const bob = await RegTestWallet.newRandom();
+    const response = await alice.tokenMint(
+      {
+        category,
+        cashaddr: bob.tokenaddr!,
+        nft: { capability: NFTCapability.none, commitment: "01" },
+      },
+      false,
+      { broadcast: false },
+    );
+
+    const batonOutputs = outputAddresses(alice, response.transaction!).filter(
+      (output) => output.token?.nft?.capability === "minting",
+    );
+    expect(batonOutputs.length).toBe(1);
+    expect(batonOutputs[0].address).not.toBe(toTokenaddr(baton.address));
+    expect(batonOutputs[0].address).toBe(alice.getTokenChangeAddress(1));
   });
 
   test("Test enforcing token addresses", async () => {

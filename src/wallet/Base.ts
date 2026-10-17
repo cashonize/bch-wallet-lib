@@ -1442,7 +1442,7 @@ export class BaseWallet implements WalletI {
       ensureUtxos.push(mintingUtxo);
       outputs.push(
         new TokenSendRequest({
-          cashaddr: toTokenaddr(mintingUtxo.address),
+          cashaddr: this.getTokenChangeAddress(),
           category: category,
           nft: mintingUtxo.token?.nft,
           amount: safeNewAmount,

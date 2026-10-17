@@ -7,6 +7,22 @@ import {
   RuntimePlatform,
 } from "../util/getRuntimePlatform.js";
 
+export interface ExchangeRateOptions {
+  // default true; false always fetches, and does not cache what it fetched
+  useCache?: boolean;
+  // when the fetch fails, return the last cached rate of the current source, however old, instead of throwing
+  staleOnError?: boolean;
+}
+
+export interface ExchangeRateQuote {
+  symbol: string;
+  rate: number;
+  // ms since the epoch, when the rate was fetched
+  fetchedAt: number;
+  // true when the fetch failed and this is the last known rate
+  stale: boolean;
+}
+
 export class ExchangeRate {
   symbol: string;
   rate: number;
@@ -30,18 +46,29 @@ export class ExchangeRate {
   }
 
   static async get(symbol: string, useCache = true) {
-    return await getRate(platformCache(), symbol, useCache);
+    const quote = await getQuote(platformCache(), symbol, { useCache });
+    return quote.rate;
+  }
+
+  // like get(), and tells when the rate was fetched and whether it is stale
+  static async getQuote(
+    symbol: string,
+    options: ExchangeRateOptions = {},
+  ): Promise<ExchangeRateQuote> {
+    return await getQuote(platformCache(), symbol, options);
   }
 
   static async getRateFromLocalStorage(
     symbol: string,
     useCache = true,
   ): Promise<number> {
-    return await getRate(localStorageCache, symbol, useCache);
+    const quote = await getQuote(localStorageCache, symbol, { useCache });
+    return quote.rate;
   }
 
   static async getRateFromGlobalScope(symbol, useCache = true) {
-    return await getRate(globalScopeCache, symbol, useCache);
+    const quote = await getQuote(globalScopeCache, symbol, { useCache });
+    return quote.rate;
   }
 
   static cacheRateInGlobalScope(symbol, rate) {
@@ -132,28 +159,55 @@ function isUsable(
   return rateSourceChanges === 0 || entry.source === sourceTag;
 }
 
-async function getRate(
+async function getQuote(
   cache: RateCache,
   symbol: string,
-  useCache: boolean,
-): Promise<number> {
+  options: ExchangeRateOptions,
+): Promise<ExchangeRateQuote> {
+  const useCache = options.useCache ?? true;
   const sourceTag = currentSourceTag();
   const source = Config.GetExchangeRateFn;
   if (useCache) {
     const cached = await cache.read(symbol);
     if (isUsable(cached, sourceTag) && cached.ttl > Date.now()) {
-      return cached.rate;
+      return toQuote(symbol, cached, false);
     }
   }
 
-  const freshRate = await fetchRate(source, symbol);
+  let freshRate: number;
+  try {
+    freshRate = await fetchRate(source, symbol);
+  } catch (error) {
+    if (options.staleOnError) {
+      const cached = await cache.read(symbol).catch(() => undefined);
+      // not when the source changed while it was fetched
+      const unchanged = currentSourceTag() === sourceTag;
+      if (unchanged && isUsable(cached, sourceTag)) {
+        return toQuote(symbol, cached, true);
+      }
+    }
+    throw error;
+  }
+  const entry = { symbol, rate: freshRate, ttl: getTtl(), source: sourceTag };
   // a rate of a source switched away from while it was fetched is not cached
   if (useCache && currentSourceTag() === sourceTag) {
-    const entry = { symbol, rate: freshRate, ttl: getTtl(), source: sourceTag };
     // a rate that cannot be cached (e.g. storage full) is still returned
     await cache.write(entry).catch(() => {});
   }
-  return freshRate;
+  return toQuote(symbol, entry, false);
+}
+
+function toQuote(
+  symbol: string,
+  entry: ExchangeRateI,
+  stale: boolean,
+): ExchangeRateQuote {
+  return {
+    symbol,
+    rate: entry.rate,
+    fetchedAt: entry.ttl - EXCHANGE_RATE_TTL,
+    stale,
+  };
 }
 
 export function getTtl() {

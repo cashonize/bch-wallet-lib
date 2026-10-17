@@ -1,5 +1,6 @@
 import { setupFetchMock } from "#test/fetch.js";
 import { Config } from "../config.js";
+import { EXCHANGE_RATE_TTL } from "../constant.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { convert } from "../util/convert.js";
 import { ExchangeRate } from "./ExchangeRate.js";
@@ -171,6 +172,62 @@ describe("Exchange rate tests", () => {
     } finally {
       Config.GetExchangeRateFn = undefined;
       localStorage.removeItem("rate-usd");
+    }
+  });
+  test("getQuote falls back to the last known rate only with staleOnError", async () => {
+    let failing = false;
+    const source = async (): Promise<number> => {
+      if (failing) {
+        throw new Error("rate source down");
+      }
+      return 400;
+    };
+    Config.GetExchangeRateFn = source;
+    delete globalThis.RATE;
+
+    try {
+      const before = Date.now();
+      const fresh = await ExchangeRate.getQuote("usd");
+      expect(fresh).toMatchObject({ symbol: "usd", rate: 400, stale: false });
+      expect(fresh.fetchedAt).toBeGreaterThanOrEqual(before);
+      expect(fresh.fetchedAt).toBeLessThanOrEqual(Date.now());
+
+      // a cached rate within its TTL is served fresh, without a fetch
+      failing = true;
+      expect(await ExchangeRate.getQuote("usd")).toEqual(fresh);
+
+      // past the TTL, the fetch fails
+      globalThis.RATE.usd.ttl = Date.now() - 1;
+      const fetchedAt = globalThis.RATE.usd.ttl - EXCHANGE_RATE_TTL;
+      await expect(ExchangeRate.getQuote("usd")).rejects.toThrow(
+        "rate source down",
+      );
+      await expect(ExchangeRate.get("usd")).rejects.toThrow("rate source down");
+      expect(
+        await ExchangeRate.getQuote("usd", { staleOnError: true }),
+      ).toEqual({ symbol: "usd", rate: 400, fetchedAt, stale: true });
+      expect(
+        await ExchangeRate.getQuote("usd", {
+          useCache: false,
+          staleOnError: true,
+        }),
+      ).toEqual({ symbol: "usd", rate: 400, fetchedAt, stale: true });
+
+      // no last known rate for the symbol: the error is thrown
+      await expect(
+        ExchangeRate.getQuote("eur", { staleOnError: true }),
+      ).rejects.toThrow("rate source down");
+
+      // nor is the last rate of a source switched away from
+      Config.GetExchangeRateFn = async () => {
+        throw new Error("other source down");
+      };
+      await expect(
+        ExchangeRate.getQuote("usd", { staleOnError: true }),
+      ).rejects.toThrow("other source down");
+    } finally {
+      Config.GetExchangeRateFn = undefined;
+      delete globalThis.RATE;
     }
   });
 });

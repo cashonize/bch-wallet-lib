@@ -1,5 +1,9 @@
 export { binToHex, hexToBin } from "@bitauth/libauth";
 export { ExchangeRate, getExchangeRatePromise } from "../rate/ExchangeRate.js";
+export type {
+  ExchangeRateOptions,
+  ExchangeRateQuote,
+} from "../rate/ExchangeRate.js";
 export { amountInSatoshi } from "./amountInSatoshi.js";
 export { asSendRequestObject } from "./asSendRequestObject.js";
 export { atob, btoa } from "./base64.js";

@@ -229,7 +229,7 @@ export class BaseWallet implements WalletI {
     dbName?: string,
     forceNew: boolean = false,
   ): Promise<this> {
-    if (name.length === 0) {
+    if (!name?.length) {
       throw Error("Named wallets must have a non-empty name");
     }
     _checkContextSafety(this);

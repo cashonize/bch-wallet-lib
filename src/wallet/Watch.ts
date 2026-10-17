@@ -564,6 +564,9 @@ export class WatchWallet extends BaseWallet {
 
   // Initialize a watch only wallet from a cash addr
   protected async watchOnly(address: string): Promise<this> {
+    if (!address?.length)
+      throw Error("address is required to create a watch-only wallet");
+
     // @ts-ignore
     this.walletType = WalletTypeEnum.Watch;
 

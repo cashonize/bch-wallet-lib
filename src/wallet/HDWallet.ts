@@ -163,8 +163,8 @@ export class HDWallet extends BaseWallet {
     xPriv,
     xPub,
   }: HDWalletOptions = {}) {
-    // newRandom
-    if (!xPriv && !xPub && !mnemonic) {
+    // newRandom; an empty key given is a mistake and throws below, it never makes a random wallet
+    if (xPriv === undefined && xPub === undefined && mnemonic === undefined) {
       mnemonic = generateBip39Mnemonic();
     }
 
@@ -890,6 +890,9 @@ export class HDWallet extends BaseWallet {
     depositIndex?: number,
     changeIndex?: number,
   ): Promise<InstanceType<T>> {
+    if (!seed?.length) {
+      throw Error("refusing to create wallet from empty mnemonic");
+    }
     const indices: Record<number, number> = {};
     if (depositIndex !== undefined) indices[DEPOSIT_BRANCH] = depositIndex;
     if (changeIndex !== undefined) indices[CHANGE_BRANCH] = changeIndex;
@@ -934,6 +937,9 @@ export class HDWallet extends BaseWallet {
     this: T,
     xPub: string,
   ): Promise<InstanceType<T>> {
+    if (!xPub?.length) {
+      throw Error("refusing to create wallet from empty xPub");
+    }
     return new this().initialize({
       xPub: xPub,
     }) as Promise<InstanceType<T>>;
@@ -950,6 +956,9 @@ export class HDWallet extends BaseWallet {
     this: T,
     xPriv: string,
   ): Promise<InstanceType<T>> {
+    if (!xPriv?.length) {
+      throw Error("refusing to create wallet from empty xPriv");
+    }
     return new this().initialize({
       xPriv: xPriv,
     }) as Promise<InstanceType<T>>;
@@ -992,6 +1001,10 @@ export class HDWallet extends BaseWallet {
       throw Error(
         `fromId called on a ${walletType} wallet, expected a ${WalletTypeEnum.Hd} wallet`,
       );
+    }
+
+    if (!arg1) {
+      throw Error("refusing to create wallet from a walletId without a key");
     }
 
     // the whole prefix: a Czech mnemonic can start with "zprvu"

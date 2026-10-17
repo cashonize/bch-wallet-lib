@@ -380,7 +380,7 @@ export class Wallet extends WatchWallet {
     mnemonic: string,
     derivationPath?: string,
   ): Promise<this> {
-    if (!mnemonic.length) {
+    if (!mnemonic?.length) {
       throw Error("refusing to create wallet from empty mnemonic");
     }
 
@@ -396,6 +396,9 @@ export class Wallet extends WatchWallet {
   protected async fromPrivateKey(
     privateKey: string | Uint8Array,
   ): Promise<this> {
+    if (!privateKey?.length) {
+      throw Error("refusing to create wallet from empty private key");
+    }
     if (typeof privateKey === "string") {
       privateKey = hexToBin(privateKey);
     }
@@ -410,6 +413,11 @@ export class Wallet extends WatchWallet {
 
   // Initialize wallet from Wallet Import Format
   protected async fromWIF(privateKeyWif: string): Promise<this> {
+    // initialize would make a random key for an empty one
+    if (!privateKeyWif?.length) {
+      throw Error("refusing to create wallet from empty WIF");
+    }
+
     // @ts-ignore
     this.walletType = WalletTypeEnum.Wif;
 

@@ -35,7 +35,7 @@ import {
 import { walletFromId } from "./createWallet.js";
 import { HDWallet } from "./HDWallet.js";
 import { WatchWallet } from "./Watch.js";
-import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
+import { RegTestWallet, TestNetWallet, Wallet, WifWallet } from "./Wif.js";
 import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
@@ -172,6 +172,121 @@ describe(`Test creation of wallet from walletId`, () => {
         );
         expect(error.message).toBe(message);
         expect(error.message).not.toContain(secret);
+      }
+    });
+
+    test("An empty key, address or name throws instead of making a random wallet", async () => {
+      const cases: [() => Promise<unknown>, string][] = [
+        [() => Wallet.fromWIF(""), "refusing to create wallet from empty WIF"],
+        [
+          () => WifWallet.fromWIF(""),
+          "refusing to create wallet from empty WIF",
+        ],
+        [
+          () => Wallet.fromId("wif:mainnet:"),
+          "refusing to create wallet from empty WIF",
+        ],
+        [
+          () => Wallet.fromId("wif:mainnet"),
+          "refusing to create wallet from empty WIF",
+        ],
+        [
+          () => walletFromId("wif:mainnet:"),
+          "refusing to create wallet from empty WIF",
+        ],
+        [
+          () => Wallet.fromPrivateKey(""),
+          "refusing to create wallet from empty private key",
+        ],
+        [
+          () => Wallet.fromPrivateKey(new Uint8Array()),
+          "refusing to create wallet from empty private key",
+        ],
+        [
+          () => Wallet.fromId("privkey:mainnet:"),
+          "refusing to create wallet from empty private key",
+        ],
+        [
+          () => Wallet.fromSeed(""),
+          "refusing to create wallet from empty mnemonic",
+        ],
+        [
+          () => Wallet.fromId("seed:mainnet:"),
+          "refusing to create wallet from empty mnemonic",
+        ],
+        [
+          () => Wallet.fromId("seed:mainnet"),
+          "refusing to create wallet from empty mnemonic",
+        ],
+        [
+          () => Wallet.fromId("watch:mainnet:"),
+          "address is required to create a watch-only wallet",
+        ],
+        [
+          async () => (new WatchWallet() as any).fromId("watch:mainnet:"),
+          "address is required to create a watch-only wallet",
+        ],
+        [
+          async () => (new WatchWallet() as any).fromId("watch:mainnet"),
+          "address is required to create a watch-only wallet",
+        ],
+        [
+          () => Wallet.fromId("named:mainnet:"),
+          "Named wallets must have a non-empty name",
+        ],
+        [
+          () => Wallet.fromId("named:mainnet"),
+          "Named wallets must have a non-empty name",
+        ],
+        [
+          () => HDWallet.fromId("named:mainnet"),
+          "Named wallets must have a non-empty name",
+        ],
+        [
+          () => HDWallet.fromId("hd:mainnet:"),
+          "refusing to create wallet from a walletId without a key",
+        ],
+        [
+          () => HDWallet.fromId("hd:mainnet"),
+          "refusing to create wallet from a walletId without a key",
+        ],
+        [
+          () => HDWallet.fromId("hd:mainnet::0:0"),
+          "refusing to create wallet from a walletId without a key",
+        ],
+        [
+          () => walletFromId("hd:mainnet:"),
+          "refusing to create wallet from a walletId without a key",
+        ],
+        [
+          () => HDWallet.fromSeed(""),
+          "refusing to create wallet from empty mnemonic",
+        ],
+        [
+          () => HDWallet.fromXPriv(""),
+          "refusing to create wallet from empty xPriv",
+        ],
+        [
+          () => HDWallet.fromXPub(""),
+          "refusing to create wallet from empty xPub",
+        ],
+        [
+          () => (HDWallet as any).fromXPriv(undefined),
+          "refusing to create wallet from empty xPriv",
+        ],
+        // an empty key given to initialize, which fromId and the statics no longer pass
+        [
+          async () => (new HDWallet() as any).initialize({ mnemonic: "" }),
+          "mnemonic, xPriv or xPub must be provided to create an HDWallet",
+        ],
+      ];
+      for (const [fn, message] of cases) {
+        const error: Error = await fn().then(
+          () => Error("expected an error"),
+          (e) => e,
+        );
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message).toBe(message);
       }
     });
 

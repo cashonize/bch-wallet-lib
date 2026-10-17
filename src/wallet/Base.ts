@@ -49,6 +49,7 @@ import {
   checkBurnRequest,
   checkGenesisRequest,
   checkMintRequest,
+  toTokenAmount,
   TokenBurnRequest,
   TokenGenesisRequest,
   TokenMintRequest,
@@ -1285,9 +1286,12 @@ export class BaseWallet {
    * Perform an explicit token burning by spending one or more token utxos alongside an OP_RETURN.
    * Multiple burn requests across distinct categories can be bundled into a single transaction.
    *
-   * Behaves differently for fungible and non-fungible tokens:
-   *  * NFTs are always "destroyed"
-   *  * FTs' amount is reduced by the amount specified; if 0 FT amount is left and no NFT present, the token is "destroyed"
+   * A request burns what it names, and the transaction is checked to burn no more:
+   *  * with an NFT and no amount, one coin with that NFT is spent and the NFT destroyed; fungible
+   *    tokens that coin carries come back without it
+   *  * with an amount, that many fungible tokens are burned from the matching coins: the
+   *    fungible-only coins of the category, or with an NFT given, the coins carrying that NFT,
+   *    which come back with it. More than those coins carry throws InsufficientFundsError.
    *
    * Refer to spec https://github.com/cashtokens/cashtokens
    * @param  {TokenBurnRequest | TokenBurnRequest[]} burnRequests one or more burn requests.
@@ -1313,93 +1317,98 @@ export class BaseWallet {
 
     const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
-    const changeSendRequests: Array<SendRequest | TokenSendRequest> = [];
+    const changeSendRequests: TokenSendRequest[] = [];
+    // exactly what the requests burn: an NFT that comes back is not listed
     const tokenBurns: Required<TokenBurnAllowance> = { fungible: {}, nfts: [] };
+    const cashaddr = toTokenaddr(this.getChangeAddress());
 
     for (const burnRequest of burnRequests) {
+      const { category, nft } = burnRequest;
       const tokenUtxos = utxos.filter(
         (val) =>
-          val.token?.category === burnRequest.category &&
-          val.token?.nft?.capability === burnRequest.nft?.capability &&
-          val.token?.nft?.commitment === burnRequest.nft?.commitment,
+          val.token?.category === category &&
+          val.token?.nft?.capability === nft?.capability &&
+          val.token?.nft?.commitment === nft?.commitment,
       );
 
       if (!tokenUtxos.length) {
         throw new InsufficientFundsError(
-          `You do not have suitable token UTXOs to perform burn for category ${burnRequest.category}`,
-          { asset: "token", category: burnRequest.category },
+          `You do not have suitable token UTXOs to perform burn for category ${category}`,
+          { asset: "token", category },
         );
       }
 
-      const totalFungibleAmount = tokenUtxos.reduce(
-        (prev, cur) => prev + (cur.token?.amount || 0n),
-        0n,
-      );
-      let fungibleBurnAmount =
-        burnRequest.amount && burnRequest.amount > 0 ? burnRequest.amount! : 0n;
-      fungibleBurnAmount = BigInt(fungibleBurnAmount);
-      const hasNFT = burnRequest.nft !== undefined;
-      tokenBurns.fungible[burnRequest.category] =
-        (tokenBurns.fungible[burnRequest.category] ?? 0n) + fungibleBurnAmount;
-      if (hasNFT) {
+      const amount = toTokenAmount(burnRequest.amount);
+      if (nft && amount === 0n) {
+        // a coin with the NFT alone, when there is one, so that no fungible tokens move
+        const coin =
+          tokenUtxos.find((val) => val.token!.amount === 0n) ?? tokenUtxos[0];
+        ensureUtxos.push(coin);
         tokenBurns.nfts.push({
-          category: burnRequest.category,
-          ...burnRequest.nft!,
+          category,
+          capability: coin.token!.nft!.capability,
+          commitment: coin.token!.nft!.commitment ?? "",
         });
-      }
-
-      if (hasNFT) {
-        if (totalFungibleAmount === 0n) {
-          ensureUtxos.push(tokenUtxos[0]);
-        } else {
-          let available = 0n;
-          for (const token of tokenUtxos.filter((val) => val.token?.amount)) {
-            ensureUtxos.push(token);
-            available += token.token!.amount;
-            if (available >= fungibleBurnAmount) {
-              break;
-            }
-          }
-
-          const newAmount = totalFungibleAmount - fungibleBurnAmount;
-          const safeNewAmount = newAmount < 0n ? 0n : newAmount;
+        if (coin.token!.amount > 0n) {
           changeSendRequests.push(
             new TokenSendRequest({
-              cashaddr: toTokenaddr(this.getChangeAddress()),
-              category: burnRequest.category,
-              nft: burnRequest.nft,
-              amount: safeNewAmount,
-              value: tokenUtxos[0].satoshis,
+              cashaddr,
+              category,
+              amount: coin.token!.amount,
             }),
           );
         }
-      } else {
-        if (totalFungibleAmount === fungibleBurnAmount) {
-          ensureUtxos.push(...tokenUtxos);
-        } else {
-          let available = 0n;
-          for (const token of tokenUtxos.filter((val) => val.token?.amount)) {
-            ensureUtxos.push(token);
-            available += token.token!.amount;
-            if (available >= fungibleBurnAmount) {
-              break;
-            }
-          }
+        continue;
+      }
 
-          // no value: the standard 1000 sats of a token output, as a send's fungible change
-          // holds; the spent coins' other sats, and all of them when no tokens are left, go to
-          // the BCH change
-          const newAmount = available - fungibleBurnAmount;
-          if (newAmount > 0n) {
-            changeSendRequests.push(
-              new TokenSendRequest({
-                cashaddr: toTokenaddr(this.getChangeAddress()),
-                category: burnRequest.category,
-                amount: newAmount,
-              }),
-            );
-          }
+      const available = tokenUtxos.reduce(
+        (sum, val) => sum + val.token!.amount,
+        0n,
+      );
+      if (available < amount) {
+        throw new InsufficientFundsError(
+          `Not enough fungible tokens of category ${category} to burn ${amount}: ${available} available`,
+          { asset: "token", category },
+        );
+      }
+      tokenBurns.fungible[category] =
+        (tokenBurns.fungible[category] ?? 0n) + amount;
+
+      let toBurn = amount;
+      let fungibleChange = 0n;
+      for (const coin of tokenUtxos) {
+        if (toBurn === 0n) break;
+        if (coin.token!.amount === 0n) continue;
+        ensureUtxos.push(coin);
+        let burned = coin.token!.amount;
+        if (burned > toBurn) burned = toBurn;
+        toBurn -= burned;
+        const left = coin.token!.amount - burned;
+        const coinNft = coin.token!.nft;
+        if (coinNft) {
+          // the NFT comes back as it was, on the coin's own sats, as a send's NFT change does
+          changeSendRequests.push(
+            new TokenSendRequest({
+              cashaddr,
+              category,
+              amount: left,
+              nft: {
+                capability: coinNft.capability,
+                commitment: coinNft.commitment ?? "",
+              },
+              value: coin.satoshis,
+            }),
+          );
+        } else {
+          fungibleChange += left;
         }
+      }
+      if (fungibleChange > 0n) {
+        // no value: the standard 1000 sats of a token output, as a send's fungible change holds;
+        // the spent coins' other sats go to the BCH change
+        changeSendRequests.push(
+          new TokenSendRequest({ cashaddr, category, amount: fungibleChange }),
+        );
       }
     }
 

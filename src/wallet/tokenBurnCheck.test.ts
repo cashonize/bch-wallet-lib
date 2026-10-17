@@ -164,6 +164,26 @@ describe("a built transaction that burns tokens is refused", () => {
     await expect(burn({ checkTokenQuantities: false })).resolves.toBeDefined();
   });
 
+  test("a fungible burn off a minting NFT whose NFT change is dropped", async () => {
+    const wallet = await fundedWallet();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const category = (await wallet.tokenGenesis({ amount: 10n, nft: minting }))
+      .categories![0];
+    dropped.tokenaddr = wallet.tokenaddr;
+
+    // all its fungible tokens: what comes back is the minting NFT alone, which the burn keeps
+    const error = await burnError(
+      wallet.tokenBurn(
+        new TokenBurnRequest({ category, nft: minting, amount: 10n }),
+        "",
+        { broadcast: false },
+      ),
+    );
+    expect(error.category).toBe(category);
+    expect(error.amount).toBe(0n);
+    expect(error.nft).toEqual(minting);
+  });
+
   test("a burn of one NFT that would destroy an identical one too", async () => {
     const wallet = await fundedWallet();
     const minting = { capability: NFTCapability.minting, commitment: "" };

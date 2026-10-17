@@ -522,11 +522,16 @@ describe(`Test cashtokens`, () => {
     const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
-    // burn 5 FT
+    // more than the wallet holds is refused, not burned as all of it
+    await expect(
+      alice.tokenBurn({ category: category, amount: 5n }, "burn"),
+    ).rejects.toThrow(InsufficientFundsError);
+
+    // burn all 4 FT
     const response = await alice.tokenBurn(
       {
         category: category,
-        amount: 5n,
+        amount: 4n,
       },
       "burn",
     );
@@ -586,11 +591,23 @@ describe(`Test cashtokens`, () => {
     expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(category).toEqual(response.categories![0]);
 
+    // more than the NFT's coin carries is refused
+    await expect(
+      alice.tokenBurn(
+        {
+          category,
+          amount: 5n,
+          nft: { capability: NFTCapability.minting, commitment: "abcd" },
+        },
+        "burn",
+      ),
+    ).rejects.toThrow(InsufficientFundsError);
+
     // burn the rest FTs
     const ftResponse = await alice.tokenBurn(
       {
         category: category,
-        amount: 5n,
+        amount: 3n,
         nft: {
           capability: NFTCapability.minting,
           commitment: "abcd",
@@ -2401,5 +2418,107 @@ describe("tokenBurn inputs and outputs", () => {
       },
     ]);
     expect(await getTokenBalance(bob, category)).toBe(40n);
+  });
+
+  test("an NFT burn of a coin that also carries fungible tokens destroys the NFT and keeps the tokens", async () => {
+    const bob = await fundedWallet();
+    const nft = { capability: NFTCapability.none, commitment: "aa" };
+    const category = (await bob.tokenGenesis({ amount: 50n, nft }))
+      .categories![0];
+    const coins = [...(await bob.getUtxos())];
+    const [hybrid] = await getTokenUtxos(bob, category);
+
+    const response = await bob.tokenBurn({ category, nft }, "burn");
+    const spent = spentCoins(response.transaction!, coins);
+    expect(spent.filter((coin) => coin.token)).toEqual([hybrid]);
+    const fee = await feeOf(bob, response.transaction!);
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      opReturn,
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 50n },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.cashaddr!),
+        value: sumValue(spent) - 1000n - fee,
+        token: undefined,
+      },
+    ]);
+  });
+
+  test("a fungible burn over two minting NFTs brings both back", async () => {
+    const bob = await fundedWallet();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const category = (await bob.tokenGenesis({ amount: 50n, nft: minting }))
+      .categories![0];
+    await bob.send(
+      [
+        new TokenSendRequest({
+          cashaddr: bob.tokenaddr!,
+          category,
+          nft: minting,
+          amount: 30n,
+          value: 2000n,
+        }),
+        new TokenSendRequest({
+          cashaddr: bob.tokenaddr!,
+          category,
+          nft: minting,
+          amount: 20n,
+          value: 3000n,
+        }),
+      ],
+      { checkTokenQuantities: false },
+    );
+    const coins = [...(await bob.getUtxos())];
+    expect(await getTokenUtxos(bob, category)).toHaveLength(2);
+
+    // 40 tokens need both coins; a single NFT change used to bring back one minting NFT of the two
+    const response = await bob.tokenBurn({
+      category,
+      nft: minting,
+      amount: 40n,
+    });
+    const spent = spentCoins(response.transaction!, coins);
+    const burned = spent.filter((coin) => coin.token);
+    expect(burned).toHaveLength(2);
+    const fee = await feeOf(bob, response.transaction!);
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      opReturn,
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: burned[0].satoshis,
+        token: {
+          category,
+          amount: 0n,
+          nft: minting,
+        },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: burned[1].satoshis,
+        token: { category, amount: 50n - 40n, nft: minting },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.cashaddr!),
+        value: sumValue(spent) - burned[0].satoshis - burned[1].satoshis - fee,
+        token: undefined,
+      },
+    ]);
+    expect(await getTokenBalance(bob, category)).toBe(10n);
+    expect(await getNftTokenBalance(bob, category)).toBe(2);
+  });
+
+  test("a fungible burn off a minting NFT that carries none is refused, not a burn of the NFT", async () => {
+    const bob = await fundedWallet();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const category = (await bob.tokenGenesis({ nft: minting })).categories![0];
+    const coins = await bob.getUtxos();
+
+    await expect(
+      bob.tokenBurn({ category, nft: minting, amount: 1n }),
+    ).rejects.toThrow(InsufficientFundsError);
+    expect(await bob.getUtxos()).toEqual(coins);
   });
 });

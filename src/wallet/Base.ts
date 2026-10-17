@@ -1019,7 +1019,13 @@ export class BaseWallet implements WalletI {
       ...ensureUtxos,
       ...utxos.filter((utxo) => !ensureIds.has(toUtxoId(utxo))),
     ];
-    options = { ...options, utxoIds: inputs, ensureUtxos: inputs };
+    // the max has the fee taken off already, so the output pays it whatever feePaidBy says
+    options = {
+      ...options,
+      utxoIds: inputs,
+      ensureUtxos: inputs,
+      feePaidBy: FeePaidByEnum.change,
+    };
 
     const sendRequest = new SendRequest({
       cashaddr: cashaddr,

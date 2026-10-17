@@ -485,4 +485,21 @@ describe("sendMax takes the fee options send takes", () => {
     expect(await maxOf(low)).toBe(4800n);
     expect(outputValues((await sendMax(low)).transaction)).toEqual([4800n]);
   });
+
+  test("an output paying the fee is not charged it on top of the max", async () => {
+    const { alice, bob } = await fund(5, 1000n);
+    const max = await bob.getMaxAmountToSend();
+    for (const feePaidBy of [
+      FeePaidByEnum.first,
+      FeePaidByEnum.last,
+      FeePaidByEnum.any,
+      FeePaidByEnum.changeThenFirst,
+    ]) {
+      const response = await bob.sendMax(alice.cashaddr!, {
+        feePaidBy,
+        broadcast: false,
+      });
+      expect(outputValues(response.transaction)).toEqual([max]);
+    }
+  });
 });

@@ -150,8 +150,8 @@ describe("Wallet should function in the browser", () => {
       name: "Bob's random wallet",
     });
     await alice.send([{ cashaddr: bob.cashaddr!, value: 3000n }]);
-    const result = await bob.sendMax(alice.cashaddr!);
-    expect(result.balance).toBe(0n);
+    await bob.sendMax(alice.cashaddr!);
+    expect(await bob.getBalance()).toBe(0n);
   });
 
   test("Store and replace a Regtest wallet", async () => {

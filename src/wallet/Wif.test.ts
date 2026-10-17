@@ -562,10 +562,8 @@ describe(`Watch only Wallets`, () => {
         process.env.ALICE_TESTNET_WALLET_ID!,
       );
       expect(alice.getPublicKeyHash()!.length).toBe(20);
-      let aliceBalance = await alice.send([
-        { cashaddr: alice.cashaddr!, value: 720n },
-      ]);
-      expect(aliceBalance.balance).toBeGreaterThan(5000n);
+      await alice.send([{ cashaddr: alice.cashaddr!, value: 720n }]);
+      expect(await alice.getBalance()).toBeGreaterThan(5000n);
     },
   );
 
@@ -646,14 +644,12 @@ describe(`Wallet subscriptions`, () => {
     const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bobWallet = await RegTestWallet.newRandom();
 
-    // awaitTransactionPropagation: true -> response includes updated balance
+    // awaitTransactionPropagation: true -> the balance is updated when the send returns
     const balanceBefore = await aliceWallet.getBalance();
-    const resp = await aliceWallet.send(
-      [{ cashaddr: bobWallet.cashaddr!, value: 1000n }],
-      { awaitTransactionPropagation: true },
-    );
-    expect(resp.balance!).toBeLessThan(balanceBefore);
-    expect(resp.balance!).toBe(await aliceWallet.getBalance());
+    await aliceWallet.send([{ cashaddr: bobWallet.cashaddr!, value: 1000n }], {
+      awaitTransactionPropagation: true,
+    });
+    expect(await aliceWallet.getBalance()).toBeLessThan(balanceBefore);
 
     // awaitTransactionPropagation: false -> send completes without waiting
     // for the status notification round-trip; we only verify it succeeds.

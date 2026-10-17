@@ -415,8 +415,6 @@ export interface SendResponse {
   transaction: string;
   /** the token categories among the inputs and the requested outputs */
   categories: string[];
-  balance?: bigint;
-  explorerUrl?: string;
 }
 
 export const fromUtxoId = (utxoId: string): UtxoId => {

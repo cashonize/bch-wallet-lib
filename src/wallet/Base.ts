@@ -356,22 +356,6 @@ export class BaseWallet implements WalletI {
   //#endregion Serialization
 
   /**
-   *  explorerUrl   Web url to a transaction on a block explorer
-   *
-   * @param txId   transaction Id
-   * @returns   Url string
-   */
-  public explorerUrl(txId: string) {
-    const explorerUrlMap = {
-      mainnet: "https://blockchair.com/bitcoin-cash/transaction/",
-      testnet: "https://www.blockchain.com/bch-testnet/tx/",
-      regtest: "",
-    };
-
-    return explorerUrlMap[this.network] + txId;
-  }
-
-  /**
    * named - create a named wallet
    *
    * @param name   user friendly wallet alias
@@ -1012,14 +996,7 @@ export class BaseWallet implements WalletI {
       this.submitTransaction(encodedTransaction, awaitPropagation),
     ]);
 
-    const resp: SendResponse = { txId, transaction, categories };
-    resp.explorerUrl = this.explorerUrl(txId);
-
-    if (options?.queryBalance === undefined || options?.queryBalance === true) {
-      resp.balance = await this.getBalance();
-    }
-
-    return resp;
+    return { txId, transaction, categories };
   }
 
   /**
@@ -1450,7 +1427,6 @@ export class BaseWallet implements WalletI {
       utxoIds: utxos,
       ensureUtxos: pinnedInputs,
       checkTokenQuantities: false,
-      queryBalance: false,
       tokenOperation: "genesis",
       tokenBurns: options?.checkTokenQuantities === false ? undefined : {},
     });
@@ -1549,7 +1525,6 @@ export class BaseWallet implements WalletI {
       ...options,
       ensureUtxos,
       checkTokenQuantities: false,
-      queryBalance: false,
       tokenOperation: "mint",
       tokenBurns:
         options?.checkTokenQuantities === false
@@ -1691,7 +1666,6 @@ export class BaseWallet implements WalletI {
     return this.send([opReturn, ...changeSendRequests], {
       ...options,
       checkTokenQuantities: false,
-      queryBalance: false,
       ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
       tokenOperation: "burn",
       tokenBurns:

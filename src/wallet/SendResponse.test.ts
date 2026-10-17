@@ -32,7 +32,6 @@ describe("a broadcast send returns the transaction it broadcast", () => {
     expectTypeOf(response.txId).toEqualTypeOf<string>();
     expectTypeOf(response.transaction).toEqualTypeOf<string>();
     await expectBroadcast(alice, response);
-    expect(response.explorerUrl).toContain(response.txId);
   });
 
   test("sendMax", async () => {

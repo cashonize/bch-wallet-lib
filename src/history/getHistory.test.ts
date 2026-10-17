@@ -76,7 +76,6 @@ test("Should get an address history", async () => {
       },
     ]);
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.
@@ -150,7 +149,6 @@ test("Should get a history with multi-party sends", async () => {
       },
     ]);
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
 
     // Build Bob's wallet from a public address, check his balance.
@@ -229,7 +227,6 @@ test("Should cut results with a longer history to given count", async () => {
     ]);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.
@@ -288,7 +285,6 @@ test("Should handle input and fee from many utxos", async () => {
     await bob.sendMax(charlie.cashaddr!);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 1 });
     expect(sendResponse!.txId!.length).toBe(64);
-    expect(sendResponse.balance!).toBeGreaterThan(1_000_000n);
     await mine({ cashaddr: alice.getDepositAddress(), blocks: 10 });
 
     // Build Bob's wallet from a public address, check his balance.

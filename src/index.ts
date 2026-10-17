@@ -91,7 +91,11 @@ export type { HDWalletOptions } from "./wallet/HDWallet.js";
 export * from "./wallet/interface.js";
 export * from "./wallet/model.js";
 // transaction utilities
-export { decodeTransaction, getTransactionHash } from "./wallet/Util.js";
+export {
+  decodeTransaction,
+  type DecodeTransactionOptions,
+  getTransactionHash,
+} from "./wallet/Util.js";
 export {
   RegTestWatchWallet,
   TestNetWatchWallet,

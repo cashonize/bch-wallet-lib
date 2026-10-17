@@ -18,7 +18,7 @@ import { sanitizeUnit } from "../util/sanitizeUnit.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
 
 // P2S, P2PK and bare multisig have no CashAddress; they get a placeholder like OP_RETURN outputs do
-const historyAddress = (
+export const historyAddress = (
   lockingBytecode: Uint8Array,
   prefix: CashAddressNetworkPrefix,
 ): string => {

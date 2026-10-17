@@ -1,6 +1,14 @@
+import {
+  binToHex,
+  cashAddressToLockingBytecode,
+  encodeTransaction,
+  hexToBin,
+  Opcodes,
+} from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
 import { mine } from "../mine/index.js";
+import { createMockProvider } from "../network/MockNetworkProvider.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";
 import { decodeTransaction, getTransactionHash } from "./Util.js";
@@ -78,6 +86,153 @@ describe("Utility tests", () => {
       expect(decoded.vin[0].value).toBeDefined();
     },
   );
+});
+
+describe("decodeTransaction outputs", () => {
+  test("gives OP_RETURN and P2S outputs a placeholder and keeps token data", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    await alice.send({ cashaddr: bob.cashaddr!, value: 10000n });
+    const [funding] = await bob.getUtxos();
+    const bobLockingBytecode = (() => {
+      const result = cashAddressToLockingBytecode(bob.cashaddr!);
+      if (typeof result === "string") throw new Error(result);
+      return result.bytecode;
+    })();
+
+    // P2S, anyone can spend with an empty unlocking bytecode
+    const p2s = Uint8Array.from([Opcodes.OP_1]);
+    const opReturn = Uint8Array.from([Opcodes.OP_RETURN, 2, 0xab, 0xcd]);
+    const signed = await bob.signUnsignedTransaction(
+      encodeTransaction({
+        version: 2,
+        locktime: 0,
+        inputs: [
+          {
+            outpointTransactionHash: hexToBin(funding.txid),
+            outpointIndex: funding.vout,
+            sequenceNumber: 0xffffffff,
+            unlockingBytecode: Uint8Array.from([]),
+          },
+        ],
+        outputs: [
+          { lockingBytecode: opReturn, valueSatoshis: 0n },
+          { lockingBytecode: p2s, valueSatoshis: 2000n },
+          { lockingBytecode: bobLockingBytecode, valueSatoshis: 7000n },
+        ],
+      }),
+      [
+        {
+          outpointTransactionHash: hexToBin(funding.txid),
+          outpointIndex: funding.vout,
+          sequenceNumber: 0xffffffff,
+          unlockingBytecode: Uint8Array.from([]),
+          lockingBytecode: bobLockingBytecode,
+          valueSatoshis: funding.satoshis,
+        },
+      ],
+    );
+    const scriptsTxId = await bob.submitTransaction(signed);
+    const spendTxId = await bob.submitTransaction(
+      encodeTransaction({
+        version: 2,
+        locktime: 0,
+        inputs: [
+          {
+            outpointTransactionHash: hexToBin(scriptsTxId),
+            outpointIndex: 1,
+            sequenceNumber: 0xffffffff,
+            unlockingBytecode: Uint8Array.from([]),
+          },
+        ],
+        outputs: [
+          { lockingBytecode: bobLockingBytecode, valueSatoshis: 1800n },
+        ],
+      }),
+    );
+
+    const expectedOutputs = [
+      {
+        address: `OP_RETURN: ${binToHex(opReturn)}`,
+        hex: binToHex(opReturn),
+        value: 0,
+      },
+      {
+        address: `SCRIPT: ${binToHex(p2s)}`,
+        hex: binToHex(p2s),
+        value: 0.00002,
+      },
+      {
+        address: bob.cashaddr,
+        hex: binToHex(bobLockingBytecode),
+        value: 0.00007,
+      },
+    ];
+    const byHash = await decodeTransaction(
+      scriptsTxId,
+      false,
+      NetworkType.Regtest,
+    );
+    const byHex = await decodeTransaction(
+      binToHex(signed),
+      false,
+      NetworkType.Regtest,
+    );
+    for (const decoded of [byHash, byHex]) {
+      expect(decoded.txid).toBe(scriptsTxId);
+      expect(
+        decoded.vout.map(({ scriptPubKey, value }) => ({
+          address: scriptPubKey.addresses[0],
+          hex: scriptPubKey.hex,
+          value,
+        })),
+      ).toEqual(expectedOutputs);
+    }
+
+    const spend = await bob.decodeTransaction(spendTxId, true);
+    expect(spend.vin[0].scriptPubKey.addresses).toEqual([
+      `SCRIPT: ${binToHex(p2s)}`,
+    ]);
+    expect(spend.vin[0].value).toBe(0.00002);
+
+    const genesis = await bob.tokenGenesis({
+      amount: 100n,
+      nft: { capability: "minting", commitment: "abcd" },
+    });
+    const category = genesis.categories[0];
+    const decodedGenesis = await bob.decodeTransaction(genesis.txId);
+    expect(decodedGenesis.vout[0].tokenData).toEqual({
+      amount: "100",
+      category,
+      nft: { capability: "minting", commitment: "abcd" },
+    });
+    // the same shape as the server's verbose transaction
+    const verbose = await bob.provider.getRawTransactionObject(genesis.txId);
+    expect(decodedGenesis.vout[0].tokenData).toEqual(verbose.vout[0].tokenData);
+    expect(decodedGenesis.vout[1].tokenData).toBeUndefined();
+  });
+
+  test("uses the given provider", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const utxo = (await alice.getUtxos())[0];
+    const otherChain = await createMockProvider();
+    await otherChain.ready();
+    await expect(
+      decodeTransaction(utxo.txid, false, undefined, { provider: otherChain }),
+    ).rejects.toThrowError("might not exist");
+    expect(
+      (
+        await decodeTransaction(utxo.txid, false, undefined, {
+          provider: alice.provider,
+        })
+      ).txid,
+    ).toBe(utxo.txid);
+    await expect(
+      decodeTransaction(utxo.txid, false, NetworkType.Mainnet, {
+        provider: alice.provider,
+      }),
+    ).rejects.toThrowError("does not match the provider's network");
+  });
 });
 
 describe("Dynamic confirmations via fetchHeight", () => {

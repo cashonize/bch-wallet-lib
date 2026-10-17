@@ -15,7 +15,10 @@ import {
 import { getNetworkProvider } from "../network/default.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
-import { ElectrumRawTransaction } from "../network/interface.js";
+import {
+  ElectrumRawTransaction,
+  ElectrumRawTransactionWithInputValues,
+} from "../network/interface.js";
 import {
   amountNotMetError,
   buildEncodedTransaction,
@@ -37,6 +40,7 @@ import {
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
 import { InsufficientFundsError } from "./errors.js";
+import { decodeTransaction } from "./Util.js";
 import {
   CancelFn,
   SendRequestOptionsI,
@@ -1198,6 +1202,24 @@ export class BaseWallet implements WalletI {
     ].filter((value, index, array) => array.indexOf(value) === index);
 
     return { encodedTransaction, categories, sourceOutputs };
+  }
+
+  /** decodeTransaction on this wallet's provider and network */
+  public async decodeTransaction(
+    transactionHashOrHex: string,
+    loadInputValues: true,
+  ): Promise<ElectrumRawTransactionWithInputValues>;
+  public async decodeTransaction(
+    transactionHashOrHex: string,
+    loadInputValues?: false,
+  ): Promise<ElectrumRawTransaction>;
+  public async decodeTransaction(
+    transactionHashOrHex: string,
+    loadInputValues: boolean = false,
+  ): Promise<ElectrumRawTransaction | ElectrumRawTransactionWithInputValues> {
+    return decodeTransaction(transactionHashOrHex, loadInputValues, undefined, {
+      provider: this.provider,
+    });
   }
 
   // Submit a raw transaction

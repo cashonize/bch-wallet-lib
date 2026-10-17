@@ -15,7 +15,6 @@ import {
   getTokenUtxos,
   waitForTokenBalance,
 } from "#test/balances.js";
-import json from "../test/json.test.js";
 import { convert, delay } from "../util/index.js";
 import {
   SendRequest,

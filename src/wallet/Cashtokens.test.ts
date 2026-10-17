@@ -8,6 +8,7 @@ import {
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
+import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import json from "../test/json.test.js";
 import { convert, delay } from "../util/index.js";
@@ -2087,6 +2088,50 @@ describe("token change", () => {
         token: { category, amount: 10n, nft },
       },
       bchChange(bob),
+    ]);
+  });
+
+  test("the fungible change of an NFT sent with more sats holds the standard token output value", async () => {
+    const bob = await fundedWallet();
+    const carol = await RegTestWallet.newRandom();
+    const nft = { capability: NFTCapability.none, commitment: "aa" };
+    const genesis = await bob.tokenGenesis({ amount: 500n, nft });
+    const category = genesis.categories![0];
+    const coins = [...(await bob.getUtxos())];
+
+    // the fungible change took the request's 20000 sats as well, out of the BCH change
+    const response = await bob.send(
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft,
+        value: 20000n,
+      }),
+    );
+    const spent = inputOutpoints(response.transaction!);
+    const inputValue = coins
+      .filter((coin) => spent.includes(`${coin.txid}:${coin.vout}`))
+      .reduce((sum, coin) => sum + coin.satoshis, 0n);
+    const rate = await getRelayFeeCache(bob.provider);
+    const fee = BigInt(
+      Math.ceil((response.transaction!.length / 2) * rate + 1),
+    );
+    expect(decodeOutputs(response.transaction!)).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 20000n,
+        token: { category, amount: 0n, nft },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 500n, nft: undefined },
+      },
+      {
+        lockingBytecode: lockingBytecodeOf(bob.cashaddr!),
+        value: inputValue - 20000n - 1000n - fee,
+        token: undefined,
+      },
     ]);
   });
 });

@@ -777,12 +777,13 @@ export function getTokenChangeRequests(
       );
     }
     if (change > 0n) {
+      // no value: the standard 1000 sats of a token output, above dust for any fungible-only
+      // output; a request's value is what its recipient gets, not what the change needs
       changeRequests.push(
         new TokenSendRequest({
           cashaddr: changeAddress,
           category,
           amount: change,
-          value: categoryRequests[0]?.value,
         }),
       );
     }

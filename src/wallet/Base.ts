@@ -1153,6 +1153,7 @@ export class BaseWallet implements WalletI {
     const requestedOutputs = [...sendRequests];
     let selectionRequests = requestedOutputs;
     let tokenInputs: Utxo[] = [];
+    let tokenChange: TokenSendRequest[] = [];
     if (checkTokenQuantities) {
       const tokenRequests = requestedOutputs.filter(
         (val) => val instanceof TokenSendRequest,
@@ -1180,16 +1181,15 @@ export class BaseWallet implements WalletI {
       // a copy: the caller's options stay as they were, e.g. for a retry
       options = { ...options, ensureUtxos: [...pinned, ...fungibleInputs] };
       tokenInputs = options.ensureUtxos!.filter((val) => val.token);
-      sendRequests.push(
-        ...getTokenChangeRequests(
-          tokenInputs,
-          tokenRequests,
-          toTokenaddr(this.getChangeAddress()),
-        ),
+      tokenChange = getTokenChangeRequests(
+        tokenInputs,
+        tokenRequests,
+        toTokenaddr(this.getChangeAddress()),
       );
     }
+    const allOutputs = [...sendRequests, ...tokenChange];
 
-    const spendAmount = await sumSendRequestAmounts(sendRequests);
+    const spendAmount = await sumSendRequestAmounts(allOutputs);
 
     if (typeof spendAmount !== "bigint") {
       throw Error("Couldn't get spend amount when building transaction");
@@ -1203,7 +1203,7 @@ export class BaseWallet implements WalletI {
     const estimateFee = (inputs: Utxo[]) =>
       getFeeAmountSimple({
         utxos: inputs,
-        sendRequests: sendRequests,
+        sendRequests: allOutputs,
         sourceAddress: this.getDepositAddress(),
         relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
         feePaidBy: feePaidBy,
@@ -1248,6 +1248,7 @@ export class BaseWallet implements WalletI {
             feePaidBy: feePaidBy,
             walletCache: this.walletCache,
             fee: options?.fee,
+            tokenChange,
           });
           if (fee <= feeEstimate) return { selectedUtxos, fundingUtxos, fee };
           feeNeeded = fee;
@@ -1325,6 +1326,7 @@ export class BaseWallet implements WalletI {
         walletCache: this.walletCache,
         outputOrdering: options?.outputOrdering,
         tokenBurns,
+        tokenChange,
       },
     );
 

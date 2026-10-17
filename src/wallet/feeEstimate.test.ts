@@ -399,4 +399,58 @@ describe("an output that pays the fee is checked as the change is", () => {
       expect(error.asset).toBe("bch");
     }
   });
+
+  test("a send of no outputs is refused, though a token change of ensureUtxos is one", async () => {
+    const { bob } = await fund(1, 20000n);
+    const genesis = await bob.tokenGenesis({ amount: 10n });
+    const tokenCoins = await bob.getTokenUtxos(genesis.categories[0]);
+    await expect(bob.send([], { broadcast: false })).rejects.toThrow(
+      "Attempted to specify feePaidBy on zero length SendRequest",
+    );
+    const response = await bob.send([], {
+      ensureUtxos: tokenCoins,
+      broadcast: false,
+    });
+    expect(
+      decode(response.transaction).outputs.map(
+        (output) => output.token?.amount,
+      ),
+    ).toEqual([10n, undefined]);
+  });
+
+  test("the last requested output pays the fee, not the token change after it", async () => {
+    const { alice, bob } = await fund(1, 20000n);
+    const genesis = await bob.tokenGenesis({ amount: 10n });
+    const category = genesis.categories[0];
+    const coins = await bob.getUtxos();
+
+    // the token change came last and was asked to pay: "Cannot specify fee to be paid by
+    // TokenSendRequest"
+    const response = await send(
+      bob,
+      [
+        new TokenSendRequest({
+          cashaddr: alice.tokenaddr!,
+          category,
+          amount: 4n,
+        }),
+        new SendRequest({ cashaddr: alice.cashaddr!, value: 5000n }),
+      ],
+      FeePaidByEnum.last,
+    );
+    const { paid, expected } = await feeCheck(bob, response.transaction, coins);
+    expect(paid).toBe(expected);
+    const inputValue = coins.reduce((sum, coin) => sum + coin.satoshis, 0n);
+    expect(decode(response.transaction).inputs.length).toBe(coins.length);
+    const outputs = decode(response.transaction).outputs.map((output) => ({
+      value: output.valueSatoshis,
+      amount: output.token?.amount,
+    }));
+    expect(outputs).toEqual([
+      { value: 1000n, amount: 4n },
+      { value: 5000n - expected, amount: undefined },
+      { value: 1000n, amount: 6n },
+      { value: inputValue - 7000n, amount: undefined },
+    ]);
+  });
 });

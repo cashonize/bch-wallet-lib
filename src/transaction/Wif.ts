@@ -59,6 +59,7 @@ export async function buildP2pkhNonHdTransaction({
   walletCache,
   outputOrdering,
   tokenBurns,
+  tokenChange = [],
 }: {
   inputs: Utxo[];
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -71,6 +72,8 @@ export async function buildP2pkhNonHdTransaction({
   outputOrdering?: OutputOrderingFn;
   /** when given, refuse outputs that destroy more of the inputs' tokens than this allows */
   tokenBurns?: TokenBurnAllowance;
+  /** the token change, placed after the outputs; a feePaidBy option never charges it */
+  tokenChange?: TokenSendRequest[];
 }) {
   if (!signingKey) {
     throw new Error("Missing signing key when building transaction");
@@ -84,12 +87,19 @@ export async function buildP2pkhNonHdTransaction({
   const compiler = walletTemplateToCompilerBch(template);
   const inputAmount = sumUtxoValue(inputs);
 
-  const sendAmount = await sumSendRequestAmounts(outputs);
+  const sendAmount = await sumSendRequestAmounts([...outputs, ...tokenChange]);
 
   // The fee comes out of the change or, per feePaidBy, out of the outputs, so the change is
   // what is left after both; allocateFee is given the change before the fee.
   const changeBeforeFee = BigInt(inputAmount) - BigInt(sendAmount);
-  outputs = allocateFee(outputs, fee, feePaidBy, changeBeforeFee);
+  if (feePaidBy !== FeePaidByEnum.change) {
+    outputs = allocateFee(outputs, fee, feePaidBy, changeBeforeFee);
+  }
+  outputs = [...outputs, ...tokenChange];
+  // as allocateFee refuses in every mode: a transaction of nothing but BCH change sends nothing
+  if (outputs.length === 0) {
+    throw Error("Attempted to specify feePaidBy on zero length SendRequest");
+  }
   const paidOutAmount = await sumSendRequestAmounts(outputs);
   const changeAmount =
     BigInt(inputAmount) - BigInt(paidOutAmount) - BigInt(fee);
@@ -862,6 +872,7 @@ export async function getFeeAmount({
   discardChange,
   walletCache,
   fee: feeStrategy,
+  tokenChange,
 }: {
   utxos: Utxo[];
   sendRequests: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -871,6 +882,7 @@ export async function getFeeAmount({
   discardChange?: boolean;
   walletCache: WalletCache;
   fee?: FeeFn;
+  tokenChange?: TokenSendRequest[];
 }) {
   // build transaction
   if (utxos) {
@@ -885,6 +897,7 @@ export async function getFeeAmount({
         feePaidBy,
         changeAddress: "",
         walletCache,
+        tokenChange,
       });
 
     if (feeStrategy) {
@@ -917,6 +930,7 @@ export async function buildEncodedTransaction({
   walletCache,
   outputOrdering,
   tokenBurns,
+  tokenChange,
 }: {
   inputs: Utxo[];
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -929,6 +943,7 @@ export async function buildEncodedTransaction({
   walletCache: WalletCache;
   outputOrdering?: OutputOrderingFn;
   tokenBurns?: TokenBurnAllowance;
+  tokenChange?: TokenSendRequest[];
 }) {
   const { transaction, sourceOutputs } = await buildP2pkhNonHdTransaction({
     inputs,
@@ -941,6 +956,7 @@ export async function buildEncodedTransaction({
     walletCache,
     outputOrdering,
     tokenBurns,
+    tokenChange,
   });
 
   if (buildUnsigned === true) {

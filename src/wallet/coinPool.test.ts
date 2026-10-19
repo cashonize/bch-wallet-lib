@@ -13,7 +13,9 @@ import {
   TokenMintRequest,
   TokenSendRequest,
 } from "./model.js";
+import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWallet } from "./Wif.js";
+import { toTokenaddr } from "../util/deriveCashaddr.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -348,6 +350,120 @@ describe("excludeUtxoIds keeps coins out of every spend", () => {
     expect(spent).toContain(
       tokenCoins.map(outpoint).find((id) => id !== picked),
     );
+  });
+});
+
+describe("excludeAddresses keeps the coins of an address out of every spend", () => {
+  // an HD wallet with a coin per value, each on a deposit address of its own
+  const hdWalletWith = async (...values: bigint[]) => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestHDWallet.newRandom();
+    for (const [index, value] of values.entries()) {
+      await alice.send({ cashaddr: bob.getDepositAddress(index), value });
+    }
+    await bob["waitForUpdate"]({ indices: { 0: values.length } });
+    return bob;
+  };
+  const coinOn = async (wallet: RegTestHDWallet, address: string) =>
+    (await wallet.getUtxos()).find((utxo) => utxo.address === address)!;
+
+  test("send, sendMax and getMaxAmountToSend leave an excluded address's coins out", async () => {
+    const bob = await hdWalletWith(30_000n, 20_000n);
+    const frozen = bob.getDepositAddress(0);
+    const frozenCoin = await coinOn(bob, frozen);
+    const carol = await RegTestWallet.newRandom();
+
+    // the token-aware form excludes the same coins
+    for (const excludeAddresses of [[frozen], [toTokenaddr(frozen)]]) {
+      const sent = await bob.send(
+        new SendRequest({ cashaddr: carol.cashaddr!, value: 5_000n }),
+        { broadcast: false, excludeAddresses },
+      );
+      expect(inputOutpoints(sent.transaction!)).not.toContain(
+        outpoint(frozenCoin),
+      );
+
+      const max = await bob.getMaxAmountToSend({ excludeAddresses });
+      expect(max).toBeLessThan(20_000n);
+      const swept = await bob.sendMax(carol.cashaddr!, {
+        broadcast: false,
+        excludeAddresses,
+      });
+      expect(inputOutpoints(swept.transaction!)).not.toContain(
+        outpoint(frozenCoin),
+      );
+    }
+
+    // more than the other address holds falls short rather than take the excluded coin
+    await expect(
+      bob.send(new SendRequest({ cashaddr: carol.cashaddr!, value: 25_000n }), {
+        broadcast: false,
+        excludeAddresses: [frozen],
+      }),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+  });
+
+  test("a coin arriving on the address after the caller looked is out too", async () => {
+    const bob = await hdWalletWith(20_000n);
+    const frozen = bob.getDepositAddress(1);
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    await alice.send({ cashaddr: frozen, value: 50_000n });
+    await bob["waitForUpdate"]({ indices: { 0: 2 } });
+    const arrived = await coinOn(bob, frozen);
+    const carol = await RegTestWallet.newRandom();
+
+    const max = await bob.getMaxAmountToSend({ excludeAddresses: [frozen] });
+    expect(max).toBeLessThan(20_000n);
+    const sent = await bob.sendMax(carol.cashaddr!, {
+      broadcast: false,
+      excludeAddresses: [frozen],
+    });
+    expect(inputOutpoints(sent.transaction!)).not.toContain(outpoint(arrived));
+  });
+
+  test("tokenGenesis takes a vout-0 coin of another address", async () => {
+    const bob = await hdWalletWith(30_000n, 20_000n);
+    const frozen = bob.getDepositAddress(0);
+    const frozenCoin = await coinOn(bob, frozen);
+
+    const response = await bob.tokenGenesis({ amount: 1n }, [], {
+      broadcast: false,
+      excludeAddresses: [frozen],
+    });
+    expect(response.categories![0]).not.toBe(frozenCoin.txid);
+    expect(inputOutpoints(response.transaction!)).not.toContain(
+      outpoint(frozenCoin),
+    );
+  });
+
+  test("a coin of an excluded address in ensureUtxos is refused", async () => {
+    const bob = await hdWalletWith(30_000n, 20_000n);
+    const frozen = bob.getDepositAddress(0);
+    const frozenCoin = await coinOn(bob, frozen);
+    const carol = await RegTestWallet.newRandom();
+
+    const error = await notAvailable(
+      bob.send(new SendRequest({ cashaddr: carol.cashaddr!, value: 5_000n }), {
+        broadcast: false,
+        excludeAddresses: [frozen],
+        ensureUtxos: [frozenCoin],
+      }),
+    );
+    expect(error.reason).toBe("excluded");
+    expect(error.utxoId).toBe(outpoint(frozenCoin));
+  });
+
+  test("an entry that is not a cash address is refused, not ignored", async () => {
+    const bob = await hdWalletWith(20_000n);
+    const carol = await RegTestWallet.newRandom();
+    const error = await bob
+      .send(new SendRequest({ cashaddr: carol.cashaddr!, value: 5_000n }), {
+        broadcast: false,
+        excludeAddresses: ["not-an-address"],
+      })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidRequestError);
+    expect((error as InvalidRequestError).field).toBe("excludeAddresses");
   });
 });
 

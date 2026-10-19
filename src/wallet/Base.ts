@@ -1,5 +1,6 @@
 import {
   binToHex,
+  cashAddressToLockingBytecode,
   CashAddressNetworkPrefix,
   decodeTransaction,
   getDustThreshold,
@@ -661,8 +662,8 @@ export class BaseWallet {
 
   /**
    * The coins a spend may use: the wallet's current coins, narrowed to `utxoIds` when given (in
-   * their order), their token coins narrowed to `tokenUtxoIds` when given, minus `excludeUtxoIds`;
-   * and `ensureUtxos` resolved to coins of that pool.
+   * their order), their token coins narrowed to `tokenUtxoIds` when given, minus `excludeUtxoIds`
+   * and the coins on `excludeAddresses`; and `ensureUtxos` resolved to coins of that pool.
    * Coins are compared by outpoint, the txid in either case, so a caller's copy of a coin stands
    * for the wallet's. The token operations pick their inputs themselves and do not spend
    * `ensureUtxos`, but a coin named there outside the pool is refused for them too.
@@ -698,6 +699,30 @@ export class BaseWallet {
     const excluded = new Set(
       (options?.excludeUtxoIds ?? []).map(toListedOutpoint("excludeUtxoIds")),
     );
+    // An address is compared by its locking bytecode, so its token-aware and plain forms are one.
+    // One that does not decode is a mistake, and ignoring it would spend the coins it names.
+    const lockingBytecodeOf = (address: string) => {
+      const decoded = cashAddressToLockingBytecode(address);
+      if (typeof decoded === "string") return undefined;
+      return binToHex(decoded.bytecode);
+    };
+    const excludedBytecodes = new Set(
+      (options?.excludeAddresses ?? []).map((address) => {
+        const bytecode =
+          typeof address === "string" ? lockingBytecodeOf(address) : undefined;
+        if (bytecode === undefined) {
+          throw new InvalidRequestError(
+            "An excludeAddresses entry is not a cash address",
+            { field: "excludeAddresses", value: address },
+          );
+        }
+        return bytecode;
+      }),
+    );
+    // checked against the coins held now, so one that arrived since the caller looked is out too
+    const onExcludedAddress = (utxo: Utxo) =>
+      excludedBytecodes.size > 0 &&
+      excludedBytecodes.has(lockingBytecodeOf(utxo.address) ?? "");
     let tokenAllowed: Set<string> | undefined;
     if (options?.tokenUtxoIds) {
       tokenAllowed = new Set(
@@ -720,6 +745,7 @@ export class BaseWallet {
     pool = pool.filter((utxo) => {
       const utxoId = toOutpoint(utxo);
       if (excluded.has(utxoId) || seen.has(utxoId)) return false;
+      if (onExcludedAddress(utxo)) return false;
       if (utxo.token && tokenAllowed && !tokenAllowed.has(utxoId)) return false;
       seen.add(utxoId);
       return true;
@@ -734,6 +760,13 @@ export class BaseWallet {
       if (excluded.has(utxoId)) {
         throw new UtxoNotAvailableError(
           `Utxo ${utxoId} in ensureUtxos is excluded by excludeUtxoIds`,
+          { utxoId, reason: "excluded" },
+        );
+      }
+      const held = walletUtxos.find((val) => toOutpoint(val) === utxoId);
+      if (held && onExcludedAddress(held)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos is on an address in excludeAddresses`,
           { utxoId, reason: "excluded" },
         );
       }

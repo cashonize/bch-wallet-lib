@@ -6,6 +6,11 @@ export interface SendRequestOptionsI {
   /** coins no input of the spend may use, e.g. reserved ones; ids not in the wallet are ignored, malformed ones throw */
   excludeUtxoIds?: string[] | Utxo[];
   /**
+   * addresses whose coins no input of the spend may use, those arriving after the caller looked
+   * included; a token-aware and a plain address are one, one that does not decode throws
+   */
+  excludeAddresses?: string[];
+  /**
    * the only token coins the spend may use, e.g. an identity's UTXO; the pool's other token coins
    * are left out, its BCH coins are not. Ids not in the wallet are ignored, malformed ones throw
    */

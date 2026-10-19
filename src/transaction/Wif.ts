@@ -15,8 +15,9 @@ import {
 } from "@bitauth/libauth";
 import { WalletCache } from "../cache/walletCache.js";
 import { DUST_UTXO_THRESHOLD, MAX_OP_RETURN_BYTES } from "../constant.js";
-import { NFTCapability, TokenI, Utxo } from "../interface.js";
+import { NFTCapability, Utxo } from "../interface.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
+import { tokenOutput } from "../util/tokenOutput.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InsufficientFundsError } from "../wallet/errors.js";
 import {
@@ -232,7 +233,7 @@ export async function prepareOutputs(
   const lockedOutputs: Output[] = [];
   for (const output of outputs) {
     if (output instanceof TokenSendRequest) {
-      lockedOutputs.push(prepareTokenOutputs(output));
+      lockedOutputs.push(tokenOutput(output));
       continue;
     }
 
@@ -270,36 +271,6 @@ export function prepareOpReturnOutput(request: OpReturnData): Output {
     lockingBytecode: request.buffer,
     valueSatoshis: BigInt(0),
   };
-}
-
-/**
- * prepareOpReturnOutput - create an output for token data
- *
- * @returns A libauth Output
- */
-export function prepareTokenOutputs(request: TokenSendRequest): Output {
-  const token: TokenI = request;
-  const outputLockingBytecode = cashAddressToLockingBytecode(request.cashaddr);
-  if (typeof outputLockingBytecode === "string")
-    throw new Error(outputLockingBytecode);
-
-  const libAuthToken = {
-    amount: BigInt(token.amount),
-    category: hexToBin(token.category),
-    nft:
-      token.nft?.capability !== undefined || token.nft?.commitment !== undefined
-        ? {
-            capability: token.nft?.capability,
-            commitment: hexToBin(token.nft?.commitment ?? ""),
-          }
-        : undefined,
-  };
-
-  return {
-    lockingBytecode: outputLockingBytecode.bytecode,
-    valueSatoshis: BigInt(request.value || 1000),
-    token: libAuthToken,
-  } as Output;
 }
 
 /**

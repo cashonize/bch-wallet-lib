@@ -3,6 +3,7 @@ import {
   SendRequest,
   TokenSendRequest,
 } from "../wallet/model.js";
+import { tokenOutput } from "./tokenOutput.js";
 
 // This function sums a list of send request objects
 export async function sumSendRequestAmounts(
@@ -14,7 +15,7 @@ export async function sumSendRequestAmounts(
         if (r instanceof SendRequest) {
           return r.value;
         } else if (r instanceof TokenSendRequest) {
-          return r.value || 1000n;
+          return tokenOutput(r).valueSatoshis;
         } else return 0n;
       }),
     );

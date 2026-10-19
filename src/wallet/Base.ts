@@ -1310,7 +1310,7 @@ export class BaseWallet {
         new TokenSendRequest({
           cashaddr: request.cashaddr || depositAddresses.shift()!,
           amount: request.amount,
-          value: request.value || 1000n,
+          value: request.value,
           nft: request.nft,
           category: pinnedInputs[i].txid,
         }),

@@ -379,4 +379,28 @@ describe("token operations validate plain request objects before reading any coi
     expect(utxo.token?.amount).toBe(maxAmount);
     expect(utxo.token?.nft?.commitment).toBe(commitment);
   });
+
+  test("a coin with a 128-byte commitment and fungible tokens is sent on", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    const nft = { capability: none, commitment: "cd".repeat(128) };
+    const genesis = await alice.tokenGenesis({
+      cashaddr: alice.tokenaddr,
+      amount: 500n,
+      value: 2000n,
+      nft,
+    });
+    const category = genesis.categories![0];
+    await alice.send(
+      new TokenSendRequest({
+        cashaddr: bob.tokenaddr!,
+        category,
+        amount: 500n,
+        nft,
+      }),
+    );
+    const [utxo] = await getTokenUtxos(bob, category);
+    expect(utxo.token?.amount).toBe(500n);
+    expect(utxo.token?.nft?.commitment).toBe(nft.commitment);
+  });
 });

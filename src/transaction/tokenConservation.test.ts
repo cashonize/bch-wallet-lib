@@ -3,7 +3,7 @@ import { NFTCapability, Utxo } from "../interface.js";
 import { TokenBurnError } from "../wallet/errors.js";
 import { TokenSendRequest } from "../wallet/model.js";
 import { checkTokenConservation } from "./tokenConservation.js";
-import { prepareTokenOutputs } from "./Wif.js";
+import { tokenOutput } from "../util/tokenOutput.js";
 
 const category = "11".repeat(32);
 const other = "22".repeat(32);
@@ -20,7 +20,7 @@ const input = (amount: bigint, nft?: Nft, cat = category): Utxo => ({
   token: { category: cat, amount, nft },
 });
 const output = (amount: bigint, nft?: Nft, cat = category): Output =>
-  prepareTokenOutputs(
+  tokenOutput(
     new TokenSendRequest({ cashaddr: address, category: cat, amount, nft }),
   );
 

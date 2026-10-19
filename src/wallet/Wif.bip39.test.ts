@@ -23,7 +23,7 @@ describe(`Test bip39 edge cases`, () => {
       let w = RegTestWallet.fromId("seed:regtest:");
       let cashaddr = (await w).cashaddr;
       expect(cashaddr).toContain(
-        "bchreg:qrvcdmgpk73zyfd8pmdl9wnuld36zh9n4g974kwcsl",
+        "bchreg:qqyx49mu0kkn9ftfj6hje6g2wfer34yfnq2903p4yq",
       );
     } catch (e: any) {
       expect(e.message).toBe(`refusing to create wallet from empty mnemonic`);
@@ -37,7 +37,7 @@ describe(`Test bip39 edge cases`, () => {
       );
       let cashaddr = (await w).cashaddr;
       expect(cashaddr).toContain(
-        "bchreg:qrvcdmgpk73zyfd8pmdl9wnuld36zh9n4g974kwcsl",
+        "bchreg:qqyx49mu0kkn9ftfj6hje6g2wfer34yfnq2903p4yq",
       );
     } catch (e: any) {
       expect(e.message).toBe(`Invalid mnemonic, must be 12 or 24 words`);
@@ -50,7 +50,7 @@ describe(`Test bip39 edge cases`, () => {
     );
     let cashaddr = (await w).cashaddr;
     expect(cashaddr).toContain(
-      "bchreg:qrvcdmgpk73zyfd8pmdl9wnuld36zh9n4g974kwcsl",
+      "bchreg:qqyx49mu0kkn9ftfj6hje6g2wfer34yfnq2903p4yq",
     );
   });
 });

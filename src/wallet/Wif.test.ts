@@ -499,9 +499,9 @@ describe(`WIF validation`, () => {
 });
 
 describe(`Mnemonic wallet creation`, () => {
-  test("Expect '11x abandon about' to have the correct key, seed and path", async () => {
+  test("Expect '11x abandon about' to have the correct key, seed and path on the 0' coin path", async () => {
     let w = await Wallet.fromId(
-      "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about:m/44'/0'/0'/0/0",
     );
     expect(w.cashaddr!).toBe(
       "bitcoincash:qrvcdmgpk73zyfd8pmdl9wnuld36zh9n4gms8s0u59",
@@ -541,10 +541,16 @@ describe(`Mnemonic wallet creation`, () => {
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
     );
     expect(w.derivationPath).toBe("m/44'/145'/0'/0/0");
+    // the default path: an id without one gives the same wallet
+    const byDefault = await Wallet.fromId(
+      "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    );
+    expect(byDefault.cashaddr).toBe(w.cashaddr);
+    expect(byDefault.derivationPath).toBe("m/44'/145'/0'/0/0");
   });
   test("Expect '11x abandon about' to have the correct key, seed and path from regtest wallet", async () => {
     let w = await RegTestWallet.fromId(
-      "seed:regtest:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "seed:regtest:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about:m/44'/0'/0'/0/0",
     );
     expect(w.cashaddr!).toBe(
       "bchreg:qrvcdmgpk73zyfd8pmdl9wnuld36zh9n4g974kwcsl",

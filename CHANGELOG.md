@@ -6,6 +6,8 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 
 ### Changes for callers coming from mainnet-js
 
+- `Config.DefaultParentDerivationPath` is `m/44'/145'/0'`, BCH's coin type, where mainnet-js used Bitcoin's `m/44'/0'/0'`: a new wallet made without a path, and a wallet id without one (`seed:<network>:<mnemonic>`, `hd:<network>:<mnemonic>`), now derive under `145'`, so the same mnemonic without a path gives other addresses than before. A stored id is unaffected, as `toDbString` writes the path into every mnemonic id, and mainnet-js 3.1.7 did too. A caller that relied on the old default passes the path or sets the config back to `m/44'/0'/0'`.
+
 - Package name `bch-wallet-lib`; `@mainnet-cash/indexeddb-storage` is now the `bch-wallet-lib/indexeddb` subpath export.
 - The CLI (`src/cli.ts`) and the browser bundle are not shipped.
 - The Electrum transport is `@electrum-cash/network` with `@electrum-cash/web-socket` instead of `@rpckit/*`:

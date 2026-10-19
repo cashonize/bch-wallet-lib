@@ -39,6 +39,7 @@ import {
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
+import { tokenOutput } from "../util/tokenOutput.js";
 import { walletIdKind } from "../util/walletIdError.js";
 import { runCallback } from "../util/watch.js";
 import { WalletTypeEnum } from "./enum.js";
@@ -74,6 +75,23 @@ const COIN_VIEW_TIMEOUT = 10_000;
 
 export const placeholderCashAddr =
   "bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqfnhks603";
+
+// A token coin a sweep spends for its satoshis comes back as it was, holding its dust limit only
+function sweptTokenReturn(coin: Utxo, cashaddr: string): TokenSendRequest {
+  const token = coin.token!;
+  const request = {
+    cashaddr,
+    category: token.category,
+    amount: token.amount,
+    nft: token.nft
+      ? { capability: token.nft.capability, commitment: token.nft.commitment }
+      : undefined,
+  };
+  const dustLimit = getDustThreshold(
+    tokenOutput(new TokenSendRequest({ ...request, value: 1n })),
+  );
+  return new TokenSendRequest({ ...request, value: dustLimit });
+}
 
 interface WalletSubscription {
   subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>;
@@ -745,21 +763,20 @@ export class BaseWallet {
     fee: bigint;
     utxos: Utxo[];
     ensureUtxos: Utxo[];
+    tokenUtxos: Utxo[];
   }> {
     // get inputs
     const { pool, ensureUtxos } = await this.getSpendPool(options);
-    // a BCH sweep has no token change to price, so a token coin's satoshis would go to the miners
+    // A plain max send has no token outputs to return a token coin's tokens on, so it leaves
+    // token coins out, listed in utxoIds or not; one it is told to spend it refuses
     const tokenCoin = ensureUtxos.find((utxo) => utxo.token);
-    if (tokenCoin) {
+    if (tokenCoin && !options?.sweepTokenSatoshis) {
       throw new InvalidRequestError(
-        `Utxo ${toUtxoId(tokenCoin)} in ensureUtxos holds tokens, which a max send does not send`,
+        `Utxo ${toUtxoId(tokenCoin)} in ensureUtxos holds tokens, which a max send only spends with sweepTokenSatoshis`,
         { field: "ensureUtxos", value: toUtxoId(tokenCoin) },
       );
     }
-    let utxos = pool;
-    if (!options?.utxoIds) {
-      utxos = pool.filter((utxo) => !utxo.token);
-    }
+    const utxos = pool.filter((utxo) => !utxo.token);
 
     // the one output of a sendMax, sized as a P2PKH output
     const sendRequests = [
@@ -768,25 +785,66 @@ export class BaseWallet {
 
     const fundingUtxos = await getSuitableUtxos(utxos, undefined, sendRequests);
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
+
+    // A token coin is swept when its satoshis above its dust limit pay for more than spending it
+    // and recreating its output, both priced by the estimate the max itself is priced with, or
+    // when ensureUtxos names it
+    const tokenUtxos: Utxo[] = [];
+    const tokenReturns: TokenSendRequest[] = [];
+    if (options?.sweepTokenSatoshis) {
+      const placeholderTokenAddr = toTokenaddr(placeholderCashAddr);
+      const estimate = (coins: Utxo[], requests: TokenSendRequest[]) =>
+        getFeeAmountSimple({
+          utxos: coins,
+          sendRequests: requests,
+          sourceAddress: placeholderCashAddr,
+          relayFeePerByteInSatoshi,
+        });
+      const overhead = await estimate([], []);
+      const ensured = new Set(ensureUtxos.map(toUtxoId));
+      for (const coin of pool.filter((utxo) => utxo.token)) {
+        const tokenReturn = sweptTokenReturn(coin, placeholderTokenAddr);
+        const cost = (await estimate([coin], [tokenReturn])) - overhead;
+        if (
+          ensured.has(toUtxoId(coin)) ||
+          coin.satoshis - tokenReturn.value! > cost
+        ) {
+          tokenUtxos.push(coin);
+          tokenReturns.push(tokenReturn);
+        }
+      }
+    }
+
     const fee = await getFeeAmountSimple({
-      utxos: fundingUtxos,
-      sendRequests: sendRequests,
+      utxos: [...fundingUtxos, ...tokenUtxos],
+      sendRequests: [...sendRequests, ...tokenReturns],
       sourceAddress: placeholderCashAddr,
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
     });
-    const spendableAmount = sumUtxoValue(fundingUtxos);
+    const spendableAmount =
+      sumUtxoValue(fundingUtxos) +
+      sumUtxoValue(tokenUtxos) -
+      tokenReturns.reduce((sum, request) => sum + request.value!, 0n);
 
     let result = spendableAmount - fee;
     if (result < 0n) {
       result = 0n;
     }
 
-    return { value: result, fee, utxos: fundingUtxos, ensureUtxos };
+    return {
+      value: result,
+      fee,
+      utxos: fundingUtxos,
+      // the token coins it names are among tokenUtxos
+      ensureUtxos: ensureUtxos.filter((utxo) => !utxo.token),
+      tokenUtxos,
+    };
   }
 
   /**
    * The amount a `sendMax` with these options sends: the BCH coins of the pool minus the fee of
-   * spending them all to one output.
+   * spending them all to one output, plus with `sweepTokenSatoshis` what the token coins worth
+   * sweeping hold above their dust limit.
    */
   public async getMaxAmountToSend(
     options?: SendRequestOptionsI,
@@ -853,6 +911,7 @@ export class BaseWallet {
       fee,
       utxos,
       ensureUtxos,
+      tokenUtxos,
     } = await this._getMaxAmountToSend(options);
 
     // an output below its dust limit is refused by the network, so not built at all
@@ -872,6 +931,7 @@ export class BaseWallet {
     const inputs = [
       ...ensureUtxos,
       ...utxos.filter((utxo) => !ensureIds.has(toUtxoId(utxo))),
+      ...tokenUtxos,
     ];
     options = { ...options, utxoIds: inputs, ensureUtxos: inputs };
 
@@ -879,9 +939,14 @@ export class BaseWallet {
       cashaddr: cashaddr,
       value: maxSpendableAmount,
     });
+    // each swept coin's tokens come back on a change address of its own
+    const changeAddresses = this.planChangeAddresses();
+    const tokenReturns = tokenUtxos.map((coin) =>
+      sweptTokenReturn(coin, changeAddresses.token()),
+    );
 
     const { encodedTransaction, categories } = await this.encodeTransaction(
-      [sendRequest],
+      [sendRequest, ...tokenReturns],
       true,
       options,
       privateKey,

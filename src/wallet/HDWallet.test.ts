@@ -1243,6 +1243,44 @@ describe("HDWallet", () => {
     expect(new Set(change.map((output) => output.address)).size).toBe(3);
   });
 
+  it("returns each coin a sendMax sweeps on a change address of its own", async () => {
+    const fundingWallet = await RegTestWallet.fromId(
+      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
+    );
+    const alice = await RegTestHDWallet.newRandom();
+    await fundingWallet.send({
+      cashaddr: alice.getDepositAddress(),
+      value: 100000n,
+    });
+    await fundingWallet.send({
+      cashaddr: alice.getDepositAddress(1),
+      value: 100000n,
+    });
+    await alice["waitForUpdate"]({ indices: { 0: 2 } });
+    const genesis = await alice.tokenGenesis([
+      { amount: 100n, value: 20000n },
+      { amount: 200n, value: 20000n },
+    ]);
+
+    const bob = await RegTestWallet.newRandom();
+    const [, ...tokenChange] = alice["getChangeAddresses"](3);
+    const response = await alice.sendMax(bob.cashaddr!, {
+      sweepTokenSatoshis: true,
+      broadcast: false,
+    });
+
+    const returns = outputAddresses(alice, response.transaction!).filter(
+      (output) => output.token,
+    );
+    expect(returns.map((output) => output.token!.amount)).toEqual([100n, 200n]);
+    expect(returns.map((output) => output.address)).toEqual(
+      tokenChange.map((address) => toTokenaddr(address)),
+    );
+    expect(returns.map((output) => output.token!.category)).toEqual(
+      genesis.categories!.map((category) => hexToBin(category)),
+    );
+  });
+
   it("a fungible token send spends only the coins its amount needs", async () => {
     const fundingWallet = await RegTestWallet.fromId(
       "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",

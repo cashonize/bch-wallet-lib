@@ -786,3 +786,101 @@ describe("sendMax spends only what it counts", () => {
     expect(fee).toBeLessThan(2n * size);
   });
 });
+
+describe("sendMax with sweepTokenSatoshis", () => {
+  test("leaves a token coin listed in utxoIds out", async () => {
+    const bob = await fundedWallet(100_000n);
+    const genesis = await bob.tokenGenesis({ amount: 100n, value: 20_000n });
+    const [tokenCoin] = await getTokenUtxos(bob, genesis.categories![0]);
+    const coins = await bob.getUtxos();
+    const carol = await RegTestWallet.newRandom();
+
+    const max = await bob.getMaxAmountToSend({ utxoIds: coins });
+    expect(max).toBe(await bob.getMaxAmountToSend());
+    const response = await bob.sendMax(carol.cashaddr!, {
+      broadcast: false,
+      utxoIds: coins,
+    });
+    expect(inputOutpoints(response.transaction!)).not.toContain(
+      outpoint(tokenCoin),
+    );
+    expect(decoded(response.transaction!).outputs).toHaveLength(1);
+  });
+
+  test("sweeps a token coin ensureUtxos names even where it does not pay", async () => {
+    const bob = await fundedWallet(100_000n);
+    const genesis = await bob.tokenGenesis({
+      nft: { capability: NFTCapability.none, commitment: "ab".repeat(40) },
+    });
+    const [tokenCoin] = await getTokenUtxos(bob, genesis.categories![0]);
+    const carol = await RegTestWallet.newRandom();
+
+    const notNamed = await bob.sendMax(carol.cashaddr!, {
+      broadcast: false,
+      sweepTokenSatoshis: true,
+    });
+    expect(inputOutpoints(notNamed.transaction!)).not.toContain(
+      outpoint(tokenCoin),
+    );
+
+    const response = await bob.sendMax(carol.cashaddr!, {
+      sweepTokenSatoshis: true,
+      ensureUtxos: [tokenCoin],
+    });
+    expect(inputOutpoints(response.transaction!)).toContain(
+      outpoint(tokenCoin),
+    );
+    const [returned] = await getTokenUtxos(bob, genesis.categories![0]);
+    expect(returned.token).toEqual(tokenCoin.token);
+  });
+
+  test("leaves token coins out unless asked", async () => {
+    const bob = await fundedWallet(100_000n);
+    const genesis = await bob.tokenGenesis({ amount: 100n, value: 20_000n });
+    const [tokenCoin] = await getTokenUtxos(bob, genesis.categories![0]);
+    const carol = await RegTestWallet.newRandom();
+
+    const response = await bob.sendMax(carol.cashaddr!, { broadcast: false });
+    expect(inputOutpoints(response.transaction!)).not.toContain(
+      outpoint(tokenCoin),
+    );
+  });
+
+  test("sweeps what a token coin holds above its dust limit, its tokens coming back as they were", async () => {
+    const bob = await fundedWallet(100_000n, 100_000n);
+    // a minting NFT with fungible tokens and 20000 sats: worth sweeping
+    const rich = await bob.tokenGenesis({
+      amount: 100n,
+      nft: { capability: NFTCapability.minting, commitment: "01" },
+      value: 20_000n,
+    });
+    // an NFT on the usual 1000 sats, which pays less than spending it costs
+    const poor = await bob.tokenGenesis({
+      nft: { capability: NFTCapability.none, commitment: "ab".repeat(40) },
+    });
+    const [richCoin] = await getTokenUtxos(bob, rich.categories![0]);
+    const [poorCoin] = await getTokenUtxos(bob, poor.categories![0]);
+
+    const withoutSweep = await bob.getMaxAmountToSend();
+    const max = await bob.getMaxAmountToSend({ sweepTokenSatoshis: true });
+    expect(max).toBeGreaterThan(withoutSweep + 19_000n);
+
+    const carol = await RegTestWallet.newRandom();
+    const response = await bob.sendMax(carol.cashaddr!, {
+      sweepTokenSatoshis: true,
+    });
+    const spent = inputOutpoints(response.transaction!);
+    expect(spent).toContain(outpoint(richCoin));
+    expect(spent).not.toContain(outpoint(poorCoin));
+    expect(decoded(response.transaction!).outputs[0].valueSatoshis).toBe(max);
+
+    // the swept coin's tokens are back with the wallet, on the dust limit only
+    const [returned] = await getTokenUtxos(bob, rich.categories![0]);
+    expect(returned.token).toEqual(richCoin.token);
+    expect(returned.satoshis).toBeLessThan(1000n);
+    expect(returned.address).toBe(bob.cashaddr);
+    const [untouched] = await getTokenUtxos(bob, poor.categories![0]);
+    expect(outpoint(untouched)).toBe(outpoint(poorCoin));
+    expect((await bob.getUtxos()).filter((utxo) => !utxo.token)).toEqual([]);
+  });
+});

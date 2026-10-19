@@ -21,6 +21,15 @@ export interface SendRequestOptionsI {
    */
   tokenOperation?: "send" | "genesis" | "mint" | "burn";
   ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction; they must be in the spend's pool
+  /**
+   * sendMax and getMaxAmountToSend only: also spend each token coin of the pool whose satoshis
+   * above its dust limit pay for more than spending it and recreating its output. Its tokens come
+   * back unchanged, holding their dust limit, on a change address of their own; a token coin in
+   * ensureUtxos is swept whether it pays or not. Off by default: it puts token coins in a BCH
+   * send, linking them to its recipient. Without it a max send leaves token coins out, those in
+   * utxoIds too, and refuses one in ensureUtxos
+   */
+  sweepTokenSatoshis?: boolean;
   broadcast?: boolean; // true
 }
 

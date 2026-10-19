@@ -75,6 +75,8 @@ Starting point: mainnet-js `4.0.0-next.14` (`next` @ `9ec2a0e`), plus mainnet-js
 
 ### Changed
 
+- New `sweepTokenSatoshis` option of `sendMax` and `getMaxAmountToSend`: the max also spends each token coin of the pool whose satoshis above its dust limit pay for more than spending it and recreating its output, by the same fee estimate the max is priced with. The coin's tokens come back unchanged, holding their dust limit, on a change address of their own. A token coin on the usual 1000 sats is not worth it; one received with more is. A token coin in `ensureUtxos` is swept whether it pays or not, where a max send refuses it without the option. Off by default, as it puts token coins in a BCH send, linking them to its recipient; without it a max send leaves token coins out as before, those listed in `utxoIds` too.
+
 - An HD wallet gives every change output of a transaction an unused change address of its own: the BCH change one, and each token change output (a category's fungible change, an NFT that comes back, the minting NFT a mint re-creates, a burn's remainder) the next ones in turn. All change went to the one current change address, so a coin later sent on from it showed every other coin of that transaction there: the change of every token category the send touched, and the BCH change. A single-address wallet is unchanged, as it has one address. The protected `getTokenChangeAddress` is gone; `getChangeAddresses(count)` and `planChangeAddresses()` hand out the addresses.
 
 - `new IndexedDBProvider(dbName)` requires `dbName`. Without it the provider opened a database named `"wallet"`, which no wallet stores to: `named()` and `getNamedWalletId` use `"bitcoincash"` and `"bchtest"`. A caller that relied on the default passes `"wallet"`.

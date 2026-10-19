@@ -594,12 +594,12 @@ export function selectFungibleTokenUtxos(
  *
  * @param inputs  The token inputs the transaction spends
  * @param requests  The requested token outputs
- * @param changeAddress  The token-aware address the change goes to
+ * @param changeAddress  Gives each change output the token-aware address it goes to
  */
 export function getTokenChangeRequests(
   inputs: Utxo[],
   requests: TokenSendRequest[],
-  changeAddress: string,
+  changeAddress: () => string,
 ): TokenSendRequest[] {
   const tokenInputs = inputs.filter((input) => input.token);
   const sent = new Set<Utxo>();
@@ -690,7 +690,7 @@ export function getTokenChangeRequests(
       change -= amount;
       changeRequests.push(
         new TokenSendRequest({
-          cashaddr: changeAddress,
+          cashaddr: changeAddress(),
           category,
           amount,
           nft: { capability: nft.capability, commitment: nft.commitment },
@@ -704,7 +704,7 @@ export function getTokenChangeRequests(
       // output; a request's value is what its recipient gets, not what the change needs
       changeRequests.push(
         new TokenSendRequest({
-          cashaddr: changeAddress,
+          cashaddr: changeAddress(),
           category,
           amount: change,
         }),

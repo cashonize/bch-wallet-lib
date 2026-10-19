@@ -363,15 +363,6 @@ export class WatchWallet extends BaseWallet {
   }
 
   /**
-   * getTokenChangeAddress - get a cashtoken aware wallet change address
-   *
-   * @returns The cashtoken aware change address as a string
-   */
-  protected getTokenChangeAddress(): string {
-    return this.tokenaddr;
-  }
-
-  /**
    * utxos Get unspent outputs for the wallet
    *
    */

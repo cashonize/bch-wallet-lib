@@ -173,20 +173,36 @@ export class BaseWallet {
   }
 
   /**
-   * getTokenChangeAddress - get a cashtoken aware wallet change address
-   *
-   * @returns The cashtoken aware change address as a string
-   */
-  protected getTokenChangeAddress(): string {
-    throw Error("getTokenChangeAddress not implemented in BaseWallet");
-  }
-
-  /**
    * Token deposit addresses for `count` outputs that default to this wallet
    * in one transaction; an HD wallet gives each its own unused address.
    */
   protected getTokenDepositAddresses(count: number): string[] {
     return Array.from({ length: count }, () => this.getTokenDepositAddress());
+  }
+
+  /**
+   * Change addresses for `count` outputs of one transaction; an HD wallet gives each its own
+   * unused address, a single-address wallet has the one.
+   */
+  protected getChangeAddresses(count: number): string[] {
+    return Array.from({ length: count }, () => this.getChangeAddress());
+  }
+
+  /**
+   * Where one transaction's change goes: the BCH change to one address and every token change
+   * output to another of its own, so that a coin later sent on from one of them shows nothing of
+   * the others. The token outputs take the addresses after the BCH change's in the order they ask
+   * for them, so the ones used stay contiguous. Every plan starts from the same unused addresses:
+   * a token operation that places its own token change agrees with its send on the BCH change's.
+   */
+  protected planChangeAddresses() {
+    const bch = this.getChangeAddresses(1)[0]!;
+    let taken = 1;
+    const token = (): string => {
+      taken += 1;
+      return toTokenaddr(this.getChangeAddresses(taken)[taken - 1]!);
+    };
+    return { bch, token };
   }
 
   // check if a given address belongs to this wallet
@@ -981,6 +997,7 @@ export class BaseWallet {
     let selectionRequests = requestedOutputs;
     let tokenInputs: Utxo[] = [];
     let tokenChange: TokenSendRequest[] = [];
+    let changeAddresses = this.planChangeAddresses();
     if (checkTokenQuantities) {
       const tokenRequests = requestedOutputs.filter(
         (val) => val instanceof TokenSendRequest,
@@ -1006,10 +1023,11 @@ export class BaseWallet {
       // a copy: the caller's options stay as they were, e.g. for a retry
       options = { ...options, ensureUtxos: [...pinned, ...fungibleInputs] };
       tokenInputs = options.ensureUtxos!.filter((val) => val.token);
+      changeAddresses = this.planChangeAddresses();
       tokenChange = getTokenChangeRequests(
         tokenInputs,
         tokenRequests,
-        toTokenaddr(this.getChangeAddress()),
+        changeAddresses.token,
       );
     }
     const allOutputs = [...sendRequests, ...tokenChange];
@@ -1120,7 +1138,7 @@ export class BaseWallet {
       signingKey: privateKey ?? placeholderPrivateKeyBin,
       fee,
       discardChange,
-      changeAddress: this.getChangeAddress(),
+      changeAddress: changeAddresses.bch,
       walletCache: this.walletCache,
       tokenBurns,
       tokenChange,
@@ -1373,6 +1391,7 @@ export class BaseWallet {
     const depositAddresses = this.getTokenDepositAddresses(
       mintRequests.filter((request) => !request.cashaddr).length,
     );
+    const changeAddresses = this.planChangeAddresses();
 
     for (const [category, requests] of requestsByCategory) {
       const nftUtxos = utxos.filter(
@@ -1391,7 +1410,7 @@ export class BaseWallet {
       ensureUtxos.push(mintingUtxo);
       outputs.push(
         new TokenSendRequest({
-          cashaddr: this.getTokenChangeAddress(),
+          cashaddr: changeAddresses.token(),
           category: category,
           nft: mintingUtxo.token?.nft,
           amount: mintingUtxo.token!.amount,
@@ -1464,7 +1483,7 @@ export class BaseWallet {
     const changeSendRequests: TokenSendRequest[] = [];
     // exactly what the requests burn: an NFT that comes back is not listed
     const tokenBurns: Required<TokenBurnAllowance> = { fungible: {}, nfts: [] };
-    const cashaddr = toTokenaddr(this.getChangeAddress());
+    const changeAddresses = this.planChangeAddresses();
 
     // a coin an earlier request spends is not there for the next one
     const spentIds = new Set<string>();
@@ -1500,7 +1519,7 @@ export class BaseWallet {
         if (coin.token!.amount > 0n) {
           changeSendRequests.push(
             new TokenSendRequest({
-              cashaddr,
+              cashaddr: changeAddresses.token(),
               category,
               amount: coin.token!.amount,
             }),
@@ -1538,7 +1557,7 @@ export class BaseWallet {
           // the NFT comes back as it was, on the coin's own sats, as a send's NFT change does
           changeSendRequests.push(
             new TokenSendRequest({
-              cashaddr,
+              cashaddr: changeAddresses.token(),
               category,
               amount: left,
               nft: {
@@ -1556,7 +1575,11 @@ export class BaseWallet {
         // no value: the standard 1000 sats of a token output, as a send's fungible change holds;
         // the spent coins' other sats go to the BCH change
         changeSendRequests.push(
-          new TokenSendRequest({ cashaddr, category, amount: fungibleChange }),
+          new TokenSendRequest({
+            cashaddr: changeAddresses.token(),
+            category,
+            amount: fungibleChange,
+          }),
         );
       }
     }

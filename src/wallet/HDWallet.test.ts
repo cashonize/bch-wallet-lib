@@ -158,27 +158,33 @@ describe("HDWallet", () => {
     await (w as any).initialize({ mnemonic, branches: [0, 7] });
 
     expect(w.getChangeAddress(0)).toBe(w.getDepositAddress(0));
-    expect(w["getTokenChangeAddress"](0)).toBe(w.getTokenDepositAddress(0));
+    expect(w["getChangeAddresses"](2)).toEqual([
+      w.getDepositAddress(0),
+      w.getDepositAddress(1),
+    ]);
   });
 
-  it("getTokenChangeAddress returns the token form of the change address", async () => {
+  it("plans the BCH change and every token change output on an address of its own", async () => {
     const w = await HDWallet.fromId(
       `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage`,
     );
-    expect(w["getTokenChangeAddress"](2)).toBe(
-      toTokenaddr(w.getChangeAddress(2)),
-    );
-    expect(w["getTokenChangeAddress"]()).toBe(
-      toTokenaddr(w.getChangeAddress()),
-    );
-    expect(w["getTokenChangeAddress"]()).not.toBe(w.getTokenDepositAddress());
-    // the deprecated name
+    const plan = w["planChangeAddresses"]();
 
-    // it threw on single-address and watch-only wallets
+    // the BCH change first, then each token output the next unused change address in turn
+    expect(plan.bch).toBe(w.getChangeAddress());
+    expect(plan.token()).toBe(toTokenaddr(w.getChangeAddress(1)));
+    expect(plan.token()).toBe(toTokenaddr(w.getChangeAddress(2)));
+    // a token operation and its send plan the BCH change on the same address
+    expect(w["planChangeAddresses"]().bch).toBe(plan.bch);
+
+    // a single-address or watch-only wallet has the one address for all of it
     const single = await RegTestWallet.newRandom();
-    expect(single["getTokenChangeAddress"]()).toBe(single.tokenaddr);
+    const singlePlan = single["planChangeAddresses"]();
+    expect(singlePlan.bch).toBe(single.cashaddr);
+    expect(singlePlan.token()).toBe(single.tokenaddr);
+    expect(singlePlan.token()).toBe(single.tokenaddr);
     const watch = await new RegTestWatchWallet()["watchOnly"](single.cashaddr);
-    expect(watch["getTokenChangeAddress"]()).toBe(single.tokenaddr);
+    expect(watch["planChangeAddresses"]().token()).toBe(single.tokenaddr);
   });
 
   it("seeds per-branch indices from the `indices` constructor option", async () => {
@@ -1109,7 +1115,16 @@ describe("HDWallet", () => {
     );
     expect(batonOutputs.length).toBe(1);
     expect(batonOutputs[0].address).not.toBe(toTokenaddr(baton.address));
-    expect(batonOutputs[0].address).toBe(alice["getTokenChangeAddress"](1));
+    // the genesis took change address 0; the mint's BCH change gets 1 and the minting NFT the next
+    expect(batonOutputs[0].address).toBe(
+      toTokenaddr(alice.getChangeAddress(2)),
+    );
+    const bchChange = outputAddresses(alice, response.transaction!).filter(
+      (output) =>
+        !output.token &&
+        output.address === toTokenaddr(alice.getChangeAddress(1)),
+    );
+    expect(bchChange.length).toBe(1);
   });
 
   it("tokenMint and tokenGenesis give each output defaulting to the wallet its own address", async () => {
@@ -1174,6 +1189,60 @@ describe("HDWallet", () => {
     ]);
   });
 
+  it("gives the BCH change and every token change output an address of its own", async () => {
+    const fundingWallet = await RegTestWallet.fromId(
+      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
+    );
+    const alice = await RegTestHDWallet.newRandom();
+    await fundingWallet.send({
+      cashaddr: alice.getDepositAddress(),
+      value: 100000n,
+    });
+    await fundingWallet.send({
+      cashaddr: alice.getDepositAddress(1),
+      value: 100000n,
+    });
+    await alice["waitForUpdate"]({ indices: { 0: 2 } });
+
+    const genesis = await alice.tokenGenesis([
+      { amount: 100n },
+      { amount: 200n },
+    ]);
+    const [catA, catB] = genesis.categories!;
+
+    const bob = await RegTestWallet.newRandom();
+    const changeAddresses = alice["getChangeAddresses"](3);
+    const response = await alice.send(
+      [
+        new TokenSendRequest({
+          cashaddr: bob.tokenaddr!,
+          category: catA!,
+          amount: 10n,
+        }),
+        new TokenSendRequest({
+          cashaddr: bob.tokenaddr!,
+          category: catB!,
+          amount: 20n,
+        }),
+      ],
+      { broadcast: false },
+    );
+
+    const outputs = outputAddresses(alice, response.transaction!);
+    const change = outputs.filter((output) => output.address !== bob.tokenaddr);
+    expect(
+      change.map((output) => [output.address, output.token?.amount]),
+    ).toEqual(
+      expect.arrayContaining([
+        [toTokenaddr(changeAddresses[0]!), undefined],
+        [toTokenaddr(changeAddresses[1]!), 90n],
+        [toTokenaddr(changeAddresses[2]!), 180n],
+      ]),
+    );
+    expect(change.length).toBe(3);
+    expect(new Set(change.map((output) => output.address)).size).toBe(3);
+  });
+
   it("a fungible token send spends only the coins its amount needs", async () => {
     const fundingWallet = await RegTestWallet.fromId(
       "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
@@ -1204,7 +1273,10 @@ describe("HDWallet", () => {
     expect(coins.length).toBe(10);
 
     const bob = await RegTestWallet.newRandom();
-    const tokenChangeAddress = alice["getTokenChangeAddress"]();
+    // the BCH change and the token change each on an unused change address of its own
+    const [bchChangeAddress, nextChangeAddress] =
+      alice["getChangeAddresses"](2);
+    const tokenChangeAddress = toTokenaddr(nextChangeAddress!);
     const response = await alice.send(
       new TokenSendRequest({
         cashaddr: bob.tokenaddr!,
@@ -1244,6 +1316,12 @@ describe("HDWallet", () => {
       { address: bob.tokenaddr, amount: 180n },
       { address: tokenChangeAddress, amount: 10n },
     ]);
+    expect(
+      outputAddresses(alice, response.transaction!).filter(
+        (output) =>
+          !output.token && output.address === toTokenaddr(bchChangeAddress!),
+      ).length,
+    ).toBe(1);
 
     expect((await getTokenUtxos(alice, category)).length).toBe(9);
     expect(await getTokenBalance(alice, category)).toBe(370n);

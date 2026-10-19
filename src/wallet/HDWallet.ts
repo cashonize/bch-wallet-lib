@@ -734,14 +734,17 @@ export class HDWallet extends BaseWallet {
     return this.getAddressByBranch(CHANGE_BRANCH, index);
   }
 
-  /// Get next unused token change address (branch 1), or the token address at
-  /// the specified index. When branch 1 is not
-  /// tracked, the deposit branch is used instead.
-  protected getTokenChangeAddress(index: number = -1): string {
-    if (!this.branches.includes(CHANGE_BRANCH)) {
-      return this.getTokenDepositAddress(index);
-    }
-    return this.getTokenAddressByBranch(CHANGE_BRANCH, index);
+  /// The next `count` unused change addresses (branch 1), each its own. When
+  /// branch 1 is not tracked, the deposit branch is used instead.
+  protected override getChangeAddresses(count: number): string[] {
+    const branch = this.branches.includes(CHANGE_BRANCH)
+      ? CHANGE_BRANCH
+      : DEPOSIT_BRANCH;
+    this.requireBranch(branch);
+    const statuses = this.statuses.get(branch)!;
+    return getNextUnusedIndices(count, statuses).map((index) =>
+      this.getAddressByBranch(branch, index),
+    );
   }
 
   public hasAddress(address: string): boolean {

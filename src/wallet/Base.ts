@@ -1262,7 +1262,8 @@ export class BaseWallet {
   /**
    * Create one or more new cashtokens, fungible and/or non-fungible (NFT), in a single transaction.
    * Each genesis request consumes a distinct unspent output with vout=0; the spent prevout's txid
-   * becomes the new token category.
+   * becomes the new token category. They are the first such outputs without tokens in the pool,
+   * in its order, so a caller that lists `utxoIds` decides which coin each category comes from.
    * Refer to spec https://github.com/cashtokens/cashtokens
    * @param  {TokenGenesisRequest | TokenGenesisRequest[]} genesisRequests one or more genesis requests.
    *   For each request:

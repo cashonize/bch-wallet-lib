@@ -473,6 +473,28 @@ describe("tokenUtxoIds narrows the token coins of every spend", () => {
   });
 });
 
+describe("tokenGenesis takes its inputs in pool order", () => {
+  test("with utxoIds, the first listed vout-0 coin without tokens becomes the category", async () => {
+    const bob = await fundedWallet(100_000n, 20_000n, 30_000n);
+    const genesis = await bob.tokenGenesis({ amount: 1n, value: 1000n });
+    const [tokenCoin] = await getTokenUtxos(bob, genesis.categories![0]);
+    const coins = await bob.getUtxos();
+    const notOutputZero = coins.find((utxo) => utxo.vout !== 0 && !utxo.token)!;
+    const outputZero = coins.filter((utxo) => utxo.vout === 0 && !utxo.token);
+    expect(tokenCoin.vout).toBe(0);
+    expect(outputZero).toHaveLength(2);
+
+    for (const picked of outputZero) {
+      const others = outputZero.filter((utxo) => utxo !== picked);
+      const response = await bob.tokenGenesis({ amount: 1n }, [], {
+        broadcast: false,
+        utxoIds: [tokenCoin, notOutputZero, picked, ...others],
+      });
+      expect(response.categories).toEqual([picked.txid]);
+    }
+  });
+});
+
 describe("the pool is a set", () => {
   test("a coin listed twice in utxoIds counts once", async () => {
     const bob = await fundedWallet(100_000n);

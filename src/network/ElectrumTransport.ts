@@ -7,6 +7,7 @@ import {
 } from "@electrum-cash/network";
 import { ElectrumWebSocket } from "@electrum-cash/web-socket";
 import { toError } from "../util/toError.js";
+import { serverErrorCode } from "./errors.js";
 import type { Transport, Unsubscribe } from "./Transport.js";
 
 /** A server URL (`wss://host:port` or `ws://host:port`), or an electrum-cash socket set up by the caller. */
@@ -254,9 +255,10 @@ export class ElectrumTransport implements Transport {
             ),
         );
       } catch (error) {
-        // electrum-cash gives a server's error response its error object as cause; an error without
-        // one is the connection failing (lost, or not connected), which a fresh attempt can get past
-        const fromServer = error instanceof Error && error.cause !== undefined;
+        // A server's error response is told by its JSON-RPC code, which electrum-cash 4.4 puts on
+        // the error's cause and 4.5's RpcError on the error itself; an error without one is the
+        // connection failing (lost, or not connected), which a fresh attempt can get past
+        const fromServer = serverErrorCode(error) !== undefined;
         if (fromServer || tried >= attempts || epoch !== this.epoch) {
           throw toError(error);
         }

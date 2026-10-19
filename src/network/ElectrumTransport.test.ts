@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { ElectrumClient } from "@electrum-cash/network";
 import { delay } from "../util/delay.js";
 import { getTransactionHash } from "../util/transaction.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
@@ -180,6 +181,29 @@ describe("ElectrumTransport requests", () => {
       "No such mempool or blockchain transaction",
     );
     expect(fake.calls("blockchain.transaction.get")).toHaveLength(1);
+  });
+
+  test("rejects a server error carrying its code itself, as electrum-cash 4.5's RpcError does, without sending it again", async () => {
+    const fake = new FakeServer();
+    transport = new ElectrumTransport(asServer(fake));
+    await transport.connect();
+    // 4.4 resolves a server error as an Error caused by the server's error object; 4.5 resolves
+    // an RpcError, an Error with the code and no cause
+    const rpcError = Object.assign(
+      new Error("No such mempool or blockchain transaction"),
+      { code: 2 },
+    );
+    const request = vi
+      .spyOn(ElectrumClient.prototype, "request")
+      .mockResolvedValue(rpcError);
+
+    const error = await transport
+      .request("blockchain.transaction.get", ["00"])
+      .catch((e: unknown) => e);
+
+    expect(error).toBe(rpcError);
+    expect(request).toHaveBeenCalledTimes(1);
+    request.mockRestore();
   });
 
   test("rejects an unanswered request with an ElectrumTimeoutError, after sending it again", async () => {

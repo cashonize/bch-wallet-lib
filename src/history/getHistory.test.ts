@@ -513,7 +513,7 @@ describe("history load", () => {
     expect(maxInFlight).toBe(3);
   });
 
-  test("the first load of an HD wallet's history keeps at most 10 requests in flight", async () => {
+  test("the first load of an HD wallet's history keeps up to 32 requests in flight", async () => {
     const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
     const hd = await RegTestHDWallet.newRandom();
     for (let i = 0; i < 12; i++) {
@@ -529,9 +529,10 @@ describe("history load", () => {
     restore();
 
     expect(history.length).toBe(12);
-    // 12 transactions and their prevouts, none cached
+    // 12 transactions and their prevouts, none cached, more than 10 in flight and at most 32
     expect(counts.byMethod["blockchain.transaction.get"]).toBeGreaterThan(12);
-    expect(counts.maxInFlight).toBe(10);
+    expect(counts.maxInFlight).toBeGreaterThan(10);
+    expect(counts.maxInFlight).toBeLessThanOrEqual(32);
   });
 
   test("a single-address wallet's history and balance come from its own snapshot", async () => {

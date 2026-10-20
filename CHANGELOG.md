@@ -6,6 +6,7 @@
 - An HD wallet's address discovery starts where its cache saw the wallet used (at most 2000 addresses per branch), watching the used range in one round instead of about 20 addresses per round trip from index 0. `indices` therefore holds that value right after construction, before discovery has run; the cache format is unchanged.
 - During discovery, a used address extends the watched window as soon as its status arrives, and counts as used even when the fetch of its coins fails.
 - Discovery, and `setProvider` moving a wallet's subscriptions, take at most 50 address subscriptions or fetches at a time per wallet, where they started all at once.
+- A history load (`getHistory`) keeps up to 32 requests in flight by default, where it kept 10; pass `concurrency` to change it.
 
 ## 0.1.1 (2026-10-20)
 

@@ -11,11 +11,7 @@ import {
 } from "@bitauth/libauth";
 import { TxI, Utxo } from "../interface.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
-import {
-  DEFAULT_CONCURRENCY,
-  Limiter,
-  mapConcurrent,
-} from "../util/mapConcurrent.js";
+import { Limiter, mapConcurrent } from "../util/mapConcurrent.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
 
@@ -41,13 +37,19 @@ type Transaction = TransactionCommon & {
   hash: string;
 };
 
+// Requests a history load keeps in flight by default. Higher than the library's default of 10: a
+// cold load is several requests per transaction (the transaction, its header, its inputs' parents)
+// in sequence over one connection, and an electrum server such as Fulcrum lets about 50
+// node-backed requests be in flight per client by default.
+const HISTORY_CONCURRENCY = 32;
+
 export const getHistory = async ({
   addresses,
   provider,
   count = -1,
   rawHistory,
   utxos,
-  concurrency = DEFAULT_CONCURRENCY,
+  concurrency = HISTORY_CONCURRENCY,
 }: {
   addresses: string[];
   provider: ElectrumNetworkProvider;

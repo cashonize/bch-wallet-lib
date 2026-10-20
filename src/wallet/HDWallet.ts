@@ -1005,7 +1005,7 @@ export class HDWallet extends BaseWallet {
    * @note this method tries to recreate the history tab view of Electron Cash wallet, however, it may not be 100% accurate if the tnransaction value changes are the same in the same block (ordering)
    *
    * @param count optional, the newest `count` items. Default -1, meaning that all history items will be returned
-   * @param concurrency optional, requests in flight at most while loading, `Infinity` for no limit. Default 10
+   * @param concurrency optional, requests in flight at most while loading, `Infinity` for no limit. Default 32
    *
    * @returns an array of transaction history items, with input values and addresses encoded in cashaddress format. @see `TransactionHistoryItem` type
    */

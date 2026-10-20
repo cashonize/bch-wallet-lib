@@ -41,7 +41,7 @@ type Client = ElectrumClient<ElectrumClientEvents>;
 // Everything the provider uses is in 1.5, and electrum-cash refuses a server that negotiates any
 // other version than the one asked for, so asking for 1.6 would shut out servers that stop at 1.5
 const PROTOCOL_VERSION = "1.5";
-const CLIENT_NAME = "bch-wallet-lib";
+const CLIENT_NAME = "@cashonize/bch-wallet-lib";
 const DEFAULT_CONNECT_TIMEOUT = 10_000;
 const DEFAULT_REQUEST_TIMEOUT = 30_000;
 

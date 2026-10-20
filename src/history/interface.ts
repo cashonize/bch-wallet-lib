@@ -4,6 +4,11 @@ export interface InOutput {
   address: string;
   value: number;
   token?: TokenI;
+  /** Inputs only, except coinbase: the spent outpoint's transaction hash (display order) and index */
+  outpointTransactionHash?: string;
+  outpointIndex?: number;
+  /** Hex; set on every output and on every input except coinbase */
+  lockingBytecode?: string;
 }
 
 export interface TransactionHistoryItem {

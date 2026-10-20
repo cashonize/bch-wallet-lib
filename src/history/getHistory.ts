@@ -9,13 +9,30 @@ import {
   Opcodes,
   TransactionCommon,
 } from "@bitauth/libauth";
-import { bchParam } from "../chain.js";
-import { UnitEnum } from "../enum.js";
-import { TxI } from "../interface.js";
-import type ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
-import { ExchangeRate } from "../rate/ExchangeRate.js";
-import { sanitizeUnit } from "../util/sanitizeUnit.js";
+import { TxI, Utxo } from "../interface.js";
+import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
+import {
+  DEFAULT_CONCURRENCY,
+  Limiter,
+  mapConcurrent,
+} from "../util/mapConcurrent.js";
+import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
+
+// P2S, P2PK and bare multisig have no CashAddress; they get a placeholder like OP_RETURN outputs do
+export const historyAddress = (
+  lockingBytecode: Uint8Array,
+  prefix: CashAddressNetworkPrefix,
+): string => {
+  const result = lockingBytecodeToCashAddress({
+    bytecode: lockingBytecode,
+    prefix,
+  });
+  if (typeof result === "string") {
+    return `SCRIPT: ${binToHex(lockingBytecode)}`;
+  }
+  return result.address;
+};
 
 type Transaction = TransactionCommon & {
   size: number;
@@ -27,21 +44,21 @@ type Transaction = TransactionCommon & {
 export const getHistory = async ({
   addresses,
   provider,
-  unit = "sat",
-  fromHeight = 0,
-  toHeight = -1,
-  start = 0,
   count = -1,
   rawHistory,
+  utxos,
+  concurrency = DEFAULT_CONCURRENCY,
 }: {
   addresses: string[];
   provider: ElectrumNetworkProvider;
-  unit?: UnitEnum;
-  fromHeight?: number;
-  toHeight?: number;
-  start?: number;
+  /** The newest `count` items; default -1, all of them */
   count?: number;
+  /** @internal The wallet's raw history of `addresses`, instead of fetching it; from the same snapshot as `utxos` */
   rawHistory?: TxI[];
+  /** The current utxos of `addresses`, token coins included, which the running balances are backfilled from */
+  utxos: Utxo[];
+  /** Requests in flight at most over the whole load, a positive integer or `Infinity` (no limit) */
+  concurrency?: number;
 }): Promise<TransactionHistoryItem[]> => {
   if (!addresses.length) {
     return [];
@@ -51,38 +68,38 @@ export const getHistory = async ({
     count = 1e10;
   }
 
-  let history: TxI[];
+  // one bound for every request of the load, the steps that run side by side included
+  const limiter = new Limiter(concurrency);
+
+  let allHistory: TxI[];
   if (rawHistory) {
-    history = rawHistory.slice(start, start + count);
+    allHistory = rawHistory;
   } else {
-    const allHistory = (
-      await Promise.all(
-        addresses.map(async (address) =>
-          provider.getHistory(address, fromHeight),
-        ),
+    allHistory = (
+      await mapConcurrent(addresses, limiter, (address) =>
+        provider.getHistory(address),
       )
-    )
-      .flat()
-      .filter((item) => toHeight === -1 || item.height <= toHeight);
-
-    // Dedup using Set instead of O(N^2) findIndex
-    const seen = new Set<string>();
-    const deduped: TxI[] = [];
-    for (const item of allHistory) {
-      if (!seen.has(item.tx_hash)) {
-        seen.add(item.tx_hash);
-        deduped.push(item);
-      }
-    }
-
-    history = deduped
-      .sort((a, b) =>
-        a.height <= 0 || b.height <= 0
-          ? a.height - b.height
-          : b.height - a.height,
-      )
-      .slice(start, start + count);
+    ).flat();
   }
+
+  // Dedup using Set instead of O(N^2) findIndex
+  const seen = new Set<string>();
+  const deduped: TxI[] = [];
+  for (const item of allHistory) {
+    if (!seen.has(item.tx_hash)) {
+      seen.add(item.tx_hash);
+      deduped.push(item);
+    }
+  }
+
+  // newest first, so that `count` keeps the newest; a wallet's raw history may be in any order
+  const history = deduped
+    .sort((a, b) =>
+      a.height <= 0 || b.height <= 0
+        ? a.height - b.height
+        : b.height - a.height,
+    )
+    .slice(0, count);
 
   // Collect unique heights for header fetch
   const uniqueHeightsSet = new Set<number>();
@@ -91,12 +108,11 @@ export const getHistory = async ({
   }
   const uniqueHeights = [...uniqueHeightsSet];
 
-  // Batch fetch headers and history transactions in parallel
   const historyHashes = history.map((tx) => tx.tx_hash);
-  const [headerMap, txHexMap] = await Promise.all([
-    uniqueHeights.length > 0 ? provider.getHeaders(uniqueHeights) : new Map(),
-    provider.getRawTransactions(historyHashes),
-  ] as const);
+  const [txHexMap, headerMap] = await Promise.all([
+    provider.getRawTransactions(historyHashes, { limiter }),
+    provider.getHeaders(uniqueHeights, { limiter }),
+  ]);
 
   const timestampMap: Record<number, number> = {};
   for (const [height, header] of headerMap) {
@@ -118,7 +134,7 @@ export const getHistory = async ({
     const txHex = txHexMap.get(tx.tx_hash)!;
     const transactionCommon = decodeTransaction(hexToBin(txHex));
     if (typeof transactionCommon === "string") {
-      throw transactionCommon;
+      throw new Error(transactionCommon);
     }
 
     const transaction = transactionCommon as Transaction;
@@ -145,7 +161,9 @@ export const getHistory = async ({
 
   // Batch fetch prevout transactions
   const prevoutHashes = [...prevoutHashSet];
-  const prevoutHexMap = await provider.getRawTransactions(prevoutHashes);
+  const prevoutHexMap = await provider.getRawTransactions(prevoutHashes, {
+    limiter,
+  });
 
   // Build prevout transaction map (decode all prevout txs)
   const prevoutTransactionMap: Record<string, TransactionCommon> = {};
@@ -160,7 +178,7 @@ export const getHistory = async ({
 
       const decoded = decodeTransaction(hexToBin(hex));
       if (typeof decoded === "string") {
-        throw decoded;
+        throw new Error(decoded);
       }
       prevoutTransactionMap[hash] = decoded;
     }
@@ -209,12 +227,7 @@ export const getHistory = async ({
       const cached = addressCache[prevoutOutput.lockingBytecode as any];
       let address: string;
       if (!cached) {
-        address = assertSuccess(
-          lockingBytecodeToCashAddress({
-            bytecode: prevoutOutput.lockingBytecode,
-            prefix: prefix,
-          }),
-        ).address;
+        address = historyAddress(prevoutOutput.lockingBytecode, prefix);
         addressCache[prevoutOutput.lockingBytecode as any] = address;
       } else {
         address = cached;
@@ -237,6 +250,9 @@ export const getHistory = async ({
                 : undefined,
             }
           : undefined,
+        outpointTransactionHash: getOutpointHash(input.outpointTransactionHash),
+        outpointIndex: input.outpointIndex,
+        lockingBytecode: binToHex(prevoutOutput.lockingBytecode),
       };
     });
 
@@ -247,12 +263,7 @@ export const getHistory = async ({
         if (output.lockingBytecode[0] === Opcodes.OP_RETURN) {
           address = `OP_RETURN: ${binToHex(output.lockingBytecode)}`;
         } else {
-          address = assertSuccess(
-            lockingBytecodeToCashAddress({
-              bytecode: output.lockingBytecode,
-              prefix: prefix,
-            }),
-          ).address;
+          address = historyAddress(output.lockingBytecode, prefix);
           addressCache[output.lockingBytecode as any] = address;
         }
       } else {
@@ -276,6 +287,7 @@ export const getHistory = async ({
                 : undefined,
             }
           : undefined,
+        lockingBytecode: binToHex(output.lockingBytecode),
       };
     });
 
@@ -365,17 +377,8 @@ export const getHistory = async ({
         : b.blockHeight - a.blockHeight) || a.valueChange - b.valueChange,
   );
 
-  // backfill the balances
-  let prevBalance = (
-    await Promise.all(
-      addresses.map(async (address) =>
-        (await provider.getUtxos(address)).reduce(
-          (sum, utxo) => sum + Number(utxo.satoshis),
-          0,
-        ),
-      ),
-    )
-  ).reduce((a, b) => a + b, 0);
+  // backfill the balances from the current one, the satoshis of token coins included
+  let prevBalance = Number(sumUtxoValue(utxos));
 
   let prevValueChange = 0;
   historyItems.forEach((tx) => {
@@ -383,38 +386,6 @@ export const getHistory = async ({
     prevBalance = tx.balance;
     prevValueChange = tx.valueChange;
   });
-
-  // convert units if needed - fetch exchange rate once
-  if (!(unit as string).includes("sat")) {
-    const sanitizedUnit = sanitizeUnit(unit);
-    let rate: number = 0;
-    if (sanitizedUnit !== UnitEnum.BCH && sanitizedUnit !== UnitEnum.SAT) {
-      rate = await ExchangeRate.get(unit);
-    }
-
-    const subUnits = Number(bchParam.subUnits);
-    const convertSatToUnit = (satValue: number): number => {
-      if (sanitizedUnit === UnitEnum.BCH) {
-        return satValue / subUnits;
-      }
-      // currency conversion matching satoshiToAmount behavior
-      const currencyValue = Number((satValue * (rate / subUnits)).toFixed(2));
-      return currencyValue;
-    };
-
-    for (const tx of historyItems) {
-      for (const input of tx.inputs) {
-        input.value = convertSatToUnit(input.value);
-      }
-
-      for (const output of tx.outputs) {
-        output.value = convertSatToUnit(output.value);
-      }
-
-      tx.valueChange = convertSatToUnit(tx.valueChange);
-      tx.balance = convertSatToUnit(tx.balance);
-    }
-  }
 
   return historyItems;
 };

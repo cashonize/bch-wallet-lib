@@ -423,40 +423,33 @@ export class WatchWallet extends BaseWallet {
   }
 
   /**
-   * getHistory gets transaction history of this wallet with most data decoded and ready to present to user
-   * @note balance calculations are valid only if querying to the blockchain tip (`toHeight` === -1, `count` === -1)
-   * @note this method is heavy on network calls, if invoked in browser use of cache is advised, @see `Config.UseLocalStorageCache`
+   * getHistory gets transaction history of this wallet with most data decoded and ready to present to user, newest first
+   * @note this method is heavy on network calls, if invoked in browser use of cache is advised, @see `Config.UseIndexedDBCache`
    * @note this method tries to recreate the history tab view of Electron Cash wallet, however, it may not be 100% accurate if the tnransaction value changes are the same in the same block (ordering)
    *
-   * @param unit optional, BCH or currency unit to present balance and balance changes. If unit is currency like USD or EUR, balances will be subject to possible rounding errors. Default 0
-   * @param fromHeight optional, if set, history will be limited. Default 0
-   * @param toHeight optional, if set, history will be limited. Default -1, meaning that all history items will be returned, including mempool
-   * @param start optional, if set, the result set will be paginated with offset `start`
-   * @param count optional, if set, the result set will be paginated with `count`. Default -1, meaning that all history items will be returned
+   * @param count optional, the newest `count` items. Default -1, meaning that all history items will be returned
+   * @param concurrency optional, requests in flight at most while loading, `Infinity` for no limit. Default 10
    *
    * @returns an array of transaction history items, with input values and addresses encoded in cashaddress format. @see `TransactionHistoryItem` type
    */
   public async getHistory({
-    unit = "sat",
-    fromHeight = 0,
-    toHeight = -1,
-    start = 0,
     count = -1,
+    concurrency,
   }: {
-    unit?: UnitEnum;
-    fromHeight?: number;
-    toHeight?: number;
-    start?: number;
     count?: number;
+    concurrency?: number;
   } = {}): Promise<TransactionHistoryItem[]> {
+    await this.watchPromise;
+    await this.updatePromise;
+
+    // the history and the balance it is backfilled from, from the same update
     return getHistory({
       addresses: [this.cashaddr],
       provider: this.provider,
-      unit,
-      fromHeight,
-      toHeight,
-      start,
       count,
+      rawHistory: this.rawHistory,
+      utxos: this.utxos,
+      concurrency,
     });
   }
 

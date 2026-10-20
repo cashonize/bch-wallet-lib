@@ -1,8 +1,8 @@
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { RegTestWallet, Wallet } from "../wallet/Wif.js";
 import {
+  checkTokenaddr,
   deriveCashaddr,
-  isTokenaddr,
   toCashaddr,
   toTokenaddr,
 } from "./deriveCashaddr.js";
@@ -31,7 +31,9 @@ test("Should derive cashaddr", async () => {
 });
 
 test("Test address conversion", async () => {
-  const wallet = await RegTestWallet.watchOnly(process.env.ADDRESS!);
+  const wallet = await RegTestWallet.fromId(
+    `watch:regtest:${process.env.ADDRESS!}`,
+  );
 
   // p2pkh
   expect(toTokenaddr(wallet.cashaddr)).toBe(wallet.tokenaddr);
@@ -64,6 +66,6 @@ test("Test address conversion", async () => {
     "bchreg:zpttdv3qg2usm4nm7talhxhl05mlhms3ysjm0q59vu",
   );
 
-  expect(isTokenaddr(wallet.cashaddr)).toBe(false);
-  expect(isTokenaddr(wallet.tokenaddr)).toBe(true);
+  expect(() => checkTokenaddr(wallet.cashaddr, true)).toThrow();
+  expect(() => checkTokenaddr(wallet.tokenaddr, true)).not.toThrow();
 });

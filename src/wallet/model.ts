@@ -1,27 +1,142 @@
 import {
-  binToNumberUint16LE,
-  binToUtf8,
-  hexToBin,
-  Input,
-  Output,
+  authenticationInstructionsAreMalformed,
+  decodeAuthenticationInstructions,
   utf8ToBin,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
-import { DELIMITER } from "../constant.js";
+import { DELIMITER, MAX_OP_RETURN_BYTES } from "../constant.js";
 import { NFTCapability, UtxoId } from "../interface.js";
 import { checkTokenaddr } from "../util/deriveCashaddr.js";
+import { InvalidRequestError } from "./errors.js";
 
 // These are the minimal models used to provide types for the express server
 //
 // This file will be deprecated auto-generated file in the future
 // Any business logic contained here should be moved elsewhere in src/
 
+// CashTokens limits: fungible amounts are 64-bit signed, commitments up to 128 bytes (May 2026)
+const MAX_FUNGIBLE_AMOUNT = 2n ** 63n - 1n;
+const MAX_COMMITMENT_BYTES = 128;
+
+const shown = (value: unknown) =>
+  typeof value === "string" ||
+  typeof value === "bigint" ||
+  typeof value === "number"
+    ? String(value)
+    : typeof value;
+
+type RequestNft = { capability?: NFTCapability; commitment?: string };
+
+/**
+ * The category lowercased, as the wallet's coins carry it, so that a category in either case finds
+ * its coins; throws when it is not 64 hex characters.
+ */
+export function toTokenCategory(category: unknown): string {
+  if (typeof category !== "string" || !/^[0-9a-fA-F]{64}$/.test(category)) {
+    throw new InvalidRequestError(
+      `Invalid category supplied: ${shown(category)}, expected 64 hex characters`,
+      { field: "category", value: category },
+    );
+  }
+  return category.toLowerCase();
+}
+
+/**
+ * The NFT with its commitment lowercased, a copy, so that a commitment in either case names the
+ * wallet's coin; throws when the commitment is not even-length hex of at most 128 bytes.
+ */
+export function toTokenNft<T extends RequestNft>(
+  nft: T | undefined,
+): T | undefined {
+  if (nft?.commitment === undefined) return nft;
+  const commitment: unknown = nft.commitment;
+  // libauth's hexToBin reads an odd-length or non-hex string as other bytes ("abc" as ab0c)
+  if (
+    typeof commitment !== "string" ||
+    !/^([0-9a-fA-F]{2})*$/.test(commitment)
+  ) {
+    throw new InvalidRequestError(
+      `Invalid NFT commitment: ${shown(commitment)}, expected an even number of hex characters`,
+      { field: "nft.commitment", value: commitment },
+    );
+  }
+  if (commitment.length / 2 > MAX_COMMITMENT_BYTES) {
+    throw new InvalidRequestError(
+      `NFT commitment of ${commitment.length / 2} bytes exceeds ${MAX_COMMITMENT_BYTES} bytes`,
+      { field: "nft.commitment", value: commitment },
+    );
+  }
+  return { ...nft, commitment: commitment.toLowerCase() };
+}
+
+/** The fungible amount as a bigint, 0n when not given; throws when it is out of range. */
+export function toTokenAmount(amount: unknown): bigint {
+  if (amount === undefined || amount === null) return 0n;
+  let result: bigint | undefined;
+  if (typeof amount === "bigint") {
+    result = amount;
+  } else if (typeof amount === "number" && Number.isInteger(amount)) {
+    result = BigInt(amount);
+  } else if (typeof amount === "string" && /^-?[0-9]+$/.test(amount)) {
+    result = BigInt(amount);
+  }
+  if (result === undefined || result < 0n || result > MAX_FUNGIBLE_AMOUNT) {
+    throw new InvalidRequestError(
+      `Invalid fungible token amount: ${shown(amount)}, expected an integer from 0 to ${MAX_FUNGIBLE_AMOUNT}`,
+      { field: "amount", value: amount },
+    );
+  }
+  return result;
+}
+
+const hasNft = (nft: RequestNft | undefined) =>
+  nft?.capability !== undefined || nft?.commitment !== undefined;
+
+// a token prefix with no NFT and a zero amount is invalid on chain
+export function checkTokenOutput(
+  amount: bigint,
+  nft: RequestNft | undefined,
+): void {
+  if (amount === 0n && !hasNft(nft)) {
+    throw new InvalidRequestError(
+      "A token output needs a positive fungible amount or an NFT",
+      { field: "nft", value: nft },
+    );
+  }
+}
+
+/** Validates a genesis request's token data, before the operation reads any coin. */
+export function checkGenesisRequest(request: TokenGenesisRequest): void {
+  const amount = toTokenAmount(request.amount);
+  toTokenNft(request.nft);
+  checkTokenOutput(amount, request.nft);
+}
+
+/** Validates a mint request's token data, before the operation reads any coin. */
+export function checkMintRequest(request: TokenMintRequest): void {
+  toTokenCategory(request.category);
+  toTokenNft(request.nft);
+  checkTokenOutput(0n, request.nft);
+}
+
+/** Validates a burn request's token data, before the operation reads any coin. */
+export function checkBurnRequest(request: TokenBurnRequest): void {
+  toTokenCategory(request.category);
+  toTokenNft(request.nft);
+  const amount = toTokenAmount(request.amount);
+  if (amount === 0n && !hasNft(request.nft)) {
+    throw new InvalidRequestError(
+      "A burn request needs a positive fungible amount or an NFT",
+      { field: "nft", value: request.nft },
+    );
+  }
+}
+
 export type SendRequestType =
   | SendRequest
   | TokenSendRequest
   | OpReturnData
-  | Array<SendRequest | TokenSendRequest | OpReturnData>
-  | SendRequestArray[];
+  | Array<SendRequest | TokenSendRequest | OpReturnData>;
 
 export class SendRequest {
   cashaddr: string;
@@ -60,6 +175,7 @@ export class TokenGenesisRequest {
     this.nft = nft;
     this.cashaddr = cashaddr;
     this.value = value;
+    checkGenesisRequest(this);
   }
 }
 
@@ -70,26 +186,23 @@ export class TokenBurnRequest {
     capability: NFTCapability;
     commitment: string;
   };
-  cashaddr?: string;
 
   constructor({
     category,
     amount,
     nft,
-    cashaddr,
   }: {
     category: string;
     amount?: number | bigint;
-    cashaddr?: string;
     nft?: {
       capability: NFTCapability;
       commitment: string;
     };
   }) {
-    this.category = category;
-    this.amount = amount ? BigInt(amount) : 0n;
-    this.nft = nft;
-    this.cashaddr = cashaddr;
+    this.category = toTokenCategory(category);
+    this.nft = toTokenNft(nft);
+    this.amount = toTokenAmount(amount);
+    checkBurnRequest(this);
   }
 }
 
@@ -119,13 +232,14 @@ export class TokenSendRequest {
       commitment: string;
     };
   }) {
+    this.category = toTokenCategory(category);
+    this.nft = toTokenNft(nft);
+    this.amount = toTokenAmount(amount);
+    checkTokenOutput(this.amount, nft);
     checkTokenaddr(cashaddr, Config.EnforceCashTokenReceiptAddresses);
 
     this.cashaddr = cashaddr;
     this.value = value;
-    this.amount = amount ? BigInt(amount) : 0n;
-    this.category = category;
-    this.nft = nft;
   }
 }
 
@@ -152,10 +266,11 @@ export class TokenMintRequest {
     cashaddr?: string;
     value?: bigint;
   }) {
-    this.category = category;
+    this.category = toTokenCategory(category);
     this.nft = nft;
     this.cashaddr = cashaddr;
     this.value = value;
+    checkMintRequest(this);
   }
 }
 
@@ -167,17 +282,6 @@ export class OpReturnData {
   }
 
   /**
-   * from - Construct OP_RETURN data from arbitrary data type
-   *
-   * @param string   UTF-8 encoded string message to be converted to OP_RETURN data
-   *
-   * @returns class instance
-   */
-  public static from(data: string | Uint8Array) {
-    return this.fromArray([data]);
-  }
-
-  /**
    * fromString - Accept data as a simple UTF-8 string message and append an OP_RETURN and PUSH_DATA1 opcodes to it
    *
    * @param string   UTF-8 encoded string message to be converted to OP_RETURN data
@@ -186,21 +290,6 @@ export class OpReturnData {
    */
   public static fromString(string: string) {
     return this.fromArray([string]);
-  }
-
-  /**
-   * buffer - Accept OP_RETURN data as a binary buffer.
-   * If buffer lacks the OP_RETURN and OP_PUSHDATA opcodes, they will be prepended.
-   *
-   * @param buffer   Data buffer to be assigned to the OP_RETURN outpit
-   *
-   * @returns class instance
-   */
-  public static fromUint8Array(uint8Array: Uint8Array) {
-    if (uint8Array[0] !== 0x6a) {
-      return this.fromArray([uint8Array]);
-    }
-    return new this(Uint8Array.from(uint8Array));
   }
 
   /**
@@ -227,20 +316,23 @@ export class OpReturnData {
       }
 
       if (length < 76) {
-        // OP_PUSHDATA_1
+        // direct push, OP_0 for empty data
         lengthData = [length];
-      } else if (length < 223) {
-        // default max `-datacarriersize`
-        lengthData = [0x4c, length];
+      } else if (length < 256) {
+        lengthData = [0x4c, length]; // OP_PUSHDATA1
       } else {
-        throw new Error("OP_RETURN data can not exceed 220 bytes in size");
+        throw new Error(
+          `OP_RETURN script can not exceed ${MAX_OP_RETURN_BYTES} bytes in size`,
+        );
       }
 
       data = Uint8Array.from([...data, ...lengthData, ...elementData]);
     }
 
-    if (data.length > 220) {
-      throw new Error("OP_RETURN data can not exceed 220 bytes in size");
+    if (data.length > MAX_OP_RETURN_BYTES) {
+      throw new Error(
+        `OP_RETURN script can not exceed ${MAX_OP_RETURN_BYTES} bytes in size`,
+      );
     }
 
     return new this(data);
@@ -249,72 +341,61 @@ export class OpReturnData {
   /**
    * parseBinary - parse OP_RETURN data and return pushed chunks of binary data
    *
+   * An empty push gives an empty chunk, OP_1NEGATE and OP_1..OP_16 their one-byte number.
+   * Throws when the script does not start with OP_RETURN, or has a non-push opcode or a truncated push.
+   *
    * @param opReturn   Raw OP_RETURN data
    *
    * @returns array of binary data chunks pushed
    */
   public static parseBinary(opReturn: Uint8Array): Uint8Array[] {
+    if (opReturn[0] !== 0x6a) {
+      throw new Error("Not an OP_RETURN script");
+    }
+    const instructions = decodeAuthenticationInstructions(opReturn.slice(1));
+    if (authenticationInstructionsAreMalformed(instructions)) {
+      throw new Error("Malformed push in OP_RETURN script");
+    }
+
     const chunks: Uint8Array[] = [];
-    let position = 1;
-
-    // handle direct push, OP_PUSHDATA1, OP_PUSHDATA2;
-    // OP_PUSHDATA4 is not supported in OP_RETURNs by consensus
-    while (opReturn[position]) {
-      let length = 0;
-      if (opReturn[position] === 0x4c) {
-        length = opReturn[position + 1];
-        position += 2;
-      } else if (opReturn[position] === 0x4d) {
-        length = binToNumberUint16LE(
-          opReturn.slice(position + 1, position + 3),
-        );
-        position += 3;
+    for (const instruction of instructions) {
+      const { opcode } = instruction;
+      if ("data" in instruction) {
+        // OP_0 is a push of empty data
+        chunks.push(instruction.data);
+      } else if (opcode === 0x4f) {
+        chunks.push(Uint8Array.from([0x81])); // OP_1NEGATE pushes -1
+      } else if (opcode >= 0x51 && opcode <= 0x60) {
+        chunks.push(Uint8Array.from([opcode - 0x50])); // OP_1..OP_16
       } else {
-        length = opReturn[position];
-        position += 1;
+        throw new Error(
+          `Non-push opcode 0x${opcode.toString(16)} in OP_RETURN script`,
+        );
       }
-
-      chunks.push(opReturn.slice(position, position + length));
-      position += length;
     }
 
     return chunks;
   }
-
-  /**
-   * parse - parse OP_RETURN hex data and return pushed chunks of binary data, converted to utf8 strings
-   *
-   * @param opReturn   Raw OP_RETURN hex data
-   *
-   * @returns array of binary data chunks pushed, converted to utf8 strings
-   */
-  public static parse(opReturnHex: string): string[] {
-    return this.parseBinary(hexToBin(opReturnHex)).map((val) => binToUtf8(val));
-  }
 }
 
-export type SendRequestArray = Array<string | bigint | Uint8Array>;
-
-export class SendResponse {
-  txId?: string;
-  balance?: bigint;
-  explorerUrl?: string;
-  categories?: string[];
-  transaction?: string; // transaction hex
-
-  constructor({
-    txId,
-    balance,
-    explorerUrl,
-  }: {
-    txId?: string;
-    balance?: any;
-    explorerUrl?: string;
-  }) {
-    this.txId = txId;
-    this.balance = balance;
-    this.explorerUrl = explorerUrl;
+/**
+ * OP_RETURN data from a script's bytes; bytes that do not start with OP_RETURN are pushed as one
+ * chunk after it.
+ */
+export function opReturnFromBytes(bytes: Uint8Array): OpReturnData {
+  if (bytes[0] !== 0x6a) {
+    return OpReturnData.fromArray([bytes]);
   }
+  return new OpReturnData(Uint8Array.from(bytes));
+}
+
+/** What a send returns: the signed transaction, broadcast unless `broadcast: false` was given. */
+export interface SendResponse {
+  txId: string;
+  /** the transaction hex */
+  transaction: string;
+  /** the token categories among the inputs and the requested outputs */
+  categories: string[];
 }
 
 export const fromUtxoId = (utxoId: string): UtxoId => {

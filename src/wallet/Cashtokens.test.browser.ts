@@ -1,18 +1,21 @@
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
-  binToHex,
-  decodeTransaction,
-  hexToBin,
-  utf8ToBin,
-} from "@bitauth/libauth";
+  getNftTokenBalance,
+  getTokenBalance,
+  getTokenUtxos,
+} from "#test/balances.js";
+import { binToHex, utf8ToBin } from "@bitauth/libauth";
 import { NFTCapability } from "../interface.js";
-import { delay } from "../util/index.js";
+import { InsufficientFundsError } from "./errors.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
-import {
-  getTokenUtxos,
-  getTokenBalance,
-  getNftTokenBalance,
-} from "#test/balances.js";
+
+beforeAll(async () => {
+  await initProviders();
+});
+afterAll(async () => {
+  await disconnectProviders();
+});
 
 describe(`Cashtokens should function in the browser`, () => {
   test(`Test fungible cashtoken genesis and sending`, async () => {
@@ -27,7 +30,7 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(tokenBalance).toBe(100n);
     const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
-    const response = await alice.send([
+    await alice.send([
       new TokenSendRequest({
         cashaddr: bob.cashaddr!,
         amount: 25n,
@@ -164,7 +167,7 @@ describe(`Cashtokens should function in the browser`, () => {
         cashaddr: alice.cashaddr!,
         nft: {
           capability: NFTCapability.none,
-          commitment: "test",
+          commitment: "74657374",
         },
       }),
       new TokenMintRequest({
@@ -172,7 +175,7 @@ describe(`Cashtokens should function in the browser`, () => {
         cashaddr: alice.cashaddr!,
         nft: {
           capability: NFTCapability.none,
-          commitment: "test2",
+          commitment: "7465737432",
         },
       }),
     ]);
@@ -182,7 +185,7 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(category).toEqual(response.categories![0]);
   });
 
-  test("Test minting NFT and optionally burning FT cashtoken", async () => {
+  test("Test minting NFTs keeps the minting NFT's fungible tokens", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const genesisResponse = await alice.tokenGenesis({
       cashaddr: alice.cashaddr!,
@@ -199,92 +202,82 @@ describe(`Cashtokens should function in the browser`, () => {
     const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
-    // mint 2 NFTs, defaults to amount reducing
-    const response = await alice.tokenMint(
-      [
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0b",
-          },
-        }),
-      ],
-      true,
-    );
-    expect(await getTokenBalance(alice, category)).toBe(2n);
+    // mint 2 NFTs; the minting NFT keeps its fungible tokens
+    const response = await alice.tokenMint([
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0b",
+        },
+      }),
+    ]);
+    expect(await getTokenBalance(alice, category)).toBe(4n);
     const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
 
-    // mint 2 more NFTs without amount reducing
-    const ftResponse = await alice.tokenMint(
-      [
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0c",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0d",
-          },
-        }),
-      ],
-      false,
-    );
-    expect(await getTokenBalance(alice, category)).toBe(2n);
+    // mint 2 more NFTs
+    const ftResponse = await alice.tokenMint([
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0c",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0d",
+        },
+      }),
+    ]);
+    expect(await getTokenBalance(alice, category)).toBe(4n);
     const ftTokenUtxos = await getTokenUtxos(alice, category);
     expect(ftTokenUtxos.length).toBe(5);
     expect(category).toEqual(ftResponse.categories![0]);
 
-    // we are going to hit amount -1, when minting 3 more NFTs
-    // check that it will stop at 0
-    const ft2Response = await alice.tokenMint(
-      [
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-        new TokenMintRequest({
-          category: category,
-          cashaddr: alice.cashaddr!,
-          nft: {
-            capability: NFTCapability.none,
-            commitment: "0a",
-          },
-        }),
-      ],
-      true,
-    );
-    expect(await getTokenBalance(alice, category)).toBe(0n);
+    // and 3 more
+    const ft2Response = await alice.tokenMint([
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+      new TokenMintRequest({
+        category: category,
+        cashaddr: alice.cashaddr!,
+        nft: {
+          capability: NFTCapability.none,
+          commitment: "0a",
+        },
+      }),
+    ]);
+    expect(await getTokenBalance(alice, category)).toBe(4n);
     const ft2TokenUtxos = await getTokenUtxos(alice, category);
     expect(ft2TokenUtxos.length).toBe(8);
     expect(category).toEqual(ft2Response.categories![0]);
@@ -303,17 +296,23 @@ describe(`Cashtokens should function in the browser`, () => {
     const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
-    // burn 5 FT
+    // more than the wallet holds is refused, not burned as all of it
+    await expect(
+      alice.tokenBurn({ category: category, amount: 5n }, "burn"),
+    ).rejects.toThrow(InsufficientFundsError);
+
+    // burn all 4 FT
     const response = await alice.tokenBurn(
       {
         category: category,
-        amount: 5n,
+        amount: 4n,
       },
       "burn",
     );
 
     const rawTx = await alice.provider!.getRawTransactionObject(response.txId!);
-    expect(rawTx.vout.length).toEqual(3);
+    // the OP_RETURN and the BCH change, the burned coin's sats included
+    expect(rawTx.vout.length).toEqual(2);
     expect(rawTx.vout[0].scriptPubKey.type).toEqual("nulldata");
     expect(rawTx.vout[0].scriptPubKey.hex).toContain(
       binToHex(utf8ToBin("burn")),
@@ -361,18 +360,28 @@ describe(`Cashtokens should function in the browser`, () => {
       binToHex(utf8ToBin("burn")),
     );
     expect(await getTokenBalance(alice, category)).toBe(3n);
-    expect(await getTokenBalance(alice, category)).toBe(3n);
     const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(1);
     expect(await getNftTokenBalance(alice, category)).toBe(1);
-    expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(category).toEqual(response.categories![0]);
+
+    // more than the NFT's coin carries is refused
+    await expect(
+      alice.tokenBurn(
+        {
+          category,
+          amount: 5n,
+          nft: { capability: NFTCapability.minting, commitment: "abcd" },
+        },
+        "burn",
+      ),
+    ).rejects.toThrow(InsufficientFundsError);
 
     // burn the rest FTs
     const ftResponse = await alice.tokenBurn(
       {
         category: category,
-        amount: 5n,
+        amount: 3n,
         nft: {
           capability: NFTCapability.minting,
           commitment: "abcd",
@@ -397,12 +406,11 @@ describe(`Cashtokens should function in the browser`, () => {
       "burn",
     );
     expect(await getTokenBalance(alice, category)).toBe(0n);
-    expect(await getTokenBalance(alice, category)).toBe(0n);
     const nftTokenUtxos = await getTokenUtxos(alice, category);
     expect(nftTokenUtxos.length).toBe(0);
     expect(category).toEqual(nftResponse.categories![0]);
     expect(await getNftTokenBalance(alice, category)).toBe(0);
-    expect(await getNftTokenBalance(alice, category)).toBe(0n);
+    expect(await getNftTokenBalance(alice, category)).toBe(0);
   });
 
   test("Test cashtoken satoshi values and fee calculations", async () => {
@@ -422,7 +430,7 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(tokenUtxos[0].satoshis).toBe(7000n);
 
     // lower the token satoshi value
-    const response = await bob.send([
+    await bob.send([
       new TokenSendRequest({
         cashaddr: bob.cashaddr!,
         amount: 100n,

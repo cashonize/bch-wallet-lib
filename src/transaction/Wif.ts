@@ -14,16 +14,22 @@ import {
   walletTemplateToCompilerBch,
 } from "@bitauth/libauth";
 import { WalletCache } from "../cache/walletCache.js";
-import { DUST_UTXO_THRESHOLD } from "../constant.js";
-import { NFTCapability, TokenI, Utxo } from "../interface.js";
+import { DUST_UTXO_THRESHOLD, MAX_OP_RETURN_BYTES } from "../constant.js";
+import { NFTCapability, Utxo } from "../interface.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
+import { tokenOutput } from "../util/tokenOutput.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
+import { InsufficientFundsError } from "../wallet/errors.js";
 import {
   OpReturnData,
   SendRequest,
   SendRequestType,
   TokenSendRequest,
 } from "../wallet/model.js";
+import {
+  checkTokenConservation,
+  TokenBurnAllowance,
+} from "./tokenConservation.js";
 
 export const placeholderPrivateKey =
   "0000000000000000000000000000000000000000000000000000000000000001";
@@ -38,6 +44,8 @@ export async function buildP2pkhNonHdTransaction({
   discardChange = false,
   changeAddress = "",
   walletCache,
+  tokenBurns,
+  tokenChange = [],
 }: {
   inputs: Utxo[];
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -46,6 +54,10 @@ export async function buildP2pkhNonHdTransaction({
   discardChange?: boolean;
   changeAddress?: string;
   walletCache: WalletCache;
+  /** when given, refuse outputs that destroy more of the inputs' tokens than this allows */
+  tokenBurns?: TokenBurnAllowance;
+  /** the token change, placed after the outputs */
+  tokenChange?: TokenSendRequest[];
 }) {
   if (!signingKey) {
     throw new Error("Missing signing key when building transaction");
@@ -59,12 +71,20 @@ export async function buildP2pkhNonHdTransaction({
   const compiler = walletTemplateToCompilerBch(template);
   const inputAmount = sumUtxoValue(inputs);
 
-  const sendAmount = await sumSendRequestAmounts(outputs);
+  outputs = [...outputs, ...tokenChange];
+  // a transaction of nothing but BCH change sends nothing
+  if (outputs.length === 0) {
+    throw Error("A send needs at least one output");
+  }
+  const paidOutAmount = await sumSendRequestAmounts(outputs);
+  // the fee comes out of the change
+  const changeAmount =
+    BigInt(inputAmount) - BigInt(paidOutAmount) - BigInt(fee);
+  if (changeAmount < 0n) {
+    throw amountNotMetError(paidOutAmount + fee, inputAmount);
+  }
 
-  const changeAmount = BigInt(inputAmount) - BigInt(sendAmount) - BigInt(fee);
-
-  // Append change as a SendRequest, unless discardChange is set or the change
-  // would be below the dust threshold.
+  // the change goes last, unless discardChange is set or it would be dust
   if (discardChange !== true && changeAmount > DUST_UTXO_THRESHOLD) {
     if (!changeAddress) {
       changeAddress = inputs[0].address;
@@ -76,6 +96,9 @@ export async function buildP2pkhNonHdTransaction({
   }
 
   const lockedOutputs = await prepareOutputs(outputs);
+  if (tokenBurns) {
+    checkTokenConservation(inputs, lockedOutputs, tokenBurns);
+  }
 
   const { preparedInputs, sourceOutputs } = prepareInputs({
     inputs,
@@ -100,10 +123,10 @@ export async function buildP2pkhNonHdTransaction({
     { maximumTokenCommitmentLength: 128 },
   );
   if (tokenValidationResult !== true && fee > 0) {
-    throw tokenValidationResult;
+    throw new Error(tokenValidationResult);
   }
 
-  return { transaction: result.transaction, sourceOutputs: sourceOutputs };
+  return { transaction: result.transaction };
 }
 
 export function prepareInputs({
@@ -144,9 +167,7 @@ export function prepareInputs({
         i.token.nft?.commitment !== undefined
           ? {
               capability: i.token.nft?.capability,
-              commitment:
-                i.token.nft?.commitment !== undefined &&
-                hexToBin(i.token.nft?.commitment!),
+              commitment: hexToBin(i.token.nft?.commitment ?? ""),
             }
           : undefined,
     };
@@ -172,7 +193,7 @@ export function prepareInputs({
 
     const lockingBytecode = cashAddressToLockingBytecode(i.address);
     if (typeof lockingBytecode === "string") {
-      throw lockingBytecode;
+      throw new Error(lockingBytecode);
     }
 
     sourceOutputs.push({
@@ -200,10 +221,19 @@ export function prepareInputs({
 export async function prepareOutputs(
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>,
 ) {
+  const opReturnBytes = outputs
+    .filter((output) => output instanceof OpReturnData)
+    .reduce((sum, output) => sum + output.buffer.length, 0);
+  if (opReturnBytes > MAX_OP_RETURN_BYTES) {
+    throw new Error(
+      `OP_RETURN outputs can not exceed ${MAX_OP_RETURN_BYTES} bytes in total, got ${opReturnBytes}`,
+    );
+  }
+
   const lockedOutputs: Output[] = [];
   for (const output of outputs) {
     if (output instanceof TokenSendRequest) {
-      lockedOutputs.push(prepareTokenOutputs(output));
+      lockedOutputs.push(tokenOutput(output));
       continue;
     }
 
@@ -244,38 +274,6 @@ export function prepareOpReturnOutput(request: OpReturnData): Output {
 }
 
 /**
- * prepareOpReturnOutput - create an output for token data
- *
- * @returns A libauth Output
- */
-export function prepareTokenOutputs(request: TokenSendRequest): Output {
-  const token: TokenI = request;
-  const outputLockingBytecode = cashAddressToLockingBytecode(request.cashaddr);
-  if (typeof outputLockingBytecode === "string")
-    throw new Error(outputLockingBytecode);
-
-  const libAuthToken = {
-    amount: BigInt(token.amount),
-    category: hexToBin(token.category),
-    nft:
-      token.nft?.capability !== undefined || token.nft?.commitment !== undefined
-        ? {
-            capability: token.nft?.capability,
-            commitment:
-              token.nft?.commitment !== undefined &&
-              hexToBin(token.nft?.commitment!),
-          }
-        : undefined,
-  };
-
-  return {
-    lockingBytecode: outputLockingBytecode.bytecode,
-    valueSatoshis: BigInt(request.value || 1000),
-    token: libAuthToken,
-  } as Output;
-}
-
-/**
  * getSuitableUtxos - Filter a list of unspent transaction outputs to the minimum needed to complete a transaction
  *
  * a intermediate function
@@ -287,7 +285,6 @@ export function prepareTokenOutputs(request: TokenSendRequest): Output {
 export async function getSuitableUtxos(
   inputs: Utxo[],
   amountRequired: bigint | undefined,
-  _bestHeight: number,
   requests: SendRequestType[],
   ensureUtxos: Utxo[] = [],
   tokenOperation: "send" | "genesis" | "mint" | "burn" = "send",
@@ -308,9 +305,17 @@ export async function getSuitableUtxos(
     (sum, u) => sum + BigInt(u.satoshis),
     BigInt(0),
   );
-  const tokenRequests = requests.filter(
+  const allTokenRequests = requests.filter(
     (val) => val instanceof TokenSendRequest,
   ) as TokenSendRequest[];
+  // mutable requests go last, so that a minting coin any other request spends is selected by the
+  // time a new mutable NFT looks for one to back it, whatever order the caller gave
+  const isMutableRequest = (request: TokenSendRequest) =>
+    request.nft?.capability === NFTCapability.mutable;
+  const tokenRequests = [
+    ...allTokenRequests.filter((request) => !isMutableRequest(request)),
+    ...allTokenRequests.filter(isMutableRequest),
+  ];
 
   const usedIndices = new Set<number>();
 
@@ -378,22 +383,66 @@ export async function getSuitableUtxos(
         request.nft?.capability === NFTCapability.minting ||
         request.nft?.capability === NFTCapability.mutable
       ) {
+        // Under consensus a minting input backs any number of NFT outputs of its category, so a
+        // selected minting coin covers the request; a mutable input backs one, so a mutable
+        // request claims its coin as an NFT request claims its exact match
+        const isMutable = request.nft?.capability === NFTCapability.mutable;
+        const matchCapability = (val: Utxo) =>
+          val.token?.category === request.category &&
+          val.token?.nft?.capability === request.nft?.capability;
+
         // Check already-selected suitable utxos first
-        const alreadyHas = suitableUtxos.some(
+        const hasMinting = suitableUtxos.some(
           (val) =>
             val.token?.category === request.category &&
-            val.token?.nft?.capability === request.nft?.capability,
+            val.token?.nft?.capability === NFTCapability.minting,
         );
-        if (alreadyHas) continue;
+        if (hasMinting) continue;
 
         let foundCapability = false;
+        if (isMutable) {
+          for (const val of suitableUtxos) {
+            if (!matchCapability(val)) continue;
+            const key = utxoKey(val);
+            if (claimedUtxos.has(key)) continue;
+            claimedUtxos.set(key, 1);
+            foundCapability = true;
+            break;
+          }
+        }
+        if (foundCapability) continue;
+
         for (let i = 0; i < inputs.length; i++) {
           if (usedIndices.has(i)) continue;
           const val = inputs[i];
-          if (
-            val.token?.category === request.category &&
-            val.token?.nft?.capability === request.nft?.capability
-          ) {
+          if (!matchCapability(val)) continue;
+          const key = utxoKey(val);
+          if (selectedSet.has(key)) continue;
+
+          selectedSet.add(key);
+          suitableUtxos.push(val);
+          usedIndices.add(i);
+          amountAvailable += BigInt(val.satoshis);
+          if (isMutable) {
+            claimedUtxos.set(key, 1);
+          }
+          foundCapability = true;
+          break;
+        }
+        if (foundCapability) continue;
+
+        // with no mutable NFT left to claim, a minting coin of the category backs the new mutable
+        // NFT, and comes back as change as a minting coin spent for another request does
+        if (isMutable) {
+          for (let i = 0; i < inputs.length; i++) {
+            if (usedIndices.has(i)) continue;
+            const val = inputs[i];
+            if (
+              val.token?.category !== request.category ||
+              val.token?.nft?.capability !== NFTCapability.minting
+            ) {
+              continue;
+            }
             const key = utxoKey(val);
             if (selectedSet.has(key)) continue;
 
@@ -404,8 +453,8 @@ export async function getSuitableUtxos(
             foundCapability = true;
             break;
           }
+          if (foundCapability) continue;
         }
-        if (foundCapability) continue;
       }
 
       // handle splitting the hybrid (FT+NFT) token into its parts
@@ -427,13 +476,14 @@ export async function getSuitableUtxos(
         }
       }
 
-      throw Error(
+      throw new InsufficientFundsError(
         `No suitable token utxos available to send token with id "${request.category}", capability "${request.nft?.capability}", commitment "${request.nft?.commitment}"`,
+        { asset: "token", category: request.category },
       );
     }
   }
 
-  // Find plain BCH outputs to top up the transaction
+  // top up with plain BCH coins in the pool's order
   const alreadyEnough =
     amountRequired !== undefined && amountAvailable >= amountRequired;
   if (!alreadyEnough) {
@@ -454,17 +504,214 @@ export async function getSuitableUtxos(
   if (typeof amountRequired === "undefined") {
     return suitableUtxos;
   } else if (amountAvailable < amountRequired) {
-    const e = Error(
-      `Amount required was not met, ${amountRequired} satoshis needed, ${amountAvailable} satoshis available`,
-    );
-    e["data"] = {
-      required: amountRequired,
-      available: amountAvailable,
-    };
-    throw e;
+    throw amountNotMetError(amountRequired, amountAvailable);
   } else {
     return suitableUtxos;
   }
+}
+
+export function amountNotMetError(required: bigint, available: bigint) {
+  const e = new InsufficientFundsError(
+    `Amount required was not met, ${required} satoshis needed, ${available} satoshis available`,
+    { asset: "bch" },
+  );
+  e["data"] = { required, available };
+  return e;
+}
+
+/**
+ * selectFungibleTokenUtxos - the token coins a send adds to cover the fungible amounts it sends
+ * (mainnet-js#246)
+ *
+ * Per category, the fungible tokens on the coins the send spends anyway count first; the rest is
+ * covered by fungible-only coins, largest first, then by NFT coins holding fungible tokens, largest
+ * first, so that an NFT moves only when the fungible-only coins fall short.
+ *
+ * @param inputs  The utxos the send may spend
+ * @param pinned  The utxos the send spends anyway: ensureUtxos and the inputs of its NFT requests
+ * @param requests  The requested token outputs
+ */
+export function selectFungibleTokenUtxos(
+  inputs: Utxo[],
+  pinned: Utxo[],
+  requests: TokenSendRequest[],
+): Utxo[] {
+  const utxoKey = (u: Utxo) => `${u.txid}:${u.vout}`;
+  const pinnedKeys = new Set(pinned.map(utxoKey));
+  const selected: Utxo[] = [];
+
+  const categories = requests
+    .map((val) => val.category)
+    .filter((val, idx, arr) => arr.indexOf(val) === idx);
+  for (const category of categories) {
+    const requested = requests
+      .filter((val) => val.category === category)
+      .reduce((sum, val) => sum + val.amount, 0n);
+    let available = pinned
+      .filter((val) => val.token?.category === category)
+      .reduce((sum, val) => sum + val.token!.amount, 0n);
+
+    const candidates = inputs
+      .filter(
+        (val) =>
+          val.token?.category === category &&
+          val.token.amount > 0n &&
+          !pinnedKeys.has(utxoKey(val)),
+      )
+      .sort((a, b) => {
+        const aHasNft = !!a.token!.nft;
+        const bHasNft = !!b.token!.nft;
+        if (aHasNft !== bHasNft) {
+          return aHasNft ? 1 : -1;
+        }
+        if (a.token!.amount === b.token!.amount) {
+          return 0;
+        }
+        return a.token!.amount > b.token!.amount ? -1 : 1;
+      });
+    for (const candidate of candidates) {
+      if (available >= requested) break;
+      selected.push(candidate);
+      available += candidate.token!.amount;
+    }
+
+    if (available < requested) {
+      throw new InsufficientFundsError("Not enough token amount to send", {
+        asset: "token",
+        category,
+      });
+    }
+  }
+  return selected;
+}
+
+/**
+ * getTokenChangeRequests - the token change of a send: what the spent token inputs carry minus
+ * what the requests send, per category and per NFT (mainnet-js#247)
+ *
+ * An NFT input no request sends comes back as it was, with its own fungible amount as far as the
+ * category's fungible change covers it; the rest of that change goes to one fungible-only output.
+ *
+ * @param inputs  The token inputs the transaction spends
+ * @param requests  The requested token outputs
+ * @param changeAddress  Gives each change output the token-aware address it goes to
+ */
+export function getTokenChangeRequests(
+  inputs: Utxo[],
+  requests: TokenSendRequest[],
+  changeAddress: () => string,
+): TokenSendRequest[] {
+  const tokenInputs = inputs.filter((input) => input.token);
+  const sent = new Set<Utxo>();
+
+  // an NFT request sends the input with the same NFT, matched as getSuitableUtxos claims them
+  const unmatched: TokenSendRequest[] = [];
+  for (const request of requests) {
+    if (
+      request.nft?.capability === undefined &&
+      request.nft?.commitment === undefined
+    ) {
+      continue;
+    }
+    const input = tokenInputs.find(
+      (val) =>
+        !sent.has(val) &&
+        val.token!.category === request.category &&
+        val.token!.nft?.capability === request.nft?.capability &&
+        val.token!.nft?.commitment === request.nft?.commitment,
+    );
+    if (input) {
+      sent.add(input);
+    } else {
+      unmatched.push(request);
+    }
+  }
+  // a minting or mutable NFT sent with another commitment is a minting or mutable input changed,
+  // except a mutable NFT of a category whose minting input is spent: that input backs it, and the
+  // mutable inputs come back as they were
+  const mintingSpent = (category: string) =>
+    tokenInputs.some(
+      (val) =>
+        val.token!.category === category &&
+        val.token!.nft?.capability === NFTCapability.minting,
+    );
+  for (const request of unmatched) {
+    if (
+      request.nft?.capability !== NFTCapability.minting &&
+      request.nft?.capability !== NFTCapability.mutable
+    ) {
+      continue;
+    }
+    if (
+      request.nft.capability === NFTCapability.mutable &&
+      mintingSpent(request.category)
+    ) {
+      continue;
+    }
+    const input = tokenInputs.find(
+      (val) =>
+        !sent.has(val) &&
+        val.token!.category === request.category &&
+        val.token!.nft?.capability === request.nft?.capability,
+    );
+    if (input) {
+      sent.add(input);
+    }
+  }
+
+  const changeRequests: TokenSendRequest[] = [];
+  const categories = tokenInputs
+    .map((val) => val.token!.category)
+    .filter((val, idx, arr) => arr.indexOf(val) === idx);
+  for (const category of categories) {
+    const categoryInputs = tokenInputs.filter(
+      (val) => val.token!.category === category,
+    );
+    const categoryRequests = requests.filter(
+      (val) => val.category === category,
+    );
+    let change =
+      categoryInputs.reduce((sum, val) => sum + val.token!.amount, 0n) -
+      categoryRequests.reduce((sum, val) => sum + val.amount, 0n);
+    if (change < 0n) {
+      throw new InsufficientFundsError("Not enough token amount to send", {
+        asset: "token",
+        category,
+      });
+    }
+
+    for (const input of categoryInputs) {
+      const nft = input.token!.nft;
+      if (!nft || sent.has(input)) continue;
+      let amount = input.token!.amount;
+      if (amount > change) {
+        amount = change;
+      }
+      change -= amount;
+      changeRequests.push(
+        new TokenSendRequest({
+          cashaddr: changeAddress(),
+          category,
+          amount,
+          nft: { capability: nft.capability, commitment: nft.commitment },
+          // the input's own value, which is above dust for the token data it carried
+          value: input.satoshis,
+        }),
+      );
+    }
+    if (change > 0n) {
+      // no value: the standard 1000 sats of a token output, above dust for any fungible-only
+      // output; a request's value is what its recipient gets, not what the change needs
+      changeRequests.push(
+        new TokenSendRequest({
+          cashaddr: changeAddress(),
+          category,
+          amount: change,
+        }),
+      );
+    }
+  }
+  return changeRequests;
 }
 
 // model-based imprecise and fast fee estimation
@@ -516,22 +763,19 @@ export async function getFeeAmountSimple({
   const outputTotalSize =
     sendRequests.reduce((prev, curr) => prev + outputSize(curr), 0) +
     (discardChange ? 0 : outputSizeP2pkh);
+  const txSizeBytes = inputTotalSize + outputTotalSize + 16;
 
-  return BigInt(
-    Math.ceil(
-      (inputTotalSize + outputTotalSize + 16) * relayFeePerByteInSatoshi,
-    ),
-  );
+  return BigInt(Math.ceil(txSizeBytes * relayFeePerByteInSatoshi));
 }
 
 // precise fee estimation
 export async function getFeeAmount({
   utxos,
   sendRequests,
-  sourceAddress,
   relayFeePerByteInSatoshi,
   discardChange,
   walletCache,
+  tokenChange,
 }: {
   utxos: Utxo[];
   sendRequests: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -539,26 +783,28 @@ export async function getFeeAmount({
   relayFeePerByteInSatoshi: number;
   discardChange?: boolean;
   walletCache: WalletCache;
+  tokenChange?: TokenSendRequest[];
 }) {
   // build transaction
   if (utxos) {
     // Build the transaction to get the approximate size
-    const { encodedTransaction: draftTransaction } =
-      await buildEncodedTransaction({
-        inputs: utxos,
-        outputs: sendRequests,
-        signingKey: placeholderPrivateKeyBin,
-        fee: 0n, //DUST_UTXO_THRESHOLD
-        discardChange: discardChange ?? false,
-        changeAddress: "",
-        walletCache,
-      });
+    const draftTransaction = await buildEncodedTransaction({
+      inputs: utxos,
+      outputs: sendRequests,
+      signingKey: placeholderPrivateKeyBin,
+      fee: 0n, //DUST_UTXO_THRESHOLD
+      discardChange: discardChange ?? false,
+      changeAddress: "",
+      walletCache,
+      tokenChange,
+    });
     return BigInt(
       Math.ceil(draftTransaction.length * relayFeePerByteInSatoshi + 1),
     );
   } else {
-    throw Error(
+    throw new InsufficientFundsError(
       "The available inputs in the wallet cannot satisfy this send request",
+      { asset: "bch" },
     );
   }
 }
@@ -572,6 +818,8 @@ export async function buildEncodedTransaction({
   discardChange = false,
   changeAddress = "",
   walletCache,
+  tokenBurns,
+  tokenChange,
 }: {
   inputs: Utxo[];
   outputs: Array<SendRequest | TokenSendRequest | OpReturnData>;
@@ -580,6 +828,8 @@ export async function buildEncodedTransaction({
   discardChange?: boolean;
   changeAddress?: string;
   walletCache: WalletCache;
+  tokenBurns?: TokenBurnAllowance;
+  tokenChange?: TokenSendRequest[];
 }) {
   const { transaction } = await buildP2pkhNonHdTransaction({
     inputs,
@@ -589,7 +839,9 @@ export async function buildEncodedTransaction({
     discardChange,
     changeAddress,
     walletCache,
+    tokenBurns,
+    tokenChange,
   });
 
-  return { encodedTransaction: encodeTransaction(transaction) };
+  return encodeTransaction(transaction);
 }

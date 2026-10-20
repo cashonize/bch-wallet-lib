@@ -1,40 +1,35 @@
 import {
   assertSuccess,
-  binToHex,
-  CashAddressNetworkPrefix,
   decodeCashAddress,
   decodeCashAddressFormatWithoutPrefix,
   encodeCashAddress,
   hash160,
-  secp256k1,
-  sha256,
-  utf8ToBin,
 } from "@bitauth/libauth";
 import {
   SingleAddressWalletCache,
   WalletCacheEntry,
   WalletCacheI,
 } from "../cache/walletCache.js";
-import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import {
   NetworkType,
   networkPrefixMap,
   prefixFromNetworkMap,
-  UnitEnum,
 } from "../enum.js";
 import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
 import { TxI, Utxo } from "../interface.js";
 import { toCashaddr, toTokenaddr } from "../util/deriveCashaddr.js";
-import { derivePrefix } from "../util/derivePublicKeyHash.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
+import { InvalidWalletIdError } from "./errors.js";
 import { CancelFn } from "./interface.js";
+import { networkPrefixError, walletTypeError } from "../util/walletIdError.js";
+import { toError } from "../util/toError.js";
+import { runCallback } from "../util/watch.js";
 
 export interface WatchWalletOptions {
   name?: string;
-  publicKey?: Uint8Array;
   publicKeyCompressed?: Uint8Array;
   publicKeyHash?: Uint8Array;
   address?: string;
@@ -46,21 +41,22 @@ export interface WatchWalletOptions {
 export class WatchWallet extends BaseWallet {
   declare readonly walletCache: WalletCacheI;
   readonly publicKeyCompressed?: Uint8Array;
-  readonly publicKey?: Uint8Array;
   readonly publicKeyHash!: Uint8Array;
   readonly cashaddr!: string;
   readonly tokenaddr!: string;
 
-  static networkPrefix = CashAddressNetworkPrefix.mainnet;
-  static walletType = WalletTypeEnum.Watch;
-
   // Subscription-first infrastructure: single subscription shared by all watchers
   private watchCallbacks: Array<
-    (status: string | null, address: string) => void
+    (status: string | null, address: string) => unknown
   > = [];
   private baseCancelFn?: CancelFn;
-  watchPromise?: Promise<void>;
-  updatePromise?: Promise<void>;
+  /** Settles when the latest status watch is in place or has failed, and never rejects. */
+  protected watchPromise?: Promise<void>;
+  private updatePromise?: Promise<void>;
+  // the latest status watch, which rejects if it failed; reads await it through watched()
+  private watch: Promise<void> = Promise.resolve();
+  private watchFailed = false;
+  private stopped = false;
 
   // Live state - updated by subscription notifications
   private status: string | null = null;
@@ -80,38 +76,17 @@ export class WatchWallet extends BaseWallet {
     this.walletType = walletType;
   }
 
-  /// Initialize the watch-only wallet given the options - publicKey variations
-  /// This internal method is called by the various static constructors
+  /// Initialize the watch-only wallet given the options - public key or address variations
+  /// This internal method is called by watchOnly and by Wallet's initialize
   protected async initialize({
     name = "",
-    publicKey = undefined,
-    publicKeyCompressed = undefined,
-    publicKeyHash = undefined,
-    address = undefined,
+    publicKeyCompressed,
+    publicKeyHash,
+    address,
   }: WatchWalletOptions = {}): Promise<this> {
-    if (publicKey?.length) {
-      // @ts-ignore
-      this.publicKey = publicKey;
-
-      if (!publicKeyCompressed) {
-        publicKeyCompressed = assertSuccess(
-          secp256k1.compressPublicKey(publicKey),
-        );
-      }
-    }
-
     if (publicKeyCompressed?.length) {
       // @ts-ignore
       this.publicKeyCompressed = publicKeyCompressed;
-
-      if (!publicKey) {
-        publicKey = assertSuccess(
-          secp256k1.uncompressPublicKey(publicKeyCompressed),
-        );
-        // @ts-ignore
-        this.publicKey = publicKey;
-      }
-
       publicKeyHash = hash160(publicKeyCompressed);
     }
 
@@ -162,7 +137,7 @@ export class WatchWallet extends BaseWallet {
 
     this.name = name;
 
-    // Initialize persistent cache and load saved state
+    // the cache is in memory only, so this starts from an unknown status
     await this.initWalletCache();
     const cached = this.getCacheEntry();
     this.status = cached.status;
@@ -171,18 +146,13 @@ export class WatchWallet extends BaseWallet {
     this.lastConfirmedHeight = cached.lastConfirmedHeight;
 
     // Start subscription immediately (subscription-first approach)
-    this.watchPromise = this.makeWatchPromise().catch(() => {});
+    void this.startWatch();
 
     return this;
   }
 
-  protected deriveWalletId(): string {
-    return binToHex(sha256.hash(utf8ToBin(`${this.cashaddr}-${this.network}`)));
-  }
-
   protected async initWalletCache(): Promise<void> {
     const cache = new SingleAddressWalletCache(this.cashaddr, this.tokenaddr);
-    await cache.init();
     const wallet = this as any;
     if (wallet.privateKey) {
       cache.get(this.cashaddr)!.privateKey = wallet.privateKey;
@@ -195,31 +165,78 @@ export class WatchWallet extends BaseWallet {
     return this.walletCache.get(this.cashaddr)!;
   }
 
-  /// Subscribe to the single address for status change notifications
-  private async makeWatchPromise(): Promise<void> {
+  /// Make the status watch once the one in progress has ended. If it fails, the next read makes it
+  /// again
+  private startWatch(): Promise<void> {
+    this.watchFailed = false;
+    const run = this.watch.catch(() => {}).then(() => this.makeWatchPromise());
+    this.watch = run;
+    this.watchPromise = run.then(
+      () => {},
+      () => {
+        if (this.watch === run) this.watchFailed = true;
+      },
+    );
+    return run;
+  }
+
+  /// Wait for the status watch, making it again first if the last one failed; rejects with the
+  /// error of a watch that fails, rather than reading a cached or empty state
+  private watched(): Promise<void> {
+    if (this.watchFailed && !this.stopped) void this.startWatch();
+    return this.watch;
+  }
+
+  /// Subscribe to the single address for status change notifications. Settles once the first
+  /// status is handled; a subscription or first fetch that fails ends the subscription and rejects
+  private makeWatchPromise(): Promise<void> {
     const addr = this.cashaddr;
-    let resolved = false;
+    let watched = false;
+    let failed = false;
+    let cancel: CancelFn | undefined;
 
-    return new Promise<void>(async (resolve) => {
-      this.baseCancelFn = await this.provider.subscribeToAddress(
-        addr,
-        async (args: [address: string, status: string | null]) => {
-          const [address, status] = args;
-          if (address !== addr) return;
+    return new Promise<void>((resolve, reject) => {
+      const fail = (error: unknown) => {
+        failed = true;
+        cancel?.().catch(() => {});
+        reject(toError(error));
+      };
 
-          if (status !== null && status !== this.status) {
-            this.updatePromise = this.fetchData(status).catch(() => {});
-          }
-          this.status = status;
-          this.notifyWatchCallbacks(status, addr);
-
-          if (!resolved) {
-            resolved = true;
+      const callback = ([address, status]: [string, string | null]) => {
+        if (address !== addr || failed) return;
+        this.update(status).then(
+          () => {
+            watched = true;
             resolve();
-          }
-        },
-      );
+          },
+          (error: unknown) => {
+            // a later fetch that fails leaves the old status, so the next notification fetches again
+            if (!watched) fail(error);
+          },
+        );
+      };
+
+      this.subscribe((provider) =>
+        provider.subscribeToAddress(addr, callback),
+      ).then((made) => {
+        if (failed) {
+          made().catch(() => {});
+        } else {
+          cancel = made;
+          this.baseCancelFn = made;
+        }
+      }, fail);
     });
+  }
+
+  private async update(status: string | null): Promise<void> {
+    if (status !== null && status !== this.status) {
+      const update = this.fetchData(status);
+      this.updatePromise = update.catch(() => {});
+      await update;
+    }
+    this.status = status;
+    this.notifyWatchCallbacks(status, this.cashaddr);
   }
 
   private async fetchData(status: string | null): Promise<void> {
@@ -265,18 +282,14 @@ export class WatchWallet extends BaseWallet {
 
   private notifyWatchCallbacks(status: string | null, address: string) {
     for (const callback of this.watchCallbacks) {
-      try {
-        callback(status, address);
-      } catch (_e) {
-        // Ignore callback errors to not break other watchers
-      }
+      runCallback(() => callback(status, address));
     }
   }
 
-  public override async watchStatus(
-    callback: (status: string | null, address: string) => void,
+  protected override async watchStatus(
+    callback: (status: string | null, address: string) => unknown,
   ): Promise<CancelFn> {
-    await this.watchPromise;
+    await this.watched();
 
     this.watchCallbacks.push(callback);
 
@@ -288,23 +301,26 @@ export class WatchWallet extends BaseWallet {
     };
   }
 
-  public override async waitForUpdate(
+  protected override async waitForUpdate(
     options: { timeout?: number } = {},
   ): Promise<void> {
     const timeout = options.timeout ?? 100;
 
-    let cancel: CancelFn;
-    const statusChange = new Promise<void>(async (resolve) => {
-      cancel = await this.watchStatus(() => resolve());
+    let statusResolve: () => void;
+    const statusChange = new Promise<void>((resolve) => {
+      statusResolve = resolve;
     });
+    const cancel = await this.watchStatus(() => statusResolve());
 
     const timer = new Promise<void>((resolve) => setTimeout(resolve, timeout));
 
     await Promise.race([statusChange, timer]);
-    await cancel!();
+    await cancel();
   }
 
   public override async stop() {
+    // a stopped wallet's reads no longer make a failed status watch again
+    this.stopped = true;
     await super.stop();
     await this.baseCancelFn?.();
     this.baseCancelFn = undefined;
@@ -346,73 +362,36 @@ export class WatchWallet extends BaseWallet {
     return this.tokenaddr;
   }
 
-  // returns the public key hash for an address
-  public getPublicKeyHash(hex = false): string | Uint8Array {
-    return hex ? binToHex(this.publicKeyHash) : this.publicKeyHash;
-  }
-
-  // returns the public key hash for an address
-  public getPublicKey(hex = false): string | Uint8Array {
-    if (this.publicKey) {
-      return hex ? binToHex(this.publicKey) : this.publicKey;
-    } else {
-      throw Error(
-        "The public key for this wallet is not known, perhaps the wallet was created to watch the *hash* of a public key? i.e. a cashaddress.",
-      );
-    }
-  }
-
-  // returns the public key hash for an address
-  public getPublicKeyCompressed(hex = false): string | Uint8Array {
-    if (this.publicKeyCompressed) {
-      return hex
-        ? binToHex(this.publicKeyCompressed)
-        : this.publicKeyCompressed;
-    } else {
-      throw Error(
-        "The compressed public key for this wallet is not known, perhaps the wallet was created to watch the *hash* of a public key? i.e. a cashaddress.",
-      );
-    }
-  }
-
   /**
    * utxos Get unspent outputs for the wallet
    *
    */
   public async getUtxos(): Promise<Utxo[]> {
-    await this.watchPromise;
+    await this.watched();
     await this.updatePromise;
 
     return this.utxos;
   }
 
-  // Gets balance by summing value in all utxos in sats
-  // Balance includes DUST utxos which could be slp tokens and also cashtokens with BCH amounts
+  // Gets balance by summing value in all utxos in sats, those of token utxos included
   public async getBalance(): Promise<bigint> {
-    await this.watchPromise;
+    await this.watched();
     await this.updatePromise;
     return sumUtxoValue(this.utxos);
   }
 
   // gets transaction history of this wallet
-  public async getRawHistory(
-    fromHeight: number = 0,
-    toHeight: number = -1,
-  ): Promise<TxI[]> {
-    await this.watchPromise;
+  public async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
+    await this.watched();
     await this.updatePromise;
 
     let history = this.rawHistory;
 
-    if (fromHeight > 0 || toHeight !== -1) {
-      history = history.filter((tx) => {
-        if (tx.height <= 0) {
-          return toHeight === -1;
-        }
-        const aboveFrom = tx.height >= fromHeight;
-        const belowTo = toHeight === -1 || tx.height <= toHeight;
-        return aboveFrom && belowTo;
-      });
+    // unconfirmed transactions (height <= 0) are always included
+    if (fromHeight > 0) {
+      history = history.filter(
+        (tx) => tx.height <= 0 || tx.height >= fromHeight,
+      );
     }
 
     return history;
@@ -435,7 +414,7 @@ export class WatchWallet extends BaseWallet {
     count?: number;
     concurrency?: number;
   } = {}): Promise<TransactionHistoryItem[]> {
-    await this.watchPromise;
+    await this.watched();
     await this.updatePromise;
 
     // the history and the balance it is backfilled from, from the same update
@@ -453,14 +432,20 @@ export class WatchWallet extends BaseWallet {
     const [walletType, networkGiven, arg1, arg2]: string[] =
       walletId.split(":");
 
-    if (walletType !== WalletTypeEnum.Watch) {
-      throw Error(
-        `fromId called on a ${walletType} wallet, expected a ${WalletTypeEnum.Watch} wallet`,
-      );
+    // checked first: a walletType is only quoted back once the id has a network part
+    if (this.network != networkGiven) {
+      throw networkPrefixError(walletType, networkGiven, this.network);
     }
 
-    if (this.network != networkGiven) {
-      throw Error(`Network prefix ${networkGiven} to a ${this.network} wallet`);
+    if (walletType !== WalletTypeEnum.Watch) {
+      throw walletTypeError(walletType, WalletTypeEnum.Watch);
+    }
+
+    if (!arg1) {
+      throw new InvalidWalletIdError(
+        "address is required to create a watch-only wallet",
+        { kind: walletType, reason: "missing-value" },
+      );
     }
 
     if (arg2) {
@@ -472,110 +457,13 @@ export class WatchWallet extends BaseWallet {
 
   // Initialize a watch only wallet from a cash addr
   protected async watchOnly(address: string): Promise<this> {
+    if (!address?.length)
+      throw Error("address is required to create a watch-only wallet");
+
     // @ts-ignore
     this.walletType = WalletTypeEnum.Watch;
 
     return this.initialize({ address, name: this.name });
-  }
-
-  /**
-   * watchOnly - create a watch-only wallet
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param address   cashaddress, token aware cashaddress of a wallet
-   *
-   * @returns instantiated wallet
-   */
-  public static async watchOnly<T extends typeof WatchWallet>(
-    this: T,
-    address: string,
-  ) {
-    if (!address?.length)
-      throw Error("address is required to create a watch-only wallet");
-
-    return new this().watchOnly(address) as InstanceType<T>;
-  }
-
-  /**
-   * fromCashaddr - create a watch-only wallet in the network derived from the address
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param address   cashaddress of a wallet
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromCashaddr<T extends typeof WatchWallet>(
-    this: T,
-    address: string,
-  ): Promise<InstanceType<T>> {
-    if (!address?.length)
-      throw Error("address is required to create a watch-only wallet");
-
-    const prefix = derivePrefix(address);
-    const networkType = networkPrefixMap[prefix] as NetworkType;
-    return new this("", networkType).watchOnly(address) as InstanceType<T>;
-  }
-
-  /**
-   * fromTokenaddr - create a watch-only wallet in the network derived from the address
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param address   token aware cashaddress of a wallet
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromTokenaddr<T extends typeof WatchWallet>(
-    this: T,
-    address: string,
-  ): Promise<InstanceType<T>> {
-    if (!address?.length)
-      throw Error("address is required to create a watch-only wallet");
-
-    const prefix = derivePrefix(address);
-    const networkType = networkPrefixMap[prefix] as NetworkType;
-    return new this("", networkType).watchOnly(address) as InstanceType<T>;
-  }
-
-  /**
-   * fromPublicKey - create a watch-only wallet in the network derived from the compressed or uncompressed public key
-   *
-   * such kind of wallet does not have a private key and is unable to spend any funds
-   * however it still allows to use many utility functions such as getting and watching balance, etc.
-   *
-   * @param publicKey   compressed or uncompressed public key
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromPublicKey<T extends typeof WatchWallet>(
-    this: T,
-    publicKey: Uint8Array,
-  ): Promise<InstanceType<T>> {
-    this.walletType = WalletTypeEnum.Watch;
-
-    return new this(
-      "",
-      networkPrefixMap[this.networkPrefix] as NetworkType,
-    ).initialize({
-      publicKey: publicKey.length === 33 ? undefined : publicKey,
-      publicKeyCompressed: publicKey.length === 33 ? publicKey : undefined,
-    }) as InstanceType<T>;
-  }
-}
-
-/**
- * Class to manage a testnet watch wallet.
- */
-export class TestNetWatchWallet extends WatchWallet {
-  static networkPrefix = CashAddressNetworkPrefix.testnet;
-  static walletType = WalletTypeEnum.Watch;
-  constructor(name = "", network = NetworkType.Testnet) {
-    super(name, network);
   }
 }
 
@@ -583,8 +471,6 @@ export class TestNetWatchWallet extends WatchWallet {
  * Class to manage a regtest watch wallet.
  */
 export class RegTestWatchWallet extends WatchWallet {
-  static networkPrefix = CashAddressNetworkPrefix.regtest;
-  static walletType = WalletTypeEnum.Watch;
   constructor(name = "", network = NetworkType.Regtest) {
     super(name, network);
   }

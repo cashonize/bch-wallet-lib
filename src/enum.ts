@@ -6,12 +6,6 @@ export enum NetworkType {
   Regtest = "regtest",
 }
 
-export enum NetworkEnum {
-  Mainnet = <any>"mainnet",
-  Testnet = <any>"testnet",
-  Regtest = <any>"regtest",
-}
-
 export const networkPrefixMap = {
   bitcoincash: "mainnet",
   bchtest: "testnet",

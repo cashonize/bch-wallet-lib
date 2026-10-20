@@ -1,36 +1,31 @@
 //#region Imports
+import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import {
   assertSuccess,
   binToHex,
-  CashAddressNetworkPrefix,
-  decodePrivateKeyWif,
   deriveHdPath,
   deriveHdPrivateNodeFromSeed,
-  deriveHdPublicNode,
   deriveSeedFromBip39Mnemonic,
-  encodeHdPublicKey,
   encodePrivateKeyWif,
   generateBip39Mnemonic,
-  generatePrivateKey,
-  generateRandomBytes,
   hexToBin,
   secp256k1,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
-import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
-import { checkWifNetwork } from "../util/checkWifNetwork.js";
+import { wifPrivateKey } from "../util/decodeWif.js";
 import { WalletTypeEnum } from "./enum.js";
-import { SendRequestOptionsI } from "./interface.js";
+import { SendRequestOptionsI, WalletFactoryOptions } from "./interface.js";
 import {
   OpReturnData,
   SendRequest,
-  SendRequestArray,
   SendResponse,
   TokenSendRequest,
 } from "./model.js";
 import { WatchWallet } from "./Watch.js";
+import { networkPrefixError, walletIdKind } from "../util/walletIdError.js";
+import { InvalidWalletIdError } from "./errors.js";
 //#endregion Imports
 
 export interface WalletOptions {
@@ -39,38 +34,39 @@ export interface WalletOptions {
   derivationPath?: string;
   privateKey?: Uint8Array;
   privateKeyWif?: string;
-  publicKey?: Uint8Array;
   publicKeyCompressed?: Uint8Array;
   publicKeyHash?: Uint8Array;
   address?: string;
 }
 
+// what a walletId of each type this class loads lacks when its value part is empty; a named
+// id's empty name is fromNamedId's to refuse
+const missingValueMessages: Record<string, string> = {
+  [WalletTypeEnum.Wif]: "refusing to create wallet from empty WIF",
+  [WalletTypeEnum.PrivateKey]:
+    "refusing to create wallet from empty private key",
+  [WalletTypeEnum.Seed]: "refusing to create wallet from empty mnemonic",
+  [WalletTypeEnum.Watch]: "address is required to create a watch-only wallet",
+};
+
 /**
  * Class to manage a bitcoin cash wallet.
  */
 export class Wallet extends WatchWallet {
-  declare provider: ElectrumNetworkProvider;
-
   readonly derivationPath: string = Config.DefaultParentDerivationPath + "/0/0";
-  readonly parentDerivationPath: string = Config.DefaultParentDerivationPath;
   readonly mnemonic!: string;
-  readonly parentXPubKey!: string;
   readonly privateKey!: Uint8Array;
   readonly privateKeyWif!: string;
 
   declare name: string;
 
   //#region Constructors and Statics
-  constructor(
-    name = "",
-    network = NetworkType.Mainnet,
-    walletType = WalletTypeEnum.Seed,
-  ) {
+  constructor(name = "", network = NetworkType.Mainnet) {
     super(name, network);
 
     this.name = name;
     // @ts-ignore
-    this.walletType = walletType;
+    this.walletType = WalletTypeEnum.Seed;
   }
 
   /// Initialize the wallet given the options mnemonic, privateKey or publicKey variations
@@ -80,14 +76,13 @@ export class Wallet extends WatchWallet {
   /// This internal method is called by the various static constructors
   protected async initialize({
     name = "",
-    mnemonic = undefined,
-    derivationPath = undefined,
-    privateKey = undefined,
-    privateKeyWif = undefined,
-    publicKey = undefined,
-    publicKeyCompressed = undefined,
-    publicKeyHash = undefined,
-    address = undefined,
+    mnemonic,
+    derivationPath,
+    privateKey,
+    privateKeyWif,
+    publicKeyCompressed,
+    publicKeyHash,
+    address,
   }: WalletOptions = {}) {
     // seed wallet
     if (this.walletType === WalletTypeEnum.Seed && !mnemonic) {
@@ -100,20 +95,8 @@ export class Wallet extends WatchWallet {
         throw Error("Invalid mnemonic, must be 12 or 24 words");
       }
 
-      if (derivationPath) {
-        // @ts-ignore
-        this.derivationPath = derivationPath;
-
-        // If the derivation path is for the first account child, set the parent derivation path
-        const path = derivationPath.split("/");
-        if (path.slice(-2).join("/") == "0/0") {
-          // @ts-ignore
-          this.parentDerivationPath = path.slice(0, -2).join("/");
-        }
-      } else {
+      if (!derivationPath) {
         derivationPath = Config.DefaultParentDerivationPath + "/0/0";
-        // @ts-ignore
-        this.parentDerivationPath = Config.DefaultParentDerivationPath;
       }
 
       // @ts-ignore
@@ -128,26 +111,8 @@ export class Wallet extends WatchWallet {
         assumeValidity: true,
         throwErrors: true,
       });
-      const parentNode = deriveHdPath(rootNode, this.parentDerivationPath);
-
-      // @ts-ignore
-      this.parentXPubKey = assertSuccess(
-        encodeHdPublicKey({
-          node: deriveHdPublicNode(parentNode),
-          network: this.network === NetworkType.Mainnet ? "mainnet" : "testnet",
-        }),
-      ).hdPublicKey;
-
       const childNode = deriveHdPath(rootNode, this.derivationPath);
       privateKey = childNode.privateKey;
-    }
-
-    // privkey wallet
-    if (this.walletType === WalletTypeEnum.PrivateKey && !privateKey) {
-      // @ts-ignore
-      this.privateKey = generatePrivateKey(
-        () => generateRandomBytes(32) as Uint8Array,
-      );
     }
 
     if (privateKey?.length) {
@@ -162,46 +127,23 @@ export class Wallet extends WatchWallet {
       );
     }
 
-    // wif wallet
-    if (this.walletType === WalletTypeEnum.Wif && !privateKeyWif) {
-      // @ts-ignore
-      this.privateKey = generatePrivateKey(
-        () => generateRandomBytes(32) as Uint8Array,
-      );
-
-      privateKeyWif = encodePrivateKeyWif(
-        this.privateKey,
-        this.network === NetworkType.Regtest
-          ? NetworkType.Testnet
-          : this.network,
-      );
-    }
-
     if (privateKeyWif?.length) {
-      checkWifNetwork(privateKeyWif, this.network);
+      if (!this.privateKey) {
+        // @ts-ignore
+        this.privateKey = wifPrivateKey(privateKeyWif, this.network);
+      }
 
       // @ts-ignore
       this.privateKeyWif = privateKeyWif;
 
-      if (!this.privateKey) {
-        // @ts-ignore
-        this.privateKey = assertSuccess(
-          decodePrivateKeyWif(privateKeyWif),
-        ).privateKey;
-      }
-
-      publicKey = assertSuccess(
-        secp256k1.derivePublicKeyUncompressed(this.privateKey),
-      );
       publicKeyCompressed = assertSuccess(
-        secp256k1.compressPublicKey(publicKey!),
+        secp256k1.derivePublicKeyCompressed(this.privateKey),
       );
     }
 
     // rest cases are for watch wallets
     await super.initialize({
       name,
-      publicKey,
       publicKeyCompressed,
       publicKeyHash,
       address,
@@ -214,81 +156,55 @@ export class Wallet extends WatchWallet {
 
   //#region Statics
   /**
-   * fromId - create a wallet from encoded walletId string
+   * fromId - create a wallet from encoded walletId string: `seed:<network>:<mnemonic>[:<derivation
+   * path>]`, `wif:<network>:<wif>`, `privkey:<network>:<hex key>`, `watch:<network>:<address>` or
+   * `named:<network>:<name>`
    *
    * @param walletId   walletId options to steer the creation process
+   * @param options   the wallet's provider
    *
    * @returns wallet instantiated accordingly to the walletId rules
    */
   public static async fromId<T extends typeof Wallet>(
     this: T,
     walletId: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().fromId(walletId) as InstanceType<T>;
-  }
-
-  /**
-   * fromPrivateKey - create a wallet using the private key supplied in hex or Uint8Array
-   *
-   * @param wif   WIF encoded private key string
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromPrivateKey<T extends typeof Wallet>(
-    this: T,
-    privateKey: string | Uint8Array,
-  ): Promise<InstanceType<T>> {
-    return new this().fromPrivateKey(privateKey) as InstanceType<T>;
+    return this.create(options).fromId(walletId) as Promise<InstanceType<T>>;
   }
 
   /**
    * fromWIF - create a wallet using the private key supplied in `Wallet Import Format`
    *
    * @param wif   WIF encoded private key string
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet
    */
   public static async fromWIF<T extends typeof Wallet>(
     this: T,
     wif: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().fromWIF(wif) as InstanceType<T>;
-  }
-
-  /**
-   * fromSeed - create a wallet using the seed phrase and derivation path
-   *
-   * unless specified the derivation path m/44'/0'/0'/0/0 will be used
-   *
-   * @param mnemonic   BIP39 12 word seed phrase
-   * @param derivationPath BIP44 HD wallet derivation path to get a single the private key from hierarchy
-   *
-   * @returns instantiated wallet
-   */
-  public static async fromSeed<T extends typeof Wallet>(
-    this: T,
-    mnemonic: string,
-    derivationPath?: string,
-  ): Promise<InstanceType<T>> {
-    return new this().fromSeed(mnemonic, derivationPath) as InstanceType<T>;
+    return this.create(options).fromWIF(wif) as Promise<InstanceType<T>>;
   }
 
   /**
    * newRandom - create a random wallet
    *
-   * if `name` parameter is specified, the wallet will also be persisted to DB
+   * if `name` parameter is specified, the wallet is got or created as with `named(name)`
    *
    * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet
    */
   public static async newRandom<T extends typeof Wallet>(
     this: T,
     name: string = "",
-    dbName?: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().newRandom(name, dbName) as InstanceType<T>;
+    return this.create(options).newRandom(name) as Promise<InstanceType<T>>;
   }
   //#endregion Constructors
 
@@ -298,7 +214,14 @@ export class Wallet extends WatchWallet {
       walletId.split(":");
 
     if (this.network !== networkGiven) {
-      throw Error(`Network prefix ${networkGiven} to a ${this.network} wallet`);
+      throw networkPrefixError(walletType, networkGiven, this.network);
+    }
+
+    if (!arg1 && Object.hasOwn(missingValueMessages, walletType)) {
+      throw new InvalidWalletIdError(missingValueMessages[walletType], {
+        kind: walletType,
+        reason: "missing-value",
+      });
     }
 
     // "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6"
@@ -318,13 +241,8 @@ export class Wallet extends WatchWallet {
         return this.watchOnly(`${arg1}`);
 
       case WalletTypeEnum.Named:
-        if (arg2) {
-          // named:testnet:wallet_1:my_database
-          return this.named(arg1, arg2);
-        } else {
-          // named:testnet:wallet_1
-          return this.named(arg1);
-        }
+        // named:testnet:wallet_1, or named:testnet:wallet_1:bchtest
+        return this.fromNamedId(arg1, arg2);
 
       case WalletTypeEnum.Seed:
         if (arg2) {
@@ -335,7 +253,10 @@ export class Wallet extends WatchWallet {
         return this.fromSeed(arg1);
 
       default:
-        throw Error(`Unknown wallet type '${walletType}'`);
+        throw new InvalidWalletIdError(`Unknown wallet type '${walletType}'`, {
+          kind: walletIdKind(walletType),
+          reason: "kind",
+        });
     }
   };
 
@@ -344,7 +265,7 @@ export class Wallet extends WatchWallet {
     mnemonic: string,
     derivationPath?: string,
   ): Promise<this> {
-    if (!mnemonic.length) {
+    if (!mnemonic?.length) {
       throw Error("refusing to create wallet from empty mnemonic");
     }
 
@@ -360,6 +281,9 @@ export class Wallet extends WatchWallet {
   protected async fromPrivateKey(
     privateKey: string | Uint8Array,
   ): Promise<this> {
+    if (!privateKey?.length) {
+      throw Error("refusing to create wallet from empty private key");
+    }
     if (typeof privateKey === "string") {
       privateKey = hexToBin(privateKey);
     }
@@ -374,6 +298,11 @@ export class Wallet extends WatchWallet {
 
   // Initialize wallet from Wallet Import Format
   protected async fromWIF(privateKeyWif: string): Promise<this> {
+    // initialize would make a random key for an empty one
+    if (!privateKeyWif?.length) {
+      throw Error("refusing to create wallet from empty WIF");
+    }
+
     // @ts-ignore
     this.walletType = WalletTypeEnum.Wif;
 
@@ -386,12 +315,10 @@ export class Wallet extends WatchWallet {
    * newRandom (internal) if the wallet is named, get or create it; otherwise create a random
    * unnamed wallet
    * @param {string} name              name of the wallet
-   * @param {string} dbName            database name the wallet is stored in
    */
-  protected async newRandom(name: string, dbName?: string): Promise<this> {
-    dbName = dbName ? dbName : this.networkPrefix;
+  protected async newRandom(name: string): Promise<this> {
     if (name.length > 0) {
-      return this.named(name, dbName);
+      return this.named(name);
     } else {
       return this.initialize();
     }
@@ -426,7 +353,7 @@ export class Wallet extends WatchWallet {
    * @param  {string} cashaddr destination cash address
    * @param  {SendRequestOptionsI} options Options of the send requests
    *
-   * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
+   * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async sendMax(
     cashaddr: string,
@@ -435,34 +362,35 @@ export class Wallet extends WatchWallet {
     return this.sendMaxRaw(cashaddr, options, this.privateKey);
   }
 
+  protected override canSign(): boolean {
+    return this.privateKey !== undefined && this.privateKey.length > 0;
+  }
+
   /**
    * encodeTransaction Encode and sign a transaction given a list of sendRequests, options and estimate fees.
    * @param  {SendRequest[]} sendRequests SendRequests
    * @param  {boolean} discardChange=false
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  public async encodeTransaction(
+  protected async encodeTransaction(
     requests:
       | SendRequest
       | TokenSendRequest
       | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>
-      | SendRequestArray[],
+      | Array<SendRequest | TokenSendRequest | OpReturnData>,
     discardChange: boolean = false,
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
+    tokenBurns?: TokenBurnAllowance,
   ) {
     privateKey = privateKey ?? this.privateKey;
-
-    if (!privateKey) {
-      throw new Error(`Missing private key`);
-    }
 
     return super.encodeTransaction(
       requests,
       discardChange,
       options,
       privateKey,
+      tokenBurns,
     );
   }
 
@@ -473,8 +401,6 @@ export class Wallet extends WatchWallet {
  * Class to manage a testnet wallet.
  */
 export class TestNetWallet extends Wallet {
-  static networkPrefix = CashAddressNetworkPrefix.testnet;
-  static faucetServer = "https://rest-unstable.mainnet.cash";
   constructor(name = "") {
     super(name, NetworkType.Testnet);
   }
@@ -484,41 +410,7 @@ export class TestNetWallet extends Wallet {
  * Class to manage a regtest wallet.
  */
 export class RegTestWallet extends Wallet {
-  static networkPrefix = CashAddressNetworkPrefix.regtest;
   constructor(name = "") {
     super(name, NetworkType.Regtest);
-  }
-}
-
-/**
- * Class to manage a bitcoin cash wif wallet.
- */
-export class WifWallet extends Wallet {
-  static networkPrefix = CashAddressNetworkPrefix.mainnet;
-  static walletType = WalletTypeEnum.Wif;
-  constructor(name = "") {
-    super(name, NetworkType.Mainnet, WalletTypeEnum.Wif);
-  }
-}
-
-/**
- * Class to manage a testnet wif wallet.
- */
-export class TestNetWifWallet extends Wallet {
-  static networkPrefix = CashAddressNetworkPrefix.testnet;
-  static walletType = WalletTypeEnum.Wif;
-  constructor(name = "") {
-    super(name, NetworkType.Testnet, WalletTypeEnum.Wif);
-  }
-}
-
-/**
- * Class to manage a regtest wif wallet.
- */
-export class RegTestWifWallet extends Wallet {
-  static networkPrefix = CashAddressNetworkPrefix.regtest;
-  static walletType = WalletTypeEnum.Wif;
-  constructor(name = "") {
-    super(name, NetworkType.Regtest, WalletTypeEnum.Wif);
   }
 }

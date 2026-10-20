@@ -408,6 +408,66 @@ describe("history load", () => {
     return utxos;
   };
 
+  test("an HD wallet's history takes its balance from the utxos, with the concurrency asked for", async () => {
+    const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
+    const hd = await RegTestHDWallet.newRandom();
+    // 12 funding transactions at 6 heights, on 12 addresses
+    for (let i = 0; i < 12; i++) {
+      await miner.send({
+        cashaddr: hd.getDepositAddress(i),
+        value: 10000n + BigInt(i),
+      });
+      if (i % 2) await mine({ cashaddr: miner.getDepositAddress(), blocks: 1 });
+    }
+    await hd["waitForUpdate"]({ indices: { 0: 12 } });
+    const genesis = await hd.tokenGenesis({
+      cashaddr: hd.getTokenDepositAddress(12),
+      amount: 500n,
+      nft: { capability: "minting", commitment: "ab" },
+    });
+    // left in the mempool, spending coins of several addresses
+    await hd.send({ cashaddr: miner.getDepositAddress(), value: 25000n });
+
+    const provider = hd.provider as ElectrumNetworkProvider;
+    const { counts, restore } = countRequests(provider);
+    const history = await hd.getHistory({});
+    const withTwo = { ...counts.byMethod };
+    counts.maxInFlight = 0;
+    await hd.getHistory({ concurrency: 2 });
+    const maxInFlightWithTwo = counts.maxInFlight;
+    restore();
+
+    expect(counts.byMethod["blockchain.address.get_balance"]).toBeUndefined();
+    expect(withTwo["blockchain.address.get_balance"]).toBeUndefined();
+    expect(maxInFlightWithTwo).toBe(2);
+
+    const utxos = await hd.getUtxos();
+    expect(
+      utxos.some((utxo) => utxo.token?.category === genesis.categories![0]),
+    ).toBe(true);
+    const addresses = (
+      hd as unknown as { getUsedAddresses(): string[] }
+    ).getUsedAddresses();
+    // 13 deposit addresses and the change of the genesis and the send
+    expect(addresses.length).toBe(15);
+    const serverUtxos = await utxosFromServer(provider, addresses);
+    const serverBalance = sumUtxoValue(serverUtxos);
+    expect(sumUtxoValue(utxos)).toBe(serverBalance);
+    expect(history.length).toBe(14);
+    expect(history[0].blockHeight).toBe(0);
+    expect(history[0].balance).toBe(Number(serverBalance));
+
+    // the same items as from the server's utxos
+    const rawHistory = await hd.getRawHistory();
+    const reference = await getHistory({
+      addresses,
+      provider,
+      rawHistory,
+      utxos: serverUtxos,
+    });
+    expect(history).toEqual(reference);
+  });
+
   test("transactions and headers load side by side, under one bound", async () => {
     const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
     const bob = await RegTestWallet.newRandom();

@@ -1,13 +1,22 @@
+import { disconnectProviders, initProviders } from "#test/providers.js";
+import { liveTests } from "#test/live.js";
 import {
   BaseWallet,
-  Config,
   convert,
-  RegTestWallet,
+  namedWalletExists,
   SignedMessage,
   TestNetWallet,
   Wallet,
 } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
+import { RegTestWallet } from "../wallet/Wif.js";
+
+beforeAll(async () => {
+  await initProviders();
+});
+afterAll(async () => {
+  await disconnectProviders();
+});
 
 describe("Wallet should function in the browser", () => {
   beforeAll(() => {
@@ -48,11 +57,15 @@ describe("Wallet should function in the browser", () => {
     expect(result.slice(0, 13)).toBe("bitcoincash:q");
   });
 
-  test("Should get an empty balance from a mainnet wallet", async () => {
-    const w = await Wallet.newRandom();
-    const result = await w.getBalance();
-    expect(result).toBe(0n);
-  });
+  // reads the balance from the mainnet servers
+  test.skipIf(!liveTests)(
+    "Should get an empty balance from a mainnet wallet",
+    async () => {
+      const w = await Wallet.newRandom();
+      const result = await w.getBalance();
+      expect(result).toBe(0n);
+    },
+  );
 
   test("Should return deposit address from testnet wallet", async () => {
     const alice = await TestNetWallet.fromWIF(process.env.PRIVATE_WIF!);
@@ -62,8 +75,8 @@ describe("Wallet should function in the browser", () => {
 
   test("Should return watch testnet balance", async () => {
     if (process.env.ALICE_TESTNET_ADDRESS) {
-      const alice = await TestNetWallet.watchOnly(
-        process.env.ALICE_TESTNET_ADDRESS,
+      const alice = await TestNetWallet.fromId(
+        `watch:testnet:${process.env.ALICE_TESTNET_ADDRESS}`,
       );
       const result = await alice.getBalance();
       expect(result).toBeGreaterThan(0n);
@@ -86,8 +99,8 @@ describe("Wallet should function in the browser", () => {
 
   test("Should return testnet balance in usd", async () => {
     if (process.env.ALICE_TESTNET_ADDRESS) {
-      const alice = await TestNetWallet.watchOnly(
-        process.env.ALICE_TESTNET_ADDRESS,
+      const alice = await TestNetWallet.fromId(
+        `watch:testnet:${process.env.ALICE_TESTNET_ADDRESS}`,
       );
       const result = await alice.getBalance();
       expect(result).toBeGreaterThan(0);
@@ -119,25 +132,25 @@ describe("Wallet should function in the browser", () => {
     const alice = await RegTestWallet.fromId(
       `wif:regtest:${process.env.PRIVATE_WIF}`,
     );
-    const bob = await RegTestWallet.newRandom();
+    const bob = await RegTestWallet.named("Bob's random wallet");
     await alice.send([{ cashaddr: bob.cashaddr!, value: 3000n }]);
-    const result = await bob.sendMax(alice.cashaddr!);
-    expect(result.balance).toBe(0n);
+    await bob.sendMax(alice.cashaddr!);
+    expect(await bob.getBalance()).toBe(0n);
   });
 
   test("Store and replace a Regtest wallet", async () => {
     const name = `storereplace ${Math.random()}`;
 
-    const check1 = await RegTestWallet.namedExists(name);
+    const check1 = await namedWalletExists(name, "bchreg");
     const w1 = await RegTestWallet.named(name);
-    const check2 = await RegTestWallet.namedExists(name);
+    const check2 = await namedWalletExists(name, "bchreg");
 
     const seedId = (
-      await RegTestWallet.fromSeed(
-        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      await RegTestWallet.fromId(
+        "seed:regtest:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
       )
     ).toDbString();
-    const w3 = await RegTestWallet.replaceNamed(name, seedId);
+    await RegTestWallet.replaceNamed(name, seedId);
     const w4 = await RegTestWallet.named(name);
 
     const w5 = await RegTestWallet.replaceNamed(`${name}_nonexistent`, seedId);

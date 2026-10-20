@@ -1,53 +1,122 @@
-import { binToHex, CashAddressNetworkPrefix, sha256 } from "@bitauth/libauth";
+import {
+  binToHex,
+  cashAddressToLockingBytecode,
+  CashAddressNetworkPrefix,
+  decodeTransaction,
+  getDustThreshold,
+  lockingBytecodeToCashAddress,
+  sha256,
+} from "@bitauth/libauth";
 import {
   purgeWalletCache,
   WalletCache,
   walletCacheIdFromWalletId,
 } from "../cache/walletCache.js";
+import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
-import { HexHeaderI, NFTCapability, TxI, Utxo, UtxoId } from "../interface.js";
+import { HexHeaderI, NFTCapability, TxI, Utxo } from "../interface.js";
 import { getNetworkProvider } from "../network/default.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
 import {
+  amountNotMetError,
   buildEncodedTransaction,
   getFeeAmount,
   getFeeAmountSimple,
   getSuitableUtxos,
+  getTokenChangeRequests,
   placeholderPrivateKeyBin,
+  selectFungibleTokenUtxos,
 } from "../transaction/Wif.js";
-import { checkUtxos } from "../util/checkUtxos.js";
+import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
+import { asSendRequestObject } from "../util/asSendRequestObject.js";
+import { checkUtxos, toOutpoint } from "../util/checkUtxos.js";
+import { deriveLockscript } from "../util/deriveLockscript.js";
 import {
-  asSendRequestObject,
   getRuntimePlatform,
-  sumTokenAmounts,
   sumUtxoValue,
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
+import { tokenOutput } from "../util/tokenOutput.js";
 import { walletIdKind } from "../util/walletIdError.js";
+import { runCallback } from "../util/watch.js";
 import { WalletTypeEnum } from "./enum.js";
-import { InvalidWalletIdError } from "./errors.js";
-import { CancelFn, SendRequestOptionsI } from "./interface.js";
+import {
+  InsufficientFundsError,
+  InvalidRequestError,
+  InvalidWalletIdError,
+  UtxoNotAvailableError,
+  WatchOnlyError,
+} from "./errors.js";
+import {
+  CancelFn,
+  SendRequestOptionsI,
+  WalletFactoryOptions,
+} from "./interface.js";
 import {
   fromUtxoId,
   OpReturnData,
   SendRequest,
-  SendRequestArray,
   SendRequestType,
   SendResponse,
+  checkGenesisRequest,
+  toTokenAmount,
   TokenBurnRequest,
   TokenGenesisRequest,
   TokenMintRequest,
   TokenSendRequest,
+  toUtxoId,
 } from "./model.js";
+
+// How long a broadcast waits for the wallet's own coins to reflect it, once the server reports it
+const COIN_VIEW_TIMEOUT = 10_000;
 
 export const placeholderCashAddr =
   "bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqfnhks603";
-export const placeholderTokenAddr =
-  "bitcoincash:zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqweyg7usz";
+
+// A token coin a sweep spends for its satoshis comes back as it was, holding its dust limit only
+function sweptTokenReturn(coin: Utxo, cashaddr: string): TokenSendRequest {
+  const token = coin.token!;
+  const request = {
+    cashaddr,
+    category: token.category,
+    amount: token.amount,
+    nft: token.nft
+      ? { capability: token.nft.capability, commitment: token.nft.commitment }
+      : undefined,
+  };
+  const dustLimit = getDustThreshold(
+    tokenOutput(new TokenSendRequest({ ...request, value: 1n })),
+  );
+  return new TokenSendRequest({ ...request, value: dustLimit });
+}
+
+interface WalletSubscription {
+  subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>;
+  cancel: CancelFn;
+  // the provider `cancel` belongs to
+  provider: ElectrumNetworkProvider;
+}
+
+// a provider's cancel may be reached twice when a subscription is cancelled while it moves
+function once(cancel: CancelFn): CancelFn {
+  let done: Promise<void> | undefined;
+  return () => (done ??= cancel());
+}
+
+function checkProviderNetwork(
+  provider: ElectrumNetworkProvider,
+  network: NetworkType,
+) {
+  if ((provider.network as string) !== network) {
+    throw new Error(
+      `a ${provider.network} provider cannot serve a ${network} wallet`,
+    );
+  }
+}
 
 /**
  * A class to hold features used by all wallets
@@ -57,11 +126,21 @@ export class BaseWallet {
   public static StorageProvider?: typeof StorageProvider;
 
   readonly walletCache: WalletCache;
-  readonly provider: ElectrumNetworkProvider;
+  // set by the factory that made the wallet; a wallet made with `new` takes the global one on first use
+  private _provider?: ElectrumNetworkProvider;
   readonly network: NetworkType;
-  readonly walletType: WalletTypeEnum;
+  protected readonly walletType: WalletTypeEnum;
   name: string = "";
-  protected cancelFns: CancelFn[] = [];
+  private subscriptions = new Set<WalletSubscription>();
+  // Bumped by stop(), so that a subscription still being made when it ran is ended, not kept
+  private stops = 0;
+  private providerSwitch: Promise<void> = Promise.resolve();
+
+  /** The electrum provider this wallet talks to; change it with setProvider() */
+  public get provider(): ElectrumNetworkProvider {
+    this._provider ??= this.getNetworkProvider(this.network);
+    return this._provider;
+  }
 
   public get networkPrefix(): CashAddressNetworkPrefix {
     return prefixFromNetworkMap[this.network];
@@ -69,9 +148,8 @@ export class BaseWallet {
 
   //#region Accessors
   protected getNetworkProvider(
-    // @ts-ignore
     network: NetworkType = NetworkType.Mainnet,
-  ): any {
+  ): ElectrumNetworkProvider {
     return getNetworkProvider(network);
   }
 
@@ -114,13 +192,36 @@ export class BaseWallet {
   }
 
   /**
-   * getTokenDepositAddress - get a cashtoken aware wallet deposit address
-   *
-   * @returns The cashtoken aware deposit address as a string
+   * Token deposit addresses for `count` outputs that default to this wallet
+   * in one transaction; an HD wallet gives each its own unused address.
    */
-  public getTokenChangeAddress(): string {
-    // return this.tokenaddr;
-    throw Error("getTokenDepositAddress not implemented in BaseWallet");
+  protected getTokenDepositAddresses(count: number): string[] {
+    return Array.from({ length: count }, () => this.getTokenDepositAddress());
+  }
+
+  /**
+   * Change addresses for `count` outputs of one transaction; an HD wallet gives each its own
+   * unused address, a single-address wallet has the one.
+   */
+  protected getChangeAddresses(count: number): string[] {
+    return Array.from({ length: count }, () => this.getChangeAddress());
+  }
+
+  /**
+   * Where one transaction's change goes: the BCH change to one address and every token change
+   * output to another of its own, so that a coin later sent on from one of them shows nothing of
+   * the others. The token outputs take the addresses after the BCH change's in the order they ask
+   * for them, so the ones used stay contiguous. Every plan starts from the same unused addresses:
+   * a token operation that places its own token change agrees with its send on the BCH change's.
+   */
+  protected planChangeAddresses() {
+    const bch = this.getChangeAddresses(1)[0]!;
+    let taken = 1;
+    const token = (): string => {
+      taken += 1;
+      return toTokenaddr(this.getChangeAddresses(taken)[taken - 1]!);
+    };
+    return { bch, token };
   }
 
   // check if a given address belongs to this wallet
@@ -129,6 +230,11 @@ export class BaseWallet {
       address === this.getDepositAddress() ||
       address === this.getChangeAddress()
     );
+  }
+
+  /** Whether the coins of an address of this wallet reach its view, i.e. it is subscribed to */
+  protected watchesAddress(address: string): boolean {
+    return this.hasAddress(address);
   }
   //#endregion Accessors
 
@@ -142,34 +248,42 @@ export class BaseWallet {
   constructor(network = NetworkType.Mainnet) {
     this.network = network;
     this.walletType = WalletTypeEnum.Watch;
-    this.provider = this.getNetworkProvider(this.network);
     this.walletCache = new Map<string, { privateKey: Uint8Array }>();
   }
   //#endregion Constructors
 
   /**
-   * named (internal) get a named wallet from the database or create a new one.
-   * Note: this function should behave identically if
+   * The instance a factory initializes, on the provider of `options` or else the network's global
+   * one, so that its first subscription is made on the provider it keeps
+   */
+  protected static create<T extends typeof BaseWallet>(
+    this: T,
+    options: WalletFactoryOptions = {},
+  ): InstanceType<T> {
+    const wallet: BaseWallet = new this();
+    if (options.provider) {
+      checkProviderNetwork(options.provider, wallet.network);
+    }
+    wallet._provider =
+      options.provider ?? wallet.getNetworkProvider(wallet.network);
+    return wallet as InstanceType<T>;
+  }
+
+  /**
+   * named (internal) get a named wallet from the database of the wallet's network, or create a
+   * new one there.
    *
    * @param {string} name              name of the wallet
-   * @param {string} dbName            database name the wallet is stored in
-   * @param {boolean} forceNew         attempt to overwrite an existing wallet
    *
-   * @throws {Error} if forceNew is true and the wallet already exists
    * @returns a promise to a named wallet
    */
-  protected async named(
-    name: string,
-    dbName?: string,
-    forceNew: boolean = false,
-  ): Promise<this> {
-    if (name.length === 0) {
+  protected async named(name: string): Promise<this> {
+    if (!name?.length) {
       throw Error("Named wallets must have a non-empty name");
     }
     _checkContextSafety(this.network);
     this.name = name;
-    dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
-    const db = getStorageProvider(dbName);
+    const db = getStorageProvider(prefixFromNetworkMap[this.network]);
 
     // If there is a database, force saving or error
     if (db) {
@@ -177,11 +291,6 @@ export class BaseWallet {
       const savedWalletRecord = await db.getWallet(name);
       if (savedWalletRecord) {
         await db.close();
-        if (forceNew) {
-          throw Error(
-            `A wallet with the name ${name} already exists in ${dbName}`,
-          );
-        }
         const recoveredWallet = await this.fromId(savedWalletRecord.wallet);
         recoveredWallet.name = savedWalletRecord.name;
         return recoveredWallet;
@@ -207,22 +316,16 @@ export class BaseWallet {
    *
    * @param name   user friendly wallet alias
    * @param walletId walletId options to steer the creation process
-   * @param dbName name under which the wallet will be stored in the database
    *
    * @returns instantiated wallet
    */
-  protected async replaceNamed(
-    name: string,
-    walletId: string,
-    dbName?: string,
-  ): Promise<this> {
+  protected async replaceNamed(name: string, walletId: string): Promise<this> {
     if (name.length === 0) {
       throw Error("Named wallets must have a non-empty name");
     }
     _checkContextSafety(this.network);
     this.name = name;
-    dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
-    let db = getStorageProvider(dbName);
+    let db = getStorageProvider(prefixFromNetworkMap[this.network]);
 
     if (db) {
       await db.init();
@@ -244,31 +347,23 @@ export class BaseWallet {
   }
 
   /**
-   * namedExists - check if a named wallet already exists
-   *
-   * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
-   *
-   * @returns boolean
+   * The wallet a `named:<network>:<name>[:<database>]` walletId stands for. The database part is
+   * accepted only when it is the one of the wallet's network, the only one named() reads.
    */
-  protected async namedExists(name: string, dbName?: string): Promise<boolean> {
-    if (name.length === 0) {
-      throw Error("Named wallets must have a non-empty name");
-    }
-    _checkContextSafety(this.network);
-    dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
-    let db = getStorageProvider(dbName);
-
-    if (db) {
-      await db.init();
-      let savedWalletRecord = await db.getWallet(name);
-      await db.close();
-      return savedWalletRecord !== undefined;
-    } else {
-      throw Error(
-        "No database was available or configured to store the named wallet.",
+  protected fromNamedId(name: string, dbName?: string): Promise<this> {
+    if (!name) {
+      throw new InvalidWalletIdError(
+        "Named wallets must have a non-empty name",
+        { kind: WalletTypeEnum.Named, reason: "missing-value" },
       );
     }
+    if (dbName && dbName !== prefixFromNetworkMap[this.network]) {
+      throw new InvalidWalletIdError(
+        `a named walletId of a ${this.network} wallet can only name the database ${prefixFromNetworkMap[this.network]}`,
+        { kind: WalletTypeEnum.Named, reason: "database" },
+      );
+    }
+    return this.named(name);
   }
 
   protected async initialize(): Promise<this> {
@@ -287,37 +382,20 @@ export class BaseWallet {
   //#endregion Serialization
 
   /**
-   *  explorerUrl   Web url to a transaction on a block explorer
-   *
-   * @param txId   transaction Id
-   * @returns   Url string
-   */
-  public explorerUrl(txId: string) {
-    const explorerUrlMap = {
-      mainnet: "https://blockchair.com/bitcoin-cash/transaction/",
-      testnet: "https://www.blockchain.com/bch-testnet/tx/",
-      regtest: "",
-    };
-
-    return explorerUrlMap[this.network] + txId;
-  }
-
-  /**
-   * named - create a named wallet
+   * named - get a named wallet from the database of the class's network, or create and store a
+   * new random one under that name
    *
    * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
-   * @param force  force recreate wallet in the database if a record already exist
+   * @param options   the wallet's provider
    *
    * @returns instantiated wallet
    */
   public static async named<T extends typeof BaseWallet>(
     this: T,
     name: string,
-    dbName?: string,
-    force?: boolean,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().named(name, dbName, force) as InstanceType<T>;
+    return this.create(options).named(name) as Promise<InstanceType<T>>;
   }
 
   /**
@@ -328,35 +406,22 @@ export class BaseWallet {
    *
    * @param name   user friendly wallet alias
    * @param walletId walletId options to steer the creation process
-   * @param dbName name under which the wallet will be stored in the database
+   * @param options   the wallet's provider
    *
-   * @returns instantiated wallet
+   * @returns instantiated wallet, stored in the database of the class's network
    */
   public static async replaceNamed<T extends typeof BaseWallet>(
     this: T,
     name: string,
     walletId: string,
-    dbName?: string,
+    options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
-    return new this().replaceNamed(name, walletId, dbName) as InstanceType<T>;
+    return this.create(options).replaceNamed(name, walletId) as Promise<
+      InstanceType<T>
+    >;
   }
 
-  /**
-   * namedExists - check if a named wallet already exists
-   *
-   * @param name   user friendly wallet alias
-   * @param dbName name under which the wallet will be stored in the database
-   *
-   * @returns boolean
-   */
-  public static async namedExists(
-    name: string,
-    dbName?: string,
-  ): Promise<boolean> {
-    return new this().namedExists(name, dbName);
-  }
-
-  protected fromId(walletId: string): Promise<this> {
+  protected fromId(_walletId: string): Promise<this> {
     throw Error("fromId not implemented in BaseWallet");
   }
 
@@ -376,78 +441,166 @@ export class BaseWallet {
   }
 
   /**
-   * Track a cancel function so it can be cancelled by stop()
-   * Returns a wrapped cancel function that also removes itself from tracking
+   * Subscribe through the wallet's provider. The subscription follows the wallet to a new
+   * provider on setProvider() and ends on stop() or when the returned function is called.
    */
-  protected trackCancelFn(cancelFn: CancelFn): CancelFn {
-    this.cancelFns.push(cancelFn);
+  protected async subscribe(
+    subscribe: (provider: ElectrumNetworkProvider) => Promise<CancelFn>,
+  ): Promise<CancelFn> {
+    const stops = this.stops;
+    let provider = this.provider;
+    const subscription = {
+      subscribe,
+      provider,
+      cancel: once(await subscribe(provider)),
+    };
+    // setProvider ran while subscribing
+    while (provider !== this.provider && stops === this.stops) {
+      await subscription.cancel();
+      provider = this.provider;
+      subscription.provider = provider;
+      subscription.cancel = once(await subscribe(provider));
+    }
+    if (stops !== this.stops) {
+      await subscription.cancel();
+      return subscription.cancel;
+    }
+    this.subscriptions.add(subscription);
     return async () => {
-      const index = this.cancelFns.indexOf(cancelFn);
-      if (index !== -1) {
-        this.cancelFns.splice(index, 1);
+      if (this.subscriptions.delete(subscription)) {
+        await subscription.cancel();
       }
-      await cancelFn();
     };
   }
 
   /**
-   * Stop all active subscriptions on this wallet
+   * Switch the wallet to another electrum provider of the same network: its subscriptions (an
+   * HD wallet's address discovery included) are made again on the new provider and ended on
+   * the old one, and deliver the new server's current state as they start. The old provider is
+   * left connected, as other wallets may still use it: once this resolves, the caller disconnects
+   * it (`provider.disconnect()`) if nothing else uses it. Each moved status watch fires again, so a
+   * balance callback may get an unchanged value. If the new provider cannot connect or a
+   * subscription cannot be made there, the wallet stays on the old provider and this rejects; if
+   * the old provider fails as well while moving them back, some subscriptions stay on the new one
+   * until setProvider is called again.
+   */
+  public async setProvider(provider: ElectrumNetworkProvider): Promise<void> {
+    checkProviderNetwork(provider, this.network);
+    const move = this.providerSwitch.then(() =>
+      this.moveSubscriptions(provider),
+    );
+    this.providerSwitch = move.catch(() => {});
+    await move;
+  }
+
+  private async moveSubscriptions(provider: ElectrumNetworkProvider) {
+    // an unreachable server rejects here, before anything moved
+    await provider.connect();
+    // not the getter, which would create the global provider for a wallet made with `new`
+    const previous = this._provider;
+    this._provider = provider;
+    try {
+      await this.settleSubscriptions();
+    } catch (error) {
+      this._provider = previous;
+      // what did move is left on the new provider if this fails, and a later switch moves it
+      await this.settleSubscriptions().catch(() => {});
+      throw error;
+    }
+  }
+
+  // Make every subscription live on the current provider, starting the new one before ending the old
+  private async settleSubscriptions() {
+    const provider = this.provider;
+    const stale = [...this.subscriptions].filter(
+      (subscription) => subscription.provider !== provider,
+    );
+    const results = await Promise.allSettled(
+      stale.map(async (subscription) => {
+        const cancel = once(await subscription.subscribe(provider));
+        const cancelPrevious = subscription.cancel;
+        subscription.cancel = cancel;
+        subscription.provider = provider;
+        await cancelPrevious();
+        // cancelled while moving
+        if (!this.subscriptions.has(subscription)) {
+          await cancel();
+        }
+      }),
+    );
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure) throw failure.reason;
+  }
+
+  /**
+   * Stop all active subscriptions on this wallet, also those still being made
    */
   public async stop(): Promise<void> {
-    const fns = this.cancelFns.splice(0);
-    await Promise.all(fns.map((fn) => fn()));
+    this.stops++;
+    const subscriptions = [...this.subscriptions];
+    this.subscriptions.clear();
+    await Promise.all(subscriptions.map((s) => s.cancel()));
   }
 
   /**
    * Watch wallet for any activity (status changes)
    * This is the foundation for watchWalletBalance and watchWalletTransactions
-   * @param callback - Called when  the wallet has a status change
+   * @param callback - Called when  the wallet has a status change; its errors go to console.error
    * @returns Cancel function to stop watching
    */
-  public async watchStatus(
-    callback: (status: string | null, address: string) => void,
+  protected async watchStatus(
+    callback: (status: string | null, address: string) => unknown,
   ): Promise<CancelFn> {
-    const cancelFn = await this.provider.watchAddressStatus(
-      this.getDepositAddress(),
-      (status) => callback(status, this.getDepositAddress()),
+    return this.subscribe((provider) =>
+      provider.watchAddressStatus(this.getDepositAddress(), (status) =>
+        runCallback(() => callback(status, this.getDepositAddress())),
+      ),
     );
-    return this.trackCancelFn(cancelFn);
   }
 
   /**
-   * No-op for single-address wallets. HDWallet overrides this to wait for
-   * depositIndex/changeIndex advancement.
+   * No-op for single-address wallets. HDWallet overrides this to wait for its per-branch
+   * `indices` to advance.
    */
-  public async waitForUpdate(
+  protected async waitForUpdate(
     _options: {
-      depositIndex?: number;
-      changeIndex?: number;
+      indices?: Record<number, number>;
       timeout?: number;
     } = {},
   ): Promise<void> {}
 
   // sets up a callback to be called upon wallet's balance change
   // can be cancelled by calling the function returned from this one
+  // a failed balance read goes to console.error, as the callback's own errors do
   public async watchBalance(
-    callback: (balance: bigint) => void,
+    callback: (balance: bigint) => unknown,
   ): Promise<CancelFn> {
     return this.watchStatus(async () => {
       const balance = await this.getBalance();
-      callback(balance);
+      await callback(balance);
     });
   }
 
   /**
-   * Watch wallet for new transactions
-   * @param callback - Called with new transaction hashes when they appear
+   * Watch wallet for new transactions. Transactions already in the history
+   * when the watch starts are not reported; each new one is reported once.
+   * @param callback - Called with new transaction hashes when they appear; its errors, and a
+   * failed history read, go to console.error
    * @returns Cancel function to stop watching
    */
-  public async watchTransactionHashes(
-    callback: (txHash: string) => void,
+  protected async watchTransactionHashes(
+    callback: (txHash: string) => unknown,
   ): Promise<CancelFn> {
+    // Seeded before subscribing so the history at setup is not reported as new
+    const existing = await this.getRawHistory();
     const seenTxHashes = new Set<string>();
-
     let topHeight = 0;
+    for (const tx of existing) {
+      seenTxHashes.add(tx.tx_hash);
+      if (tx.height > topHeight) {
+        topHeight = tx.height;
+      }
+    }
 
     return this.watchStatus(async () => {
       const history = (await this.getRawHistory(topHeight)).sort((a, b) =>
@@ -467,104 +620,269 @@ export class BaseWallet {
         }
       }
 
-      if (newTxHashes.length > 0) {
-        newTxHashes.forEach((txHash) => callback(txHash));
+      // each on its own, so that one failing does not keep the others from being reported
+      for (const txHash of newTxHashes) {
+        runCallback(() => callback(txHash));
       }
     });
   }
 
   /**
    * Watch wallet for new transactions
-   * @param callback - Called with new transaction hashes when they appear
+   * @param callback - Called with each new transaction; its errors, and a failed read of the
+   * transaction or the history, go to console.error
    * @returns Cancel function to stop watching
    */
-  public async watchTransactions(
-    callback: (transaction: ElectrumRawTransaction) => void,
+  protected async watchTransactions(
+    callback: (transaction: ElectrumRawTransaction) => unknown,
   ): Promise<CancelFn> {
     return this.watchTransactionHashes(async (txHash: string) => {
       const tx = await this.provider.getRawTransactionObject(txHash);
-      callback(tx);
+      await callback(tx);
     });
   }
 
+  /**
+   * Watch wallet for new transactions with token outputs
+   * @param callback - Called with each new transaction that has a token output; its errors, and a
+   * failed read of the transaction or the history, go to console.error
+   * @returns Cancel function to stop watching
+   */
   public async watchTokenTransactions(
-    callback: (tx: ElectrumRawTransaction) => void,
+    callback: (tx: ElectrumRawTransaction) => unknown,
   ): Promise<CancelFn> {
     return this.watchTransactions(
       async (transaction: ElectrumRawTransaction) => {
         if (transaction.vout.some((val) => val.tokenData)) {
-          callback(transaction);
+          await callback(transaction);
         }
       },
     );
   }
 
-  protected async _getMaxAmountToSend(
-    params: {
-      outputCount?: number;
-      options?: SendRequestOptionsI;
-      privateKey?: Uint8Array;
-    } = {
-      outputCount: 1,
-      options: {},
-    },
-  ): Promise<{ value: bigint; utxos: Utxo[] }> {
-    // get inputs
-    let utxos: Utxo[];
-    const allUtxos = await this.getUtxos();
-    if (params.options && params.options.utxoIds) {
-      utxos = checkUtxos(
-        params.options.utxoIds.map((utxoId: Utxo | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        allUtxos,
+  /**
+   * The coins a spend may use: the wallet's current coins, narrowed to `utxoIds` when given (in
+   * their order), their token coins narrowed to `tokenUtxoIds` when given, minus `excludeUtxoIds`
+   * and the coins on `excludeAddresses`; and `ensureUtxos` resolved to coins of that pool.
+   * Coins are compared by outpoint, the txid in either case, so a caller's copy of a coin stands
+   * for the wallet's. The token operations pick their inputs themselves and do not spend
+   * `ensureUtxos`, but a coin named there outside the pool is refused for them too.
+   */
+  protected async getSpendPool(
+    options?: SendRequestOptionsI,
+  ): Promise<{ pool: Utxo[]; ensureUtxos: Utxo[] }> {
+    // an id the wallet does not hold is a reservation that outlived its coin and is ignored, but
+    // one that cannot be an outpoint is a mistake, and ignoring it would spend the coin it names
+    const toListedOutpoint =
+      (field: "excludeUtxoIds" | "tokenUtxoIds") => (utxoId: Utxo | string) => {
+        let txid: unknown;
+        let vout: unknown;
+        if (typeof utxoId !== "string") {
+          ({ txid, vout } = utxoId);
+        } else if (/^[0-9a-f]{64}:\d+(:\d+)?$/i.test(utxoId)) {
+          ({ txid, vout } = fromUtxoId(utxoId));
+        }
+        if (
+          typeof txid !== "string" ||
+          !/^[0-9a-f]{64}$/i.test(txid) ||
+          typeof vout !== "number" ||
+          !Number.isSafeInteger(vout) ||
+          vout < 0
+        ) {
+          throw new InvalidRequestError(
+            `An ${field} entry is not a txid:vout outpoint`,
+            { field, value: utxoId },
+          );
+        }
+        return toOutpoint({ txid, vout });
+      };
+    const excluded = new Set(
+      (options?.excludeUtxoIds ?? []).map(toListedOutpoint("excludeUtxoIds")),
+    );
+    // An address is compared by its locking bytecode, so its token-aware and plain forms are one.
+    // One that does not decode is a mistake, and ignoring it would spend the coins it names.
+    const lockingBytecodeOf = (address: string) => {
+      const decoded = cashAddressToLockingBytecode(address);
+      if (typeof decoded === "string") return undefined;
+      return binToHex(decoded.bytecode);
+    };
+    const excludedBytecodes = new Set(
+      (options?.excludeAddresses ?? []).map((address) => {
+        const bytecode =
+          typeof address === "string" ? lockingBytecodeOf(address) : undefined;
+        if (bytecode === undefined) {
+          throw new InvalidRequestError(
+            "An excludeAddresses entry is not a cash address",
+            { field: "excludeAddresses", value: address },
+          );
+        }
+        return bytecode;
+      }),
+    );
+    // checked against the coins held now, so one that arrived since the caller looked is out too
+    const onExcludedAddress = (utxo: Utxo) =>
+      excludedBytecodes.size > 0 &&
+      excludedBytecodes.has(lockingBytecodeOf(utxo.address) ?? "");
+    let tokenAllowed: Set<string> | undefined;
+    if (options?.tokenUtxoIds) {
+      tokenAllowed = new Set(
+        options.tokenUtxoIds.map(toListedOutpoint("tokenUtxoIds")),
       );
-    } else {
-      utxos = allUtxos.filter((utxo) => !utxo.token);
     }
 
-    // Get current height to assure recently mined coins are not spent.
-    const bestHeight = await this.provider.getBlockHeight();
-
-    // simulate outputs using the sender's address
-    const sendRequest = new SendRequest({
-      cashaddr: placeholderCashAddr,
-      value: 100n,
+    const walletUtxos = await this.getUtxos();
+    let pool = walletUtxos;
+    if (options?.utxoIds) {
+      pool = checkUtxos(
+        options.utxoIds.map((utxoId: Utxo | string) =>
+          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
+        ),
+        walletUtxos,
+      );
+    }
+    // a coin listed twice is one coin: the first listing keeps its place in the caller's order
+    const seen = new Set<string>();
+    pool = pool.filter((utxo) => {
+      const utxoId = toOutpoint(utxo);
+      if (excluded.has(utxoId) || seen.has(utxoId)) return false;
+      if (onExcludedAddress(utxo)) return false;
+      if (utxo.token && tokenAllowed && !tokenAllowed.has(utxoId)) return false;
+      seen.add(utxoId);
+      return true;
     });
-    const sendRequests = Array(params.outputCount)
-      .fill(0)
-      .map(() => sendRequest);
 
-    const fundingUtxos = await getSuitableUtxos(
-      utxos,
-      undefined,
-      bestHeight,
-      sendRequests,
-    );
+    const poolMap = new Map(pool.map((utxo) => [toOutpoint(utxo), utxo]));
+    const walletIds = new Set(walletUtxos.map(toOutpoint));
+    const ensureUtxos = (options?.ensureUtxos ?? []).map((utxo) => {
+      const utxoId = toOutpoint(utxo);
+      const inPool = poolMap.get(utxoId);
+      if (inPool) return inPool;
+      if (excluded.has(utxoId)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos is excluded by excludeUtxoIds`,
+          { utxoId, reason: "excluded" },
+        );
+      }
+      const held = walletUtxos.find((val) => toOutpoint(val) === utxoId);
+      if (held && onExcludedAddress(held)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos is on an address in excludeAddresses`,
+          { utxoId, reason: "excluded" },
+        );
+      }
+      if (!walletIds.has(utxoId)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos not found in wallet`,
+          { utxoId, reason: "not-found" },
+        );
+      }
+      if (tokenAllowed && !tokenAllowed.has(utxoId)) {
+        throw new UtxoNotAvailableError(
+          `Utxo ${utxoId} in ensureUtxos is not among tokenUtxoIds`,
+          { utxoId, reason: "not-in-tokenUtxoIds" },
+        );
+      }
+      throw new UtxoNotAvailableError(
+        `Utxo ${utxoId} in ensureUtxos is not among utxoIds`,
+        { utxoId, reason: "not-in-utxoIds" },
+      );
+    });
+
+    return { pool, ensureUtxos };
+  }
+
+  protected async _getMaxAmountToSend(options?: SendRequestOptionsI): Promise<{
+    value: bigint;
+    fee: bigint;
+    utxos: Utxo[];
+    ensureUtxos: Utxo[];
+    tokenUtxos: Utxo[];
+  }> {
+    // get inputs
+    const { pool, ensureUtxos } = await this.getSpendPool(options);
+    // A plain max send has no token outputs to return a token coin's tokens on, so it leaves
+    // token coins out, listed in utxoIds or not; one it is told to spend it refuses
+    const tokenCoin = ensureUtxos.find((utxo) => utxo.token);
+    if (tokenCoin && !options?.sweepTokenSatoshis) {
+      throw new InvalidRequestError(
+        `Utxo ${toUtxoId(tokenCoin)} in ensureUtxos holds tokens, which a max send only spends with sweepTokenSatoshis`,
+        { field: "ensureUtxos", value: toUtxoId(tokenCoin) },
+      );
+    }
+    const utxos = pool.filter((utxo) => !utxo.token);
+
+    // the one output of a sendMax, sized as a P2PKH output
+    const sendRequests = [
+      new SendRequest({ cashaddr: placeholderCashAddr, value: 100n }),
+    ];
+
+    const fundingUtxos = await getSuitableUtxos(utxos, undefined, sendRequests);
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
+
+    // A token coin is swept when its satoshis above its dust limit pay for more than spending it
+    // and recreating its output, both priced by the estimate the max itself is priced with, or
+    // when ensureUtxos names it
+    const tokenUtxos: Utxo[] = [];
+    const tokenReturns: TokenSendRequest[] = [];
+    if (options?.sweepTokenSatoshis) {
+      const placeholderTokenAddr = toTokenaddr(placeholderCashAddr);
+      const estimate = (coins: Utxo[], requests: TokenSendRequest[]) =>
+        getFeeAmountSimple({
+          utxos: coins,
+          sendRequests: requests,
+          sourceAddress: placeholderCashAddr,
+          relayFeePerByteInSatoshi,
+        });
+      const overhead = await estimate([], []);
+      const ensured = new Set(ensureUtxos.map(toUtxoId));
+      for (const coin of pool.filter((utxo) => utxo.token)) {
+        const tokenReturn = sweptTokenReturn(coin, placeholderTokenAddr);
+        const cost = (await estimate([coin], [tokenReturn])) - overhead;
+        if (
+          ensured.has(toUtxoId(coin)) ||
+          coin.satoshis - tokenReturn.value! > cost
+        ) {
+          tokenUtxos.push(coin);
+          tokenReturns.push(tokenReturn);
+        }
+      }
+    }
+
     const fee = await getFeeAmountSimple({
-      utxos: fundingUtxos,
-      sendRequests: sendRequests,
+      utxos: [...fundingUtxos, ...tokenUtxos],
+      sendRequests: [...sendRequests, ...tokenReturns],
       sourceAddress: placeholderCashAddr,
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
     });
-    const spendableAmount = sumUtxoValue(fundingUtxos);
+    const spendableAmount =
+      sumUtxoValue(fundingUtxos) +
+      sumUtxoValue(tokenUtxos) -
+      tokenReturns.reduce((sum, request) => sum + request.value!, 0n);
 
     let result = spendableAmount - fee;
     if (result < 0n) {
       result = 0n;
     }
 
-    return { value: result, utxos: fundingUtxos };
+    return {
+      value: result,
+      fee,
+      utxos: fundingUtxos,
+      // the token coins it names are among tokenUtxos
+      ensureUtxos: ensureUtxos.filter((utxo) => !utxo.token),
+      tokenUtxos,
+    };
   }
 
+  /**
+   * The amount a `sendMax` with these options sends: the BCH coins of the pool minus the fee of
+   * spending them all to one output, plus with `sweepTokenSatoshis` what the token coins worth
+   * sweeping hold above their dust limit.
+   */
   public async getMaxAmountToSend(
-    params: { outputCount?: number; options?: SendRequestOptionsI } = {
-      outputCount: 1,
-      options: {},
-    },
+    options?: SendRequestOptionsI,
   ): Promise<bigint> {
-    const { value: result } = await this._getMaxAmountToSend(params);
+    const { value: result } = await this._getMaxAmountToSend(options);
 
     return result;
   }
@@ -572,18 +890,14 @@ export class BaseWallet {
   /**
    * send Send some amount to an address
    * this function processes the send requests, encodes the transaction, sends it to the network
-   * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
-   *
-   * This is a first class function with REST analog, maintainers should strive to keep backward-compatibility
-   *
+   * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async send(
     requests:
       | SendRequest
       | TokenSendRequest
       | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>
-      | SendRequestArray[],
+      | Array<SendRequest | TokenSendRequest | OpReturnData>,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
     const { encodedTransaction, categories } = await this.encodeTransaction(
@@ -595,12 +909,14 @@ export class BaseWallet {
   }
 
   /**
-   * sendMax Send all available funds to a destination cash address
+   * sendMax Send all available funds to a destination cash address. Refuses with
+   * InsufficientFundsError when the max, the fee taken off, is below the dust limit of the
+   * destination's locking bytecode.
    *
    * @param  {string} cashaddr destination cash address
    * @param  {SendRequestOptionsI} options Options of the send requests
    *
-   * @returns (depending on the options parameter) the transaction id, new address balance and a link to the transaction on the blockchain explorer
+   * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async sendMax(
     cashaddr: string,
@@ -622,27 +938,48 @@ export class BaseWallet {
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
   ): Promise<SendResponse> {
-    const { value: maxSpendableAmount, utxos } = await this._getMaxAmountToSend(
-      {
-        outputCount: 1,
-        options: options,
-        privateKey: privateKey,
-      },
-    );
+    if (!privateKey) this.assertCanSign();
+    const {
+      value: maxSpendableAmount,
+      fee,
+      utxos,
+      ensureUtxos,
+      tokenUtxos,
+    } = await this._getMaxAmountToSend(options);
 
-    if (!options) {
-      options = {};
+    // an output below its dust limit is refused by the network, so not built at all
+    const dustLimit = getDustThreshold({
+      lockingBytecode: deriveLockscript(cashaddr),
+      valueSatoshis: maxSpendableAmount,
+    });
+    if (maxSpendableAmount < dustLimit) {
+      const available = sumUtxoValue(utxos);
+      throw amountNotMetError(fee + dustLimit, available);
     }
 
-    options.utxoIds = utxos;
+    // pinned as well: the selection would stop at the coins that cover the amount, leaving the
+    // ones worth less than their own input fee unspent and their share of the fee to the miners.
+    // The caller's ensureUtxos, all BCH coins of the pool and so among them, go first as in send.
+    const ensureIds = new Set(ensureUtxos.map(toUtxoId));
+    const inputs = [
+      ...ensureUtxos,
+      ...utxos.filter((utxo) => !ensureIds.has(toUtxoId(utxo))),
+      ...tokenUtxos,
+    ];
+    options = { ...options, utxoIds: inputs, ensureUtxos: inputs };
 
     const sendRequest = new SendRequest({
       cashaddr: cashaddr,
       value: maxSpendableAmount,
     });
+    // each swept coin's tokens come back on a change address of its own
+    const changeAddresses = this.planChangeAddresses();
+    const tokenReturns = tokenUtxos.map((coin) =>
+      sweptTokenReturn(coin, changeAddresses.token()),
+    );
 
     const { encodedTransaction, categories } = await this.encodeTransaction(
-      [sendRequest],
+      [sendRequest, ...tokenReturns],
       true,
       options,
       privateKey,
@@ -655,33 +992,48 @@ export class BaseWallet {
     categories: string[],
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
-    const resp = new SendResponse({});
-    resp.categories = categories;
-
+    const transaction = binToHex(encodedTransaction);
     if (options?.broadcast === false) {
-      resp.transaction = binToHex(encodedTransaction);
-      resp.txId = binToHex(
+      const txId = binToHex(
         sha256.hash(sha256.hash(encodedTransaction)).reverse(),
       );
-    } else {
-      // the wallet's own view of its coins includes the transaction when the send returns
-      const [_, txId] = await Promise.all([
-        this.waitForUpdate({ timeout: 2500 }),
-        this.submitTransaction(encodedTransaction),
-      ]);
-
-      resp.txId = txId;
-      resp.explorerUrl = this.explorerUrl(resp.txId);
-
-      if (
-        options?.queryBalance === undefined ||
-        options?.queryBalance === true
-      ) {
-        resp.balance = await this.getBalance();
-      }
+      return { txId, transaction, categories };
     }
 
-    return resp;
+    const txId = await this.submitTransaction(encodedTransaction);
+    return { txId, transaction, categories };
+  }
+
+  // A token operation's send: the burns the operation allows reach the token conservation check.
+  // They are a parameter, not an option, so that no options object can allow a burn on a send.
+  protected async sendTokenOperation(
+    requests: Array<SendRequest | TokenSendRequest | OpReturnData>,
+    options: SendRequestOptionsI,
+    tokenBurns: TokenBurnAllowance | undefined,
+  ): Promise<SendResponse> {
+    const { encodedTransaction, categories } = await this.encodeTransaction(
+      requests,
+      undefined,
+      options,
+      undefined,
+      tokenBurns,
+    );
+    return this._send(encodedTransaction, categories, options);
+  }
+
+  /** Whether the wallet holds the keys to sign its own coins' inputs. */
+  protected canSign(): boolean {
+    return false;
+  }
+
+  // Every spend asks first, so that a watch-only wallet is refused before it reads or builds
+  // anything; the placeholder key the builder falls back on only sizes fee estimates
+  private assertCanSign(): void {
+    if (!this.canSign()) {
+      throw new WatchOnlyError(
+        "A watch-only wallet cannot sign: it holds no private key",
+      );
+    }
   }
 
   /**
@@ -695,36 +1047,30 @@ export class BaseWallet {
       | SendRequest
       | TokenSendRequest
       | OpReturnData
-      | Array<SendRequest | TokenSendRequest | OpReturnData>
-      | SendRequestArray[],
+      | Array<SendRequest | TokenSendRequest | OpReturnData>,
     discardChange: boolean = false,
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
+    tokenBurns?: TokenBurnAllowance,
   ) {
+    if (!privateKey) this.assertCanSign();
     let sendRequests = asSendRequestObject(requests);
-
-    let changeAddress: string;
-    if (options?.changeAddress) {
-      changeAddress = options.changeAddress;
-    } else {
-      changeAddress = this.getChangeAddress();
-    }
 
     let checkTokenQuantities: boolean = true;
     if (options?.checkTokenQuantities === false) {
       checkTokenQuantities = false;
     }
-
-    // get inputs from options or query all inputs
-    let utxos: Utxo[] = await this.getUtxos();
-    if (options && options.utxoIds) {
-      utxos = checkUtxos(
-        options.utxoIds.map((utxoId: Utxo | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        utxos,
-      );
+    // A send burns no token, checkTokenQuantities or not: that option turns off the token input
+    // matching and change, never the conservation check. Only a token operation says what it may
+    // burn, and tokenBurn alone allows any.
+    if (!tokenBurns) {
+      tokenBurns = {};
     }
+
+    const spendPool = await this.getSpendPool(options);
+    let utxos = spendPool.pool;
+    // the pool's copies: every coin the send spends comes from the pool
+    options = { ...options, ensureUtxos: spendPool.ensureUtxos };
 
     // filter out token utxos if there are no token requests
     if (
@@ -734,135 +1080,170 @@ export class BaseWallet {
       utxos = utxos.filter((val) => !val.token);
     }
 
-    const addTokenChangeOutputs = (
-      inputs: Utxo[],
-      outputs: SendRequestType[],
-    ) => {
-      // Allow for implicit token burn if the total amount sent is less than user had
-      // allow for token genesis, creating more tokens than we had before (0)
-      if (!checkTokenQuantities) {
-        return;
-      }
-      const allTokenInputs = inputs.filter((val) => val.token);
-      const allTokenOutputs = outputs.filter(
-        (val) => val instanceof TokenSendRequest,
-      ) as TokenSendRequest[];
-      const categories = allTokenOutputs
-        .map((val) => val.category)
-        .filter((val, idx, arr) => arr.indexOf(val) === idx);
-      for (let category of categories) {
-        const tokenInputs = allTokenInputs.filter(
-          (val) => val.token?.category === category,
-        );
-        const inputAmountSum = tokenInputs.reduce(
-          (prev, cur) => prev + cur.token!.amount,
-          0n,
-        );
-        const tokenOutputs = allTokenOutputs.filter(
-          (val) => val.category === category,
-        );
-        const outputAmountSum = tokenOutputs.reduce(
-          (prev, cur) => prev + cur.amount,
-          0n,
-        );
-
-        const diff = inputAmountSum - outputAmountSum;
-        if (diff < 0) {
-          throw new Error("Not enough token amount to send");
-        }
-        if (diff >= 0) {
-          let available = 0n;
-          let change = 0n;
-          const ensureUtxos: Utxo[] = [];
-          for (const token of tokenInputs.filter((val) => val.token?.amount)) {
-            ensureUtxos.push(token);
-            available += token.token!.amount;
-            if (available >= outputAmountSum) {
-              change = available - outputAmountSum;
-              //break;
-            }
-          }
-          if (ensureUtxos.length) {
-            if (!options) {
-              options = {};
-            }
-            options!.ensureUtxos = [
-              ...(options.ensureUtxos ?? []),
-              ...ensureUtxos,
-            ].filter(
-              (val, index, array) =>
-                array.findIndex(
-                  (other) => other.txid === val.txid && other.vout === val.vout,
-                ) === index,
-            );
-          }
-          if (change > 0) {
-            outputs.push(
-              new TokenSendRequest({
-                cashaddr: toTokenaddr(this.getChangeAddress()),
-                amount: change,
-                category: category,
-                nft: tokenOutputs[0].nft,
-                value: tokenOutputs[0].value,
-              }),
-            );
-          }
-        }
-      }
-    };
-    addTokenChangeOutputs(utxos, sendRequests);
-
-    const bestHeight = await this.provider.getBlockHeight();
-    const spendAmount = await sumSendRequestAmounts(sendRequests);
-
     if (utxos.length === 0) {
-      throw Error("There were no Unspent Outputs");
+      throw new InsufficientFundsError("There were no Unspent Outputs", {
+        asset: "bch",
+      });
     }
+
+    // The token inputs are chosen here and pinned through ensureUtxos: the inputs of the NFT
+    // requests as the selection's token matching finds them, then only the fungible coins the
+    // requested amounts need (mainnet-js#246). The token change is derived from exactly these
+    // inputs, and the selection below gets the requests without the change and without the
+    // fungible-only ones, so that it cannot pull in other token coins.
+    const requestedOutputs = [...sendRequests];
+    let selectionRequests = requestedOutputs;
+    let tokenInputs: Utxo[] = [];
+    let tokenChange: TokenSendRequest[] = [];
+    let changeAddresses = this.planChangeAddresses();
+    if (checkTokenQuantities) {
+      const tokenRequests = requestedOutputs.filter(
+        (val) => val instanceof TokenSendRequest,
+      );
+      selectionRequests = requestedOutputs.filter(
+        (val) =>
+          !(val instanceof TokenSendRequest) ||
+          val.nft?.capability !== undefined ||
+          val.nft?.commitment !== undefined,
+      );
+      const pinned = await getSuitableUtxos(
+        utxos,
+        0n,
+        selectionRequests,
+        options?.ensureUtxos || [],
+        options?.tokenOperation,
+      );
+      const fungibleInputs = selectFungibleTokenUtxos(
+        utxos,
+        pinned,
+        tokenRequests,
+      );
+      // a copy: the caller's options stay as they were, e.g. for a retry
+      options = { ...options, ensureUtxos: [...pinned, ...fungibleInputs] };
+      tokenInputs = options.ensureUtxos!.filter((val) => val.token);
+      changeAddresses = this.planChangeAddresses();
+      tokenChange = getTokenChangeRequests(
+        tokenInputs,
+        tokenRequests,
+        changeAddresses.token,
+      );
+    }
+    const allOutputs = [...sendRequests, ...tokenChange];
+
+    const spendAmount = await sumSendRequestAmounts(allOutputs);
+
     if (typeof spendAmount !== "bigint") {
       throw Error("Couldn't get spend amount when building transaction");
     }
 
+    // The fee is estimated from the coins the selection picks, not from every candidate: sizing
+    // the whole pool made token operations fund an input for each token coin of the wallet, and
+    // plain sends over-select (mainnet-js#253).
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
-    const feeEstimate = await getFeeAmountSimple({
-      utxos: utxos,
-      sendRequests: sendRequests,
-      sourceAddress: this.getDepositAddress(),
-      relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-    });
-
-    const selectedUtxos = await getSuitableUtxos(
-      utxos,
-      spendAmount + feeEstimate,
-      bestHeight,
-      sendRequests,
-      options?.ensureUtxos || [],
-      options?.tokenOperation,
-    );
-    if (selectedUtxos.length === 0) {
-      throw Error(
-        "The available inputs couldn't satisfy the request with fees",
+    const ensureUtxos = options?.ensureUtxos || [];
+    const estimateFee = (inputs: Utxo[]) =>
+      getFeeAmountSimple({
+        utxos: inputs,
+        sendRequests: allOutputs,
+        sourceAddress: this.getDepositAddress(),
+        relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
+      });
+    // Each round selects for the last round's estimate plus `margin` until the selected coins
+    // cover their own fee, the precise one included; the estimate only grows.
+    const settle = async (margin: bigint, feeEstimate: bigint) => {
+      for (let round = 0; ; round++) {
+        const selectedUtxos = await getSuitableUtxos(
+          utxos,
+          spendAmount + feeEstimate + margin,
+          selectionRequests,
+          ensureUtxos,
+          options?.tokenOperation,
+        );
+        if (selectedUtxos.length === 0) {
+          throw new InsufficientFundsError(
+            "The available inputs couldn't satisfy the request with fees",
+            { asset: "bch" },
+          );
+        }
+        let feeNeeded = await estimateFee(selectedUtxos);
+        if (feeNeeded <= feeEstimate) {
+          const fee = await getFeeAmount({
+            utxos: selectedUtxos,
+            sendRequests: sendRequests,
+            sourceAddress: this.getDepositAddress(),
+            relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
+            walletCache: this.walletCache,
+            tokenChange,
+          });
+          if (fee <= feeEstimate) return { selectedUtxos, fee };
+          feeNeeded = fee;
+        }
+        // a guard: the estimate only grows, and each round can only add coins
+        if (round > utxos.length) {
+          throw new Error("The fee estimate did not settle on a set of inputs");
+        }
+        feeEstimate = feeNeeded;
+      }
+    };
+    const initialEstimate = await estimateFee(ensureUtxos);
+    let settled: Awaited<ReturnType<typeof settle>>;
+    try {
+      settled = await settle(0n, initialEstimate);
+    } catch (e) {
+      const shortfall: { required: bigint; available: bigint } | undefined =
+        e instanceof InsufficientFundsError ? e["data"] : undefined;
+      if (!shortfall) throw e;
+      // The last round's estimate leaves out the fee of the coins the selection could not reach;
+      // what is needed is told from the fee of spending every coin it could use.
+      const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
+      const usable = [
+        ...ensureUtxos,
+        ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
+      ];
+      const usableFee = await estimateFee(usable);
+      let required = spendAmount + usableFee;
+      if (shortfall.required > required) required = shortfall.required;
+      throw amountNotMetError(required, shortfall.available);
+    }
+    // Change at or below dust is not built and goes to the miners. Selecting for change above
+    // dust is kept when it pays the miners less, the extra inputs' fees included.
+    const change =
+      sumUtxoValue(settled.selectedUtxos) - spendAmount - settled.fee;
+    if (!discardChange && change > 0n && change <= DUST_UTXO_THRESHOLD) {
+      try {
+        const withChange = await settle(DUST_UTXO_THRESHOLD + 1n, settled.fee);
+        if (withChange.fee < settled.fee + change) settled = withChange;
+      } catch (e) {
+        if (!(e instanceof InsufficientFundsError)) throw e;
+      }
+    }
+    const { selectedUtxos, fee } = settled;
+    // a token coin the change was not computed from would be burned
+    const tokenInputIds = new Set(tokenInputs.map(toUtxoId));
+    if (
+      checkTokenQuantities &&
+      selectedUtxos.some(
+        (val) => val.token && !tokenInputIds.has(toUtxoId(val)),
+      )
+    ) {
+      throw new Error(
+        "Token selection picked a coin the change does not cover",
       );
     }
-    const fundingUtxos = selectedUtxos;
-    const fee = await getFeeAmount({
-      utxos: fundingUtxos,
-      sendRequests: sendRequests,
-      sourceAddress: this.getDepositAddress(),
-      relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      walletCache: this.walletCache,
-    });
-    const { encodedTransaction } = await buildEncodedTransaction({
-      inputs: fundingUtxos,
+    const encodedTransaction = await buildEncodedTransaction({
+      inputs: selectedUtxos,
       outputs: sendRequests,
       signingKey: privateKey ?? placeholderPrivateKeyBin,
       fee,
       discardChange,
-      changeAddress,
+      changeAddress: changeAddresses.bch,
       walletCache: this.walletCache,
+      tokenBurns,
+      tokenChange,
     });
 
     const categories = [
-      ...fundingUtxos
+      ...selectedUtxos
         .filter((val) => val.token?.category)
         .map((val) => val.token!.category),
       ...sendRequests
@@ -874,7 +1255,9 @@ export class BaseWallet {
   }
 
   /**
-   * Broadcast a signed transaction and wait until the server reports it.
+   * Broadcast a signed transaction and wait until the server reports it, and then until the
+   * wallet's own coins reflect it (its inputs gone, its outputs to the wallet there), so that the
+   * next spend does not pick a coin it spent. That second wait gives up after 10 seconds.
    * @throws {BroadcastRejectedError} If the server refused the transaction.
    * @returns The transaction id.
    */
@@ -883,30 +1266,110 @@ export class BaseWallet {
       throw Error("Wallet network provider was not initialized");
     }
     const rawTransaction = binToHex(transaction);
-    return await this.provider.sendRawTransaction(rawTransaction);
+    const txId = await this.provider.sendRawTransaction(rawTransaction);
+    await this.waitForCoins(transaction, txId);
+    return txId;
+  }
+
+  // Waits until the wallet's coins reflect a transaction the server holds: the status that
+  // includes it may arrive after the broadcast returns, and other statuses before it. Never
+  // throws, the transaction went through; a view that stays stale only risks a refused next spend
+  private async waitForCoins(
+    transaction: Uint8Array,
+    txId: string,
+  ): Promise<void> {
+    const decoded = decodeTransaction(transaction);
+    if (typeof decoded === "string") return;
+    const spent = decoded.inputs.map((input) =>
+      toUtxoId({
+        txid: binToHex(input.outpointTransactionHash),
+        vout: input.outpointIndex,
+      }),
+    );
+    const own = decoded.outputs.flatMap((output, vout) => {
+      const result = lockingBytecodeToCashAddress({
+        bytecode: output.lockingBytecode,
+        prefix: this.networkPrefix,
+      });
+      if (typeof result === "string") return [];
+      if (!this.watchesAddress(result.address)) return [];
+      return [toUtxoId({ txid: txId, vout })];
+    });
+    const reflected = async () => {
+      const ids = new Set((await this.getUtxos()).map(toUtxoId));
+      return own.every((id) => ids.has(id)) && !spent.some((id) => ids.has(id));
+    };
+
+    let done = false;
+    let woken = false;
+    let wake = () => {};
+    let cancel: CancelFn | undefined;
+    const wait = (async () => {
+      const made = await this.watchStatus(() => {
+        woken = true;
+        wake();
+      });
+      if (done) {
+        await made();
+        return;
+      }
+      cancel = made;
+      while (!done) {
+        woken = false;
+        if (await reflected()) return;
+        // a status handled during the read is read again at once
+        if (!woken) await new Promise<void>((resolve) => (wake = resolve));
+      }
+    })();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, COIN_VIEW_TIMEOUT);
+    });
+    try {
+      await Promise.race([wait, expired]);
+    } catch {
+      // a status watch or read that failed: the view is left as it is
+    } finally {
+      done = true;
+      wake();
+      clearTimeout(timer);
+      wait.catch(() => {});
+      await cancel?.().catch(() => {});
+    }
   }
 
   // gets transaction history of this wallet
-  public async getRawHistory(
-    fromHeight: number = 0,
-    toHeight: number = -1,
-  ): Promise<TxI[]> {
+  public async getRawHistory(_fromHeight: number = 0): Promise<TxI[]> {
     throw Error("getRawHistory not implemented in BaseWallet");
   }
 
   /**
    * watchBlocks Watch network blocks
    *
-   * @param callback callback with a block header object
+   * @param callback callback with a block header object; its errors go to console.error
    * @param skipCurrentHeight if set, the notification about current block will not arrive
    *
    * @returns a function which will cancel watching upon evaluation
    */
   public async watchBlocks(
-    callback: (header: HexHeaderI) => void,
+    callback: (header: HexHeaderI) => unknown,
     skipCurrentHeight: boolean = true,
   ): Promise<CancelFn> {
-    return this.provider.watchBlocks(callback, skipCurrentHeight);
+    // the skip is done here rather than by the provider, so a move to another provider can tell
+    // its current tip, delivered on subscribing, from the header already seen
+    let skip = skipCurrentHeight;
+    let last: HexHeaderI | undefined;
+    return this.subscribe((provider) =>
+      provider.watchBlocks((header) => {
+        const seen = last?.height === header.height && last.hex === header.hex;
+        last = header;
+        if (skip) {
+          skip = false;
+          return;
+        }
+        if (!seen) runCallback(() => callback(header));
+      }, false),
+    );
   }
 
   //#endregion Funds
@@ -915,7 +1378,8 @@ export class BaseWallet {
   /**
    * Create one or more new cashtokens, fungible and/or non-fungible (NFT), in a single transaction.
    * Each genesis request consumes a distinct unspent output with vout=0; the spent prevout's txid
-   * becomes the new token category.
+   * becomes the new token category. They are the first such outputs without tokens in the pool,
+   * in its order, so a caller that lists `utxoIds` decides which coin each category comes from.
    * Refer to spec https://github.com/cashtokens/cashtokens
    * @param  {TokenGenesisRequest | TokenGenesisRequest[]} genesisRequests one or more genesis requests.
    *   For each request:
@@ -931,58 +1395,64 @@ export class BaseWallet {
     sendRequests: SendRequestType | SendRequestType[] = [],
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
     if (!Array.isArray(genesisRequests)) {
       genesisRequests = [genesisRequests];
     }
     if (genesisRequests.length === 0) {
       throw new Error("tokenGenesis requires at least one request");
     }
+    genesisRequests.forEach(checkGenesisRequest);
     if (!Array.isArray(sendRequests)) {
       sendRequests = [sendRequests];
     }
 
-    let utxos: Utxo[] = await this.getUtxos();
-    if (options?.utxoIds) {
-      utxos = checkUtxos(
-        options.utxoIds.map((utxoId: UtxoId | string) =>
-          typeof utxoId === "string" ? fromUtxoId(utxoId) : utxoId,
-        ),
-        utxos,
-      );
-    }
+    const { pool: utxos } = await this.getSpendPool(options);
 
     const genesisInputs = utxos.filter((val) => val.vout === 0 && !val.token);
     if (genesisInputs.length < genesisRequests.length) {
-      throw new Error(
+      throw new InsufficientFundsError(
         `Not enough vout=0 inputs available for new token genesis: need ${genesisRequests.length}, have ${genesisInputs.length}`,
+        { asset: "bch" },
       );
     }
 
     const pinnedInputs = genesisInputs.slice(0, genesisRequests.length);
+    const depositAddresses = this.getTokenDepositAddresses(
+      genesisRequests.filter((request) => !request.cashaddr).length,
+    );
     const genesisSendRequests = genesisRequests.map(
       (request, i) =>
         new TokenSendRequest({
-          cashaddr: request.cashaddr || this.getTokenDepositAddress(),
+          cashaddr: request.cashaddr || depositAddresses.shift()!,
           amount: request.amount,
-          value: request.value || 1000n,
+          value: request.value,
           nft: request.nft,
           category: pinnedInputs[i].txid,
         }),
     );
 
-    return this.send([...genesisSendRequests, ...(sendRequests as any)], {
-      ...options,
-      utxoIds: utxos,
-      ensureUtxos: pinnedInputs,
-      checkTokenQuantities: false,
-      queryBalance: false,
-      tokenOperation: "genesis",
-    });
+    const extraRequests = sendRequests as Array<
+      SendRequest | TokenSendRequest | OpReturnData
+    >;
+    return this.sendTokenOperation(
+      [...genesisSendRequests, ...extraRequests],
+      {
+        ...options,
+        utxoIds: utxos,
+        ensureUtxos: pinnedInputs,
+        checkTokenQuantities: false,
+        tokenOperation: "genesis",
+      },
+      {},
+    );
   }
 
   /**
    * Mint new NFT cashtokens using existing minting tokens. Supports minting across
    * multiple categories in a single transaction; each request specifies its own category.
+   * Every request creates one output, and the library caps neither the number of requests nor
+   * the outputs they add up to: limit them yourself if they come from untrusted input.
    * Refer to spec https://github.com/cashtokens/cashtokens
    * @param  {TokenMintRequest | TokenMintRequest[]} mintRequests mint requests with new token properties and recipients
    *   For each request:
@@ -990,14 +1460,13 @@ export class BaseWallet {
    *   @param  {object?} nft NFT capability and commitment of the new token
    *   @param  {string?} cashaddr destination address; defaults to wallet's token deposit address
    *   @param  {bigint?} value satoshi value to send alongside tokens; defaults to 1000
-   * @param  {boolean?} deductTokenAmount if a minting NFT contains a fungible amount, deduct from it by the number of mints in that category
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
   public async tokenMint(
     mintRequests: TokenMintRequest | Array<TokenMintRequest>,
-    deductTokenAmount: boolean = false,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
     if (!Array.isArray(mintRequests)) {
       mintRequests = [mintRequests];
     }
@@ -1006,18 +1475,21 @@ export class BaseWallet {
     }
 
     const requestsByCategory = new Map<string, TokenMintRequest[]>();
-    for (const request of mintRequests) {
-      if (request.category?.length !== 64) {
-        throw Error(`Invalid category supplied: ${request.category}`);
-      }
+    for (const given of mintRequests) {
+      // a copy: validated and its category lowercased, the caller's object left as it was
+      const request = new TokenMintRequest(given);
       const bucket = requestsByCategory.get(request.category) ?? [];
       bucket.push(request);
       requestsByCategory.set(request.category, bucket);
     }
 
-    const utxos = await this.getUtxos();
+    const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
     const outputs: TokenSendRequest[] = [];
+    const depositAddresses = this.getTokenDepositAddresses(
+      mintRequests.filter((request) => !request.cashaddr).length,
+    );
+    const changeAddresses = this.planChangeAddresses();
 
     for (const [category, requests] of requestsByCategory) {
       const nftUtxos = utxos.filter(
@@ -1026,25 +1498,20 @@ export class BaseWallet {
           val.token?.nft?.capability === NFTCapability.minting,
       );
       if (!nftUtxos.length) {
-        throw new Error(
+        throw new InsufficientFundsError(
           `You do not have any token UTXOs with minting capability for category ${category}`,
+          { asset: "token", category },
         );
       }
 
       const mintingUtxo = nftUtxos[0];
-      const newAmount =
-        deductTokenAmount && mintingUtxo.token!.amount > 0
-          ? mintingUtxo.token!.amount - BigInt(requests.length)
-          : mintingUtxo.token!.amount;
-      const safeNewAmount = newAmount < 0n ? 0n : newAmount;
-
       ensureUtxos.push(mintingUtxo);
       outputs.push(
         new TokenSendRequest({
-          cashaddr: toTokenaddr(mintingUtxo.address),
+          cashaddr: changeAddresses.token(),
           category: category,
           nft: mintingUtxo.token?.nft,
-          amount: safeNewAmount,
+          amount: mintingUtxo.token!.amount,
           value: mintingUtxo.satoshis,
         }),
       );
@@ -1052,7 +1519,7 @@ export class BaseWallet {
       for (const request of requests) {
         outputs.push(
           new TokenSendRequest({
-            cashaddr: request.cashaddr || this.getTokenDepositAddress(),
+            cashaddr: request.cashaddr || depositAddresses.shift()!,
             amount: 0n,
             category: category,
             value: request.value,
@@ -1062,22 +1529,28 @@ export class BaseWallet {
       }
     }
 
-    return this.send(outputs, {
-      ...options,
-      ensureUtxos,
-      checkTokenQuantities: false,
-      queryBalance: false,
-      tokenOperation: "mint",
-    });
+    return this.sendTokenOperation(
+      outputs,
+      {
+        ...options,
+        ensureUtxos,
+        checkTokenQuantities: false,
+        tokenOperation: "mint",
+      },
+      {},
+    );
   }
 
   /**
    * Perform an explicit token burning by spending one or more token utxos alongside an OP_RETURN.
    * Multiple burn requests across distinct categories can be bundled into a single transaction.
    *
-   * Behaves differently for fungible and non-fungible tokens:
-   *  * NFTs are always "destroyed"
-   *  * FTs' amount is reduced by the amount specified; if 0 FT amount is left and no NFT present, the token is "destroyed"
+   * A request burns what it names, and the transaction is checked to burn no more:
+   *  * with an NFT and no amount, one coin with that NFT is spent and the NFT destroyed; fungible
+   *    tokens that coin carries come back without it
+   *  * with an amount, that many fungible tokens are burned from the matching coins: the
+   *    fungible-only coins of the category, or with an NFT given, the coins carrying that NFT,
+   *    which come back with it. More than those coins carry throws InsufficientFundsError.
    *
    * Refer to spec https://github.com/cashtokens/cashtokens
    * @param  {TokenBurnRequest | TokenBurnRequest[]} burnRequests one or more burn requests.
@@ -1085,7 +1558,6 @@ export class BaseWallet {
    *   @param  {string} category category of a token to burn
    *   @param  {object?} nft NFT capability and commitment to match, optional
    *   @param  {bigint?} amount amount of fungible tokens to burn, optional
-   *   @param  {string?} cashaddr address to return token and satoshi change to
    * @param  {string?} message optional message to include in OP_RETURN
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
@@ -1094,107 +1566,135 @@ export class BaseWallet {
     message?: string,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
     if (!Array.isArray(burnRequests)) {
       burnRequests = [burnRequests];
     }
     if (burnRequests.length === 0) {
       throw new Error("tokenBurn requires at least one request");
     }
+    // copies: validated and their categories lowercased, the caller's objects left as they were
+    burnRequests = burnRequests.map((request) => new TokenBurnRequest(request));
 
-    const utxos = await this.getUtxos();
+    const { pool: utxos } = await this.getSpendPool(options);
     const ensureUtxos: Utxo[] = [];
     const changeSendRequests: TokenSendRequest[] = [];
+    // exactly what the requests burn: an NFT that comes back is not listed
+    const tokenBurns: Required<TokenBurnAllowance> = { fungible: {}, nfts: [] };
+    const changeAddresses = this.planChangeAddresses();
 
+    // a coin an earlier request spends is not there for the next one
+    const spentIds = new Set<string>();
     for (const burnRequest of burnRequests) {
-      if (burnRequest.category?.length !== 64) {
-        throw Error(`Invalid category supplied: ${burnRequest.category}`);
-      }
-
+      const { category, nft } = burnRequest;
       const tokenUtxos = utxos.filter(
         (val) =>
-          val.token?.category === burnRequest.category &&
-          val.token?.nft?.capability === burnRequest.nft?.capability &&
-          val.token?.nft?.commitment === burnRequest.nft?.commitment,
+          !spentIds.has(toUtxoId(val)) &&
+          val.token?.category === category &&
+          val.token?.nft?.capability === nft?.capability &&
+          val.token?.nft?.commitment === nft?.commitment,
       );
 
       if (!tokenUtxos.length) {
-        throw new Error(
-          `You do not have suitable token UTXOs to perform burn for category ${burnRequest.category}`,
+        throw new InsufficientFundsError(
+          `You do not have suitable token UTXOs to perform burn for category ${category}`,
+          { asset: "token", category },
         );
       }
 
-      const totalFungibleAmount = tokenUtxos.reduce(
-        (prev, cur) => prev + (cur.token?.amount || 0n),
+      const amount = toTokenAmount(burnRequest.amount);
+      if (nft && amount === 0n) {
+        // a coin with the NFT alone, when there is one, so that no fungible tokens move
+        const coin =
+          tokenUtxos.find((val) => val.token!.amount === 0n) ?? tokenUtxos[0];
+        ensureUtxos.push(coin);
+        spentIds.add(toUtxoId(coin));
+        tokenBurns.nfts.push({
+          category,
+          capability: coin.token!.nft!.capability,
+          commitment: coin.token!.nft!.commitment ?? "",
+        });
+        if (coin.token!.amount > 0n) {
+          changeSendRequests.push(
+            new TokenSendRequest({
+              cashaddr: changeAddresses.token(),
+              category,
+              amount: coin.token!.amount,
+            }),
+          );
+        }
+        continue;
+      }
+
+      const available = tokenUtxos.reduce(
+        (sum, val) => sum + val.token!.amount,
         0n,
       );
-      let fungibleBurnAmount =
-        burnRequest.amount && burnRequest.amount > 0 ? burnRequest.amount! : 0n;
-      fungibleBurnAmount = BigInt(fungibleBurnAmount);
-      const hasNFT = burnRequest.nft !== undefined;
+      if (available < amount) {
+        throw new InsufficientFundsError(
+          `Not enough fungible tokens of category ${category} to burn ${amount}: ${available} available`,
+          { asset: "token", category },
+        );
+      }
+      tokenBurns.fungible[category] =
+        (tokenBurns.fungible[category] ?? 0n) + amount;
 
-      if (hasNFT) {
-        if (totalFungibleAmount === 0n) {
-          ensureUtxos.push(tokenUtxos[0]);
-        } else {
-          let available = 0n;
-          for (const token of tokenUtxos.filter((val) => val.token?.amount)) {
-            ensureUtxos.push(token);
-            available += token.token!.amount;
-            if (available >= fungibleBurnAmount) {
-              break;
-            }
-          }
-
-          const newAmount = totalFungibleAmount - fungibleBurnAmount;
-          const safeNewAmount = newAmount < 0n ? 0n : newAmount;
+      let toBurn = amount;
+      let fungibleChange = 0n;
+      for (const coin of tokenUtxos) {
+        if (toBurn === 0n) break;
+        if (coin.token!.amount === 0n) continue;
+        ensureUtxos.push(coin);
+        spentIds.add(toUtxoId(coin));
+        let burned = coin.token!.amount;
+        if (burned > toBurn) burned = toBurn;
+        toBurn -= burned;
+        const left = coin.token!.amount - burned;
+        const coinNft = coin.token!.nft;
+        if (coinNft) {
+          // the NFT comes back as it was, on the coin's own sats, as a send's NFT change does
           changeSendRequests.push(
             new TokenSendRequest({
-              cashaddr:
-                burnRequest.cashaddr || toTokenaddr(this.getChangeAddress()),
-              category: burnRequest.category,
-              nft: burnRequest.nft,
-              amount: safeNewAmount,
-              value: tokenUtxos[0].satoshis,
+              cashaddr: changeAddresses.token(),
+              category,
+              amount: left,
+              nft: {
+                capability: coinNft.capability,
+                commitment: coinNft.commitment ?? "",
+              },
+              value: coin.satoshis,
             }),
           );
-        }
-      } else {
-        if (totalFungibleAmount === fungibleBurnAmount) {
-          ensureUtxos.push(...tokenUtxos);
         } else {
-          let available = 0n;
-          for (const token of tokenUtxos.filter((val) => val.token?.amount)) {
-            ensureUtxos.push(token);
-            available += token.token!.amount;
-            if (available >= fungibleBurnAmount) {
-              break;
-            }
-          }
-
-          const newAmount = available - fungibleBurnAmount;
-          const safeNewAmount = newAmount < 0n ? 0n : newAmount;
-          changeSendRequests.push(
-            new TokenSendRequest({
-              cashaddr:
-                burnRequest.cashaddr || toTokenaddr(this.getChangeAddress()),
-              category: burnRequest.category,
-              amount: safeNewAmount,
-              value: tokenUtxos.reduce((a, c) => a + c.satoshis, 0n),
-            }),
-          );
+          fungibleChange += left;
         }
+      }
+      if (fungibleChange > 0n) {
+        // no value: the standard 1000 sats of a token output, as a send's fungible change holds;
+        // the spent coins' other sats go to the BCH change
+        changeSendRequests.push(
+          new TokenSendRequest({
+            cashaddr: changeAddresses.token(),
+            category,
+            amount: fungibleChange,
+          }),
+        );
       }
     }
 
     const opReturn = OpReturnData.fromString(message || "");
-    return this.send([opReturn, ...changeSendRequests], {
-      ...options,
-      checkTokenQuantities: false,
-      queryBalance: false,
-      ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
-      tokenOperation: "burn",
-    });
+    return this.sendTokenOperation(
+      [opReturn, ...changeSendRequests],
+      {
+        ...options,
+        checkTokenQuantities: false,
+        ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
+        tokenOperation: "burn",
+      },
+      tokenBurns,
+    );
   }
+
   //#endregion Cashtokens
 }
 

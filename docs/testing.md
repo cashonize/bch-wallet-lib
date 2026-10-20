@@ -10,7 +10,7 @@ The library moves money, and most of it was written and reviewed by agents, so a
 
 The suite runs on an in-memory chain (`@paryonusd/mem-cash`, BCH_2026_05 VM) behind the real `ElectrumNetworkProvider`. Fast and offline (`LIVE_TESTS` unset opens no public server).
 
-Blind spot: mem-cash is not Fulcrum. It answers instantly and in order, so timing bugs pass: the HD consecutive-send bug (fixed in `6ddaa58`) failed 10 of 10 on a real chain and passed here until the tests slowed mem-cash down on purpose. The scenarios are also only the ones the author thought of. mem-cash is a private package, so nobody else can run the suite yet.
+Blind spot: mem-cash is not Fulcrum. It answers instantly and in order, so timing bugs pass: the HD consecutive-send bug (fixed in `6ddaa58` of the `archive/dev-history` branch) failed 10 of 10 on a real chain and passed here until the tests slowed mem-cash down on purpose. The scenarios are also only the ones the author thought of. mem-cash is a private package, so nobody else can run the suite yet.
 
 ### 2. Regtest on BCHN + Fulcrum (`pnpm test:regtest`, `pnpm test:regtest:local`)
 

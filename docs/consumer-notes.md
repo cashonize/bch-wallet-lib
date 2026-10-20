@@ -4,7 +4,7 @@ Cashonize (`~/Cashonize/cashonize-wallet`) is this library's first user. It runs
 
 The inventory this builds on, written for the fork decision, is `~/Cashonize/mainnet-js-fork/research/cashonize-usage.md` (sections 4 and 7: where the app bypasses mainnet-js and the workarounds it carries). This file adds the reasons and the API conclusions.
 
-Written 2026-10-17 against bch-wallet-lib main `ae646b0`, after the first fix workflow; sections 3 to 5 updated at `2b3fd2e`, after the second, with what the Cashonize migration branch ran into, and sections 2 to 5 at `04f4ec6`, after the third; sections 3 to 6 after the final round 3 review. Section 3 lists what is still open, section 4 what is fixed, section 6 what round 3 removed that a consumer may want back. `docs/api-surface.md` lists every export with the Cashonize site that uses it.
+Section 3 lists what is still open, section 4 what is fixed, section 6 what was removed that a consumer may want back. `docs/api-surface.md` lists every export with the Cashonize site that uses it. Commit hashes of this library refer to the development history kept on the `archive/dev-history` branch; Cashonize hashes are of the migration branch.
 
 ## 1. The pattern: the caller owns the async steps
 

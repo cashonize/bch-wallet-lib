@@ -1,6 +1,6 @@
 # Public API and why each part exists
 
-Every name the package exports, every public class member and every option group, with who needs it. Checked against main `04f4ec6` and the Cashonize migration branch (`~/Cashonize/cashonize-wt/bch-wallet-lib`, `b2870ea`, built on `620ed08`). Cashonize sites are file names; `docs/consumer-notes.md` says why Cashonize uses them.
+Every name the package exports, every public class member and every option group, with who needs it. Checked against the Cashonize migration branch (`b2870ea`, built on this library's `620ed08` of the `archive/dev-history` branch). Cashonize sites are file names; `docs/consumer-notes.md` says why Cashonize uses them.
 
 A new export needs a row here and a real consumer. Rows marked **no consumer** have neither a Cashonize use nor a reason inside the library to be public: they are candidates for removal. "Planned" means a Cashonize change named in `docs/consumer-notes.md` section 4 that the branch has not made yet.
 

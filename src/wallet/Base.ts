@@ -24,12 +24,7 @@ import {
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { WalletTypeEnum } from "./enum.js";
-import {
-  CancelFn,
-  SendRequestOptionsI,
-  WalletI,
-  WalletInfoI,
-} from "./interface.js";
+import { CancelFn, SendRequestOptionsI } from "./interface.js";
 import {
   fromUtxoId,
   OpReturnData,
@@ -52,24 +47,18 @@ export const placeholderTokenAddr =
  * A class to hold features used by all wallets
  * @class  BaseWallet
  */
-export class BaseWallet implements WalletI {
+export class BaseWallet {
   public static StorageProvider?: typeof StorageProvider;
 
   readonly walletCache: WalletCache;
   readonly provider: ElectrumNetworkProvider;
   readonly network: NetworkType;
   readonly walletType: WalletTypeEnum;
-  readonly isTestnet: boolean;
   name: string = "";
   protected cancelFns: CancelFn[] = [];
 
   public get networkPrefix(): CashAddressNetworkPrefix {
     return prefixFromNetworkMap[this.network];
-  }
-
-  // Return wallet info
-  public getInfo(): WalletInfoI {
-    throw Error("getInfo not implemented in BaseWallet");
   }
 
   //#region Accessors
@@ -148,7 +137,6 @@ export class BaseWallet implements WalletI {
     this.network = network;
     this.walletType = WalletTypeEnum.Watch;
     this.provider = this.getNetworkProvider(this.network);
-    this.isTestnet = this.network === NetworkType.Mainnet ? false : true;
     this.walletCache = new Map<string, { privateKey: Uint8Array }>();
   }
   //#endregion Constructors
@@ -288,14 +276,6 @@ export class BaseWallet implements WalletI {
    * @throws {Error} if called on BaseWallet
    */
   public toDbString(): string {
-    return `${this.walletType}:${this.network}:${this.getDepositAddress()}`;
-  }
-
-  // Returns the serialized wallet as a string
-  // If storing in a database, set asNamed to false to store secrets
-  // In all other cases, the a named wallet is deserialized from the database
-  //  by the name key
-  public toString() {
     return `${this.walletType}:${this.network}:${this.getDepositAddress()}`;
   }
   //#endregion Serialization

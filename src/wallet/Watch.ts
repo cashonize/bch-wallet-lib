@@ -30,7 +30,7 @@ import { derivePrefix } from "../util/derivePublicKeyHash.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { CancelFn, WalletInfoI } from "./interface.js";
+import { CancelFn } from "./interface.js";
 
 export interface WatchWalletOptions {
   name?: string;
@@ -377,20 +377,6 @@ export class WatchWallet extends BaseWallet {
         "The compressed public key for this wallet is not known, perhaps the wallet was created to watch the *hash* of a public key? i.e. a cashaddress.",
       );
     }
-  }
-
-  // Return wallet info
-  public getInfo(): WalletInfoI {
-    return {
-      cashaddr: this.cashaddr,
-      tokenaddr: this.tokenaddr,
-      isTestnet: this.isTestnet,
-      name: this.name,
-      network: this.network as any,
-      publicKeyHash: binToHex(this.publicKeyHash),
-      walletId: this.toString(),
-      walletDbEntry: this.toDbString(),
-    };
   }
 
   /**

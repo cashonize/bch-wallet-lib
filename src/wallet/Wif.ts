@@ -22,7 +22,7 @@ import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
 import { checkWifNetwork } from "../util/checkWifNetwork.js";
 import { WalletTypeEnum } from "./enum.js";
-import { MnemonicI, SendRequestOptionsI, WalletInfoI } from "./interface.js";
+import { SendRequestOptionsI } from "./interface.js";
 import {
   OpReturnData,
   SendRequest,
@@ -212,47 +212,6 @@ export class Wallet extends WatchWallet {
 
   //#endregion Constructors and Statics
 
-  //#region Accessors
-  // Get mnemonic and derivation path for wallet
-  public getSeed(): MnemonicI {
-    if (!this.mnemonic) {
-      throw Error("Wallet mnemonic seed phrase not set");
-    }
-    if (!this.derivationPath) {
-      throw Error("Wallet derivation path not set");
-    }
-    return {
-      seed: this.mnemonic,
-      derivationPath: this.derivationPath,
-      parentDerivationPath: this.parentDerivationPath,
-    };
-  }
-
-  // Return wallet info
-  public getInfo(): WalletInfoI {
-    return {
-      cashaddr: this.cashaddr,
-      tokenaddr: this.tokenaddr,
-      isTestnet: this.isTestnet,
-      name: this.name,
-      network: this.network as any,
-      seed: this.mnemonic ? this.getSeed().seed : undefined,
-      derivationPath: this.mnemonic ? this.getSeed().derivationPath : undefined,
-      parentDerivationPath: this.mnemonic
-        ? this.getSeed().parentDerivationPath
-        : undefined,
-      parentXPubKey: this.parentXPubKey ? this.parentXPubKey : undefined,
-      publicKey: this.publicKey ? binToHex(this.publicKey) : undefined,
-      publicKeyHash: binToHex(this.publicKeyHash),
-      privateKey: this.privateKey ? binToHex(this.privateKey) : undefined,
-      privateKeyWif: this.privateKeyWif,
-      walletId: this.toString(),
-      walletDbEntry: this.toDbString(),
-    };
-  }
-
-  //#endregion
-
   //#region Statics
   /**
    * fromId - create a wallet from encoded walletId string
@@ -440,26 +399,6 @@ export class Wallet extends WatchWallet {
   //#endregion Protected Implementations
 
   //#region Serialization
-  // Returns the serialized wallet as a string
-  // If storing in a database, set asNamed to false to store secrets
-  // In all other cases, the a named wallet is deserialized from the database
-  // by the name key
-  public toString() {
-    if (this.name) {
-      return `named:${this.network}:${this.name}`;
-    } else if (this.walletType == WalletTypeEnum.PrivateKey) {
-      return `${this.walletType}:${this.network}:${binToHex(this.privateKey)}`;
-    } else if (this.walletType == WalletTypeEnum.Seed) {
-      return `${this.walletType}:${this.network}:${this.mnemonic}:${this.derivationPath}`;
-    } else if (this.walletType === WalletTypeEnum.Wif) {
-      return `${this.walletType}:${this.network}:${this.privateKeyWif}`;
-    } else if (this.walletType == WalletTypeEnum.Watch) {
-      return super.toString();
-    }
-
-    throw Error("toString unsupported wallet type");
-  }
-
   /**
    * toDbString - store the serialized version of the wallet in the database, not just the name
    *

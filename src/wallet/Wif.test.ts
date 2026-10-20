@@ -163,35 +163,22 @@ describe(`Mnemonic wallet creation`, () => {
     expect(w.privateKeyWif!).toBe(
       "L4p2b9VAf8k5aUahF1JCJUzZkgNEAqLfq8DDdQiyAprQAKSbu8hf",
     );
-    expect(w.getSeed().seed).toBe(
+    expect(w.mnemonic).toBe(
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
     );
-    expect(w.getSeed().derivationPath).toBe("m/44'/0'/0'/0/0");
-    const info = {
-      cashaddr: "bitcoincash:qrvcdmgpk73zyfd8pmdl9wnuld36zh9n4gms8s0u59",
-      tokenaddr: "bitcoincash:zrvcdmgpk73zyfd8pmdl9wnuld36zh9n4gu65wp6tk",
-      isTestnet: false,
-      name: "",
-      network: "mainnet",
-      privateKey:
-        "e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372",
-      privateKeyWif: "L4p2b9VAf8k5aUahF1JCJUzZkgNEAqLfq8DDdQiyAprQAKSbu8hf",
-      publicKey:
-        "04aaeb52dd7494c361049de67cc680e83ebcbbbdbeb13637d92cd845f70308af5e9370164133294e5fd1679672fe7866c307daf97281a28f66dca7cbb52919824f",
-      publicKeyHash: "d986ed01b7a22225a70edbf2ba7cfb63a15cb3aa",
-
-      parentXPubKey:
-        "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj",
-      parentDerivationPath: "m/44'/0'/0'",
-      derivationPath: "m/44'/0'/0'/0/0",
-      seed: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-
-      walletDbEntry:
-        "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about:m/44'/0'/0'/0/0",
-      walletId:
-        "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about:m/44'/0'/0'/0/0",
-    };
-    expect(w.getInfo()).toEqual(info);
+    expect(w.derivationPath).toBe("m/44'/0'/0'/0/0");
+    expect(w.tokenaddr).toBe(
+      "bitcoincash:zrvcdmgpk73zyfd8pmdl9wnuld36zh9n4gu65wp6tk",
+    );
+    expect(binToHex(w.privateKey)).toBe(
+      "e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372",
+    );
+    expect(binToHex(w.publicKeyHash)).toBe(
+      "d986ed01b7a22225a70edbf2ba7cfb63a15cb3aa",
+    );
+    expect(w.toDbString()).toBe(
+      "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about:m/44'/0'/0'/0/0",
+    );
   });
 
   test("Expect '11x abandon about' to have the correct key, seed and path when generated on 145' coin path", async () => {
@@ -204,11 +191,10 @@ describe(`Mnemonic wallet creation`, () => {
     expect(w.privateKeyWif!).toBe(
       "KxbEv3FeYig2afQp7QEA9R3gwqdTBFwAJJ6Ma7j1SkmZoxC9bAXZ",
     );
-    expect(w.getSeed().seed).toBe(
+    expect(w.mnemonic).toBe(
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
     );
-    expect(w.getSeed().derivationPath).toBe("m/44'/145'/0'/0/0");
-    expect(w.getSeed().parentDerivationPath).toBe("m/44'/145'/0'");
+    expect(w.derivationPath).toBe("m/44'/145'/0'/0/0");
   });
   test("Expect '11x abandon about' to have the correct key, seed and path from regtest wallet", async () => {
     let w = await RegTestWallet.fromId(
@@ -220,10 +206,10 @@ describe(`Mnemonic wallet creation`, () => {
     expect(w.privateKeyWif!).toBe(
       "cVB244V26CSLjv3xdR7KfoVdNufdqHSMuAMgjqBUfwWQR4WVFsky",
     );
-    expect(w.getSeed().seed).toBe(
+    expect(w.mnemonic).toBe(
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
     );
-    expect(w.getSeed().derivationPath).toBe("m/44'/0'/0'/0/0");
+    expect(w.derivationPath).toBe("m/44'/0'/0'/0/0");
   });
 });
 
@@ -237,25 +223,17 @@ describe(`Watch only Wallets`, () => {
     expect(w.cashaddr).toBe(
       "bchtest:qppr9h7whx9pzucgqukhtlj8lvgvjlgr3g9ggtkq22",
     );
-    expect(w.getInfo()).toStrictEqual({
-      cashaddr: "bchtest:qppr9h7whx9pzucgqukhtlj8lvgvjlgr3g9ggtkq22",
-      tokenaddr: "bchtest:zppr9h7whx9pzucgqukhtlj8lvgvjlgr3gzzm4cx4e",
-      derivationPath: undefined,
-      isTestnet: true,
-      name: "",
-      network: "testnet",
-      parentDerivationPath: undefined,
-      parentXPubKey: undefined,
-      privateKey: undefined,
-      privateKeyWif: undefined,
-      publicKey: undefined,
-      publicKeyHash: "4232dfceb98a117308072d75fe47fb10c97d038a",
-      seed: undefined,
-      walletDbEntry:
-        "watch:testnet:bchtest:qppr9h7whx9pzucgqukhtlj8lvgvjlgr3g9ggtkq22",
-      walletId:
-        "watch:testnet:bchtest:qppr9h7whx9pzucgqukhtlj8lvgvjlgr3g9ggtkq22",
-    });
+    expect(w.tokenaddr).toBe(
+      "bchtest:zppr9h7whx9pzucgqukhtlj8lvgvjlgr3gzzm4cx4e",
+    );
+    expect(binToHex(w.publicKeyHash)).toBe(
+      "4232dfceb98a117308072d75fe47fb10c97d038a",
+    );
+    expect(w.privateKey).toBeUndefined();
+    expect(w.mnemonic).toBeUndefined();
+    expect(w.toDbString()).toBe(
+      "watch:testnet:bchtest:qppr9h7whx9pzucgqukhtlj8lvgvjlgr3g9ggtkq22",
+    );
   });
 
   test("Create a watch only regtest wallet from string id", async () => {

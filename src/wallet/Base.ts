@@ -34,6 +34,7 @@ import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { checkUtxos, toOutpoint } from "../util/checkUtxos.js";
 import { deriveLockscript } from "../util/deriveLockscript.js";
+import { Limiter } from "../util/mapConcurrent.js";
 import {
   getRuntimePlatform,
   sumUtxoValue,
@@ -73,6 +74,8 @@ import {
 
 // How long a broadcast waits for the wallet's own coins to reflect it, once the server reports it
 const COIN_VIEW_TIMEOUT = 10_000;
+// Subscriptions setProvider moves at once, as many as discovery makes at once
+const MOVE_CONCURRENCY = 50;
 
 export const placeholderCashAddr =
   "bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqfnhks603";
@@ -515,18 +518,22 @@ export class BaseWallet {
     const stale = [...this.subscriptions].filter(
       (subscription) => subscription.provider !== provider,
     );
+    // an HD wallet holds a subscription per watched address, so they move a bounded number at a time
+    const limiter = new Limiter(MOVE_CONCURRENCY);
     const results = await Promise.allSettled(
-      stale.map(async (subscription) => {
-        const cancel = once(await subscription.subscribe(provider));
-        const cancelPrevious = subscription.cancel;
-        subscription.cancel = cancel;
-        subscription.provider = provider;
-        await cancelPrevious();
-        // cancelled while moving
-        if (!this.subscriptions.has(subscription)) {
-          await cancel();
-        }
-      }),
+      stale.map((subscription) =>
+        limiter.run(async () => {
+          const cancel = once(await subscription.subscribe(provider));
+          const cancelPrevious = subscription.cancel;
+          subscription.cancel = cancel;
+          subscription.provider = provider;
+          await cancelPrevious();
+          // cancelled while moving
+          if (!this.subscriptions.has(subscription)) {
+            await cancel();
+          }
+        }),
+      ),
     );
     const failure = results.find((result) => result.status === "rejected");
     if (failure) throw failure.reason;

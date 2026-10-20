@@ -248,9 +248,10 @@ describe("a subscription that cannot be made", () => {
     const wallet = await RegTestHDWallet.fromId(
       `hd:regtest:${seedWallet.mnemonic!}:${seedWallet.derivation}`,
     );
-    // the first round is subscribed and its fetch of the used address held
+    // the first round is subscribed, and the window the used address extended alongside its held
+    // fetch
     await delay(50);
-    expect(provider.subscriptions).toBe(40);
+    expect(provider.subscriptions).toBe(60);
     await wallet.stop();
     release();
     await delay(100);
@@ -537,14 +538,17 @@ describe("a fetch that fails during HD address discovery", () => {
 
     refuseNew = false;
     expect(await wallet.getBalance()).toBe(0n);
-    expect(newProvider.subscriptions).toBe(40);
+    // the used address counts as used although its fetch failed, so the gap after it reaches 21
+    expect(newProvider.subscriptions).toBe(41);
     // the address is watched on the new provider
     await newProvider.addUtxo(wallet.getDepositAddress(0), {
       ...randomUtxo({ vout: 0, satoshis: 3_000n }),
       height: 100,
     });
-    await wallet["waitForUpdate"]({ indices: { 0: 1 }, timeout: 1000 });
-    expect(await wallet.getBalance()).toBe(3_000n);
+    // the index is 1 already, so the coin's arrival is waited for by the balance it brings
+    await vi.waitFor(async () => {
+      expect(await wallet.getBalance()).toBe(3_000n);
+    });
     await wallet.stop();
   }, 5000);
 });

@@ -3,6 +3,9 @@
 ## Unreleased
 
 - With `Config.UseIndexedDBCache`, the provider opens its IndexedDB cache once instead of before every request, and opens it again after the connection is lost. A provider whose first call reads the cache (`getRawTransactions`, `getHeaders`, `getRawTransaction`, `getRawTransactionObject`) no longer fails with "Database is not initialized".
+- An HD wallet's address discovery starts where its cache saw the wallet used (at most 2000 addresses per branch), watching the used range in one round instead of about 20 addresses per round trip from index 0. `indices` therefore holds that value right after construction, before discovery has run; the cache format is unchanged.
+- During discovery, a used address extends the watched window as soon as its status arrives, and counts as used even when the fetch of its coins fails.
+- Discovery, and `setProvider` moving a wallet's subscriptions, take at most 50 address subscriptions or fetches at a time per wallet, where they started all at once.
 
 ## 0.1.1 (2026-10-20)
 

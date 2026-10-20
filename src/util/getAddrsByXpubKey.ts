@@ -1,5 +1,4 @@
 import {
-  binToHex,
   CashAddressNetworkPrefix,
   CashAddressType,
   decodeHdPublicKey,
@@ -34,10 +33,6 @@ export function getAddrsByXpubKey(
   return result;
 }
 
-export function getAddrsByXpubKeyObject(obj): Array<string> {
-  return getAddrsByXpubKey(obj.xpubkey, obj.path, obj.count);
-}
-
 export function derivePublicNodeCashaddr(xpub: string, path?: string): string {
   const publicParent = decodeHdPublicKey(xpub);
 
@@ -63,24 +58,4 @@ export function derivePublicNodeCashaddr(xpub: string, path?: string): string {
     }
   }
   return cashaddr;
-}
-
-export function getXpubKeyInfo(hdPublicKey: string) {
-  const node = decodeHdPublicKey(hdPublicKey);
-  if (typeof node === "string") {
-    throw new Error(node);
-  }
-  return {
-    version: node.network,
-    depth: node.node.depth,
-    parentFingerprint: binToHex(node.node.parentFingerprint),
-    childNumber: node.node.childIndex,
-    chain: binToHex(node.node.chainCode),
-    data: binToHex(node.node.publicKey),
-    fingerprint: binToHex(hash160(node.node.publicKey).slice(0, 4)),
-  };
-}
-
-export async function getXpubKeyInfoObject(obj) {
-  return getXpubKeyInfo(obj.xpubkey);
 }

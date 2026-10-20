@@ -45,14 +45,6 @@ export interface HexHeaderI {
   hex: string;
 }
 
-export interface DsproofData {
-  dspid: string;
-  txid: string;
-  hex: string;
-  outpoint: { txid: string; vout: number };
-  descendants: string[];
-}
-
 export interface HeaderI {
   version: number;
   previousBlockHash: string;

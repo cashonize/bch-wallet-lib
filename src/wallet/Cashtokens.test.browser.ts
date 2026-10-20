@@ -1,9 +1,18 @@
-import { utf8ToBin } from "@bitauth/libauth";
+import {
+  binToHex,
+  decodeTransaction,
+  hexToBin,
+  utf8ToBin,
+} from "@bitauth/libauth";
 import { NFTCapability } from "../interface.js";
-import * as libauth from "../libauth.js";
-import { binToHex, delay, hexToBin } from "../util/index.js";
+import { delay } from "../util/index.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWallet } from "./Wif.js";
+import {
+  getTokenUtxos,
+  getTokenBalance,
+  getNftTokenBalance,
+} from "#test/balances.js";
 
 describe(`Cashtokens should function in the browser`, () => {
   test(`Test fungible cashtoken genesis and sending`, async () => {
@@ -14,9 +23,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     const response = await alice.send([
       new TokenSendRequest({
@@ -30,10 +39,10 @@ describe(`Cashtokens should function in the browser`, () => {
         category: category,
       }),
     ]);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(2);
-    expect(await alice.getTokenBalance(category)).toBe(75n);
-    expect(await bob.getTokenBalance(category)).toBe(25n);
+    expect(await getTokenBalance(alice, category)).toBe(75n);
+    expect(await getTokenBalance(bob, category)).toBe(25n);
   });
 
   test(`Test NFT cashtoken genesis and sending`, async () => {
@@ -48,9 +57,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     const response = await alice.send([
       new TokenSendRequest({
@@ -62,12 +71,12 @@ describe(`Cashtokens should function in the browser`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(0);
 
-    expect(await bob.getTokenBalance(category)).toBe(0n);
-    const bobTokenUtxos = await bob.getTokenUtxos(category);
+    expect(await getTokenBalance(bob, category)).toBe(0n);
+    const bobTokenUtxos = await getTokenUtxos(bob, category);
     expect(bobTokenUtxos.length).toBe(1);
     expect(category).toEqual(response.categories![0]);
     expect(bobTokenUtxos[0].token?.nft?.commitment).toEqual("abcd");
@@ -84,9 +93,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     await expect(
       alice.send([
@@ -113,9 +122,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     const response = await alice.send([
       new TokenSendRequest({
@@ -127,8 +136,8 @@ describe(`Cashtokens should function in the browser`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(1);
     expect(category).toEqual(response.categories![0]);
     expect(newTokenUtxos[0].token?.nft?.commitment).toEqual("abcd02");
@@ -145,9 +154,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(0n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
     const response = await alice.tokenMint([
       new TokenMintRequest({
@@ -167,8 +176,8 @@ describe(`Cashtokens should function in the browser`, () => {
         },
       }),
     ]);
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
   });
@@ -185,9 +194,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(4n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
     // mint 2 NFTs, defaults to amount reducing
@@ -212,8 +221,8 @@ describe(`Cashtokens should function in the browser`, () => {
       ],
       true,
     );
-    expect(await alice.getTokenBalance(category)).toBe(2n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(2n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
 
@@ -239,8 +248,8 @@ describe(`Cashtokens should function in the browser`, () => {
       ],
       false,
     );
-    expect(await alice.getTokenBalance(category)).toBe(2n);
-    const ftTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(2n);
+    const ftTokenUtxos = await getTokenUtxos(alice, category);
     expect(ftTokenUtxos.length).toBe(5);
     expect(category).toEqual(ftResponse.categories![0]);
 
@@ -275,8 +284,8 @@ describe(`Cashtokens should function in the browser`, () => {
       ],
       true,
     );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const ft2TokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const ft2TokenUtxos = await getTokenUtxos(alice, category);
     expect(ft2TokenUtxos.length).toBe(8);
     expect(category).toEqual(ft2Response.categories![0]);
   });
@@ -289,9 +298,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(4n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
     // burn 5 FT
@@ -309,8 +318,8 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(rawTx.vout[0].scriptPubKey.hex).toContain(
       binToHex(utf8ToBin("burn")),
     );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(0);
     expect(category).toEqual(response.categories![0]);
   });
@@ -327,9 +336,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(alice, category);
     expect(tokenBalance).toBe(4n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(alice, category);
     expect(tokenUtxos.length).toBe(1);
 
     // burn 1 FT
@@ -351,12 +360,12 @@ describe(`Cashtokens should function in the browser`, () => {
     expect(rawTx.vout[0].scriptPubKey.hex).toContain(
       binToHex(utf8ToBin("burn")),
     );
-    expect(await alice.getTokenBalance(category)).toBe(3n);
-    expect((await alice.getAllTokenBalances())[category]).toBe(3n);
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(3n);
+    expect(await getTokenBalance(alice, category)).toBe(3n);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await alice.getNftTokenBalance(category)).toBe(1);
-    expect((await alice.getAllNftTokenBalances())[category || 0]).toBe(1);
+    expect(await getNftTokenBalance(alice, category)).toBe(1);
+    expect(await getNftTokenBalance(alice, category)).toBe(1);
     expect(category).toEqual(response.categories![0]);
 
     // burn the rest FTs
@@ -371,8 +380,8 @@ describe(`Cashtokens should function in the browser`, () => {
       },
       "burn",
     );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    const ftTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const ftTokenUtxos = await getTokenUtxos(alice, category);
     expect(ftTokenUtxos.length).toBe(1);
     expect(category).toEqual(ftResponse.categories![0]);
 
@@ -387,13 +396,13 @@ describe(`Cashtokens should function in the browser`, () => {
       },
       "burn",
     );
-    expect(await alice.getTokenBalance(category)).toBe(0n);
-    expect((await alice.getAllTokenBalances())[category] || 0n).toBe(0n);
-    const nftTokenUtxos = await alice.getTokenUtxos(category);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    expect(await getTokenBalance(alice, category)).toBe(0n);
+    const nftTokenUtxos = await getTokenUtxos(alice, category);
     expect(nftTokenUtxos.length).toBe(0);
     expect(category).toEqual(nftResponse.categories![0]);
-    expect(await alice.getNftTokenBalance(category)).toBe(0);
-    expect((await alice.getAllNftTokenBalances())[category] || 0n).toBe(0n);
+    expect(await getNftTokenBalance(alice, category)).toBe(0);
+    expect(await getNftTokenBalance(alice, category)).toBe(0n);
   });
 
   test("Test cashtoken satoshi values and fee calculations", async () => {
@@ -406,9 +415,9 @@ describe(`Cashtokens should function in the browser`, () => {
     });
 
     const category = genesisResponse.categories![0];
-    const tokenBalance = await bob.getTokenBalance(category);
+    const tokenBalance = await getTokenBalance(bob, category);
     expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await bob.getTokenUtxos(category);
+    const tokenUtxos = await getTokenUtxos(bob, category);
     expect(tokenUtxos.length).toBe(1);
     expect(tokenUtxos[0].satoshis).toBe(7000n);
 
@@ -421,9 +430,9 @@ describe(`Cashtokens should function in the browser`, () => {
         value: 1500n,
       }),
     ]);
-    let newTokenUtxos = await bob.getTokenUtxos(category);
+    let newTokenUtxos = await getTokenUtxos(bob, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await bob.getTokenBalance(category)).toBe(100n);
+    expect(await getTokenBalance(bob, category)).toBe(100n);
 
     let bobUtxos = await bob.getUtxos();
     expect(bobUtxos.length).toBe(2);
@@ -439,259 +448,13 @@ describe(`Cashtokens should function in the browser`, () => {
         value: 3000n,
       }),
     ]);
-    newTokenUtxos = await bob.getTokenUtxos(category);
+    newTokenUtxos = await getTokenUtxos(bob, category);
     expect(newTokenUtxos.length).toBe(1);
-    expect(await bob.getTokenBalance(category)).toBe(100n);
+    expect(await getTokenBalance(bob, category)).toBe(100n);
 
     bobUtxos = await bob.getUtxos();
     expect(bobUtxos.length).toBe(2);
     expect(bobUtxos[0].satoshis).toBe(3000n);
     expect(bobUtxos[1].satoshis).toBe(3349n);
-  });
-
-  test("Test cashtoken waiting and watching balance", async () => {
-    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const bob = await RegTestWallet.newRandom();
-
-    const genesisResponse = await alice.tokenGenesis({
-      amount: 100n,
-      value: 5000n,
-      nft: {
-        capability: NFTCapability.minting,
-        commitment: "test",
-      },
-      cashaddr: alice.cashaddr!,
-    });
-
-    const category = genesisResponse.categories![0];
-    const tokenBalance = await alice.getTokenBalance(category);
-    expect(tokenBalance).toBe(100n);
-    const tokenUtxos = await alice.getTokenUtxos(category);
-    expect(tokenUtxos.length).toBe(1);
-    expect(tokenUtxos[0].satoshis).toBe(5000n);
-
-    let seenBalance = 0n;
-    setTimeout(
-      () =>
-        alice.send([
-          new TokenSendRequest({
-            cashaddr: bob.cashaddr!,
-            amount: 100n,
-            category: category,
-            value: 1500n,
-            nft: {
-              capability: NFTCapability.minting,
-              commitment: "test",
-            },
-          }),
-        ]),
-      0,
-    );
-
-    const cancel = await bob.watchTokenBalance(category, (balance) => {
-      seenBalance = balance;
-    });
-
-    const [balance, _] = await Promise.all([
-      bob.waitForTokenBalance(category, 100n),
-      delay(1000),
-    ]);
-
-    expect(balance).toBe(100n);
-    expect(seenBalance).toBe(100n);
-
-    await Promise.all([cancel(), delay(1000)]);
-  });
-
-  test("Should encode unsigned transactions", async () => {
-    const binsAreEqual = (a: Uint8Array, b: Uint8Array) => {
-      if (a.length !== b.length) {
-        return false;
-      }
-      for (let i = 0; i < a.length; i++) {
-        if (a[i] !== b[i]) {
-          return false;
-        }
-      }
-      return true;
-    };
-
-    (BigInt.prototype as any).toJSON = function () {
-      const int = Number.parseInt(this.toString());
-      return int ?? this.toString();
-    };
-
-    const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const aliceWatchWallet = await RegTestWallet.watchOnly(
-      aliceWallet.cashaddr!,
-    );
-
-    let category: string;
-    {
-      const aliceUtxos = await aliceWallet.getUtxos();
-
-      const { unsignedTransaction, sourceOutputs, categories } =
-        await aliceWatchWallet.tokenGenesis(
-          {
-            nft: {
-              capability: "minting",
-              commitment: "00",
-            },
-          },
-          undefined,
-          { buildUnsigned: true },
-        );
-      const encodedTransaction = hexToBin(unsignedTransaction!);
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      expect(JSON.stringify(aliceUtxos)).toBe(
-        JSON.stringify(await aliceWallet.getUtxos()),
-      );
-
-      const decoded = libauth.decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw decoded;
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-      expect(binToHex(decoded.outputs[0].token?.nft?.commitment!)).toBe("00");
-
-      const signed = await aliceWallet.signUnsignedTransaction(
-        unsignedTransaction!,
-        sourceOutputs!,
-      );
-      await aliceWallet.submitTransaction(signed);
-      await aliceWallet.waitForUpdate();
-      await aliceWatchWallet.waitForUpdate();
-
-      category = categories![0];
-
-      expect(await aliceWallet.getNftTokenBalance(category)).toBe(1);
-      const tokenUtxos = await aliceWallet.getTokenUtxos(category);
-      expect(tokenUtxos.length).toBe(1);
-      expect(tokenUtxos[0].token?.nft?.capability).toBe(NFTCapability.minting);
-    }
-
-    {
-      const aliceUtxos = await aliceWallet.getUtxos();
-
-      const { unsignedTransaction, sourceOutputs } =
-        await aliceWatchWallet.tokenMint(
-          {
-            category: category,
-            nft: {
-              capability: "none",
-              commitment: "0a",
-            },
-          },
-          undefined,
-          { buildUnsigned: true },
-        );
-      const encodedTransaction = hexToBin(unsignedTransaction!);
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      expect(JSON.stringify(aliceUtxos)).toBe(
-        JSON.stringify(await aliceWallet.getUtxos()),
-      );
-
-      const decoded = libauth.decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw decoded;
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-      expect(binToHex(sourceOutputs![0].token?.nft?.commitment!)).toBe("00");
-      expect(binToHex(decoded.outputs[0].token?.nft?.commitment!)).toBe("00");
-      expect(binToHex(decoded.outputs[1].token?.nft?.commitment!)).toBe("0a");
-
-      const signed = await aliceWallet.signUnsignedTransaction(
-        unsignedTransaction!,
-        sourceOutputs!,
-      );
-      await aliceWallet.submitTransaction(signed);
-      await aliceWallet.waitForUpdate();
-      await aliceWatchWallet.waitForUpdate();
-
-      expect(await aliceWallet.getNftTokenBalance(category)).toBe(2);
-      const tokenUtxos = await aliceWallet.getTokenUtxos(category);
-      expect(tokenUtxos.length).toBe(2);
-      expect(
-        tokenUtxos.filter(
-          (val) => val.token?.nft?.capability === NFTCapability.minting,
-        ).length,
-      ).toBe(1);
-      expect(
-        tokenUtxos.filter(
-          (val) => val.token?.nft?.capability === NFTCapability.none,
-        ).length,
-      ).toBe(1);
-    }
-
-    {
-      const aliceUtxos = await aliceWallet.getUtxos();
-
-      const { unsignedTransaction, sourceOutputs } =
-        await aliceWatchWallet.send(
-          [
-            new TokenSendRequest({
-              category: category,
-              nft: {
-                capability: "none",
-                commitment: "0a",
-              },
-              cashaddr: aliceWallet.cashaddr!,
-            }),
-          ],
-          { buildUnsigned: true },
-        );
-      const encodedTransaction = hexToBin(unsignedTransaction!);
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      expect(JSON.stringify(aliceUtxos)).toBe(
-        JSON.stringify(await aliceWallet.getUtxos()),
-      );
-
-      const decoded = libauth.decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw decoded;
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-      expect(binToHex(sourceOutputs![0].token?.nft?.commitment!)).toBe("0a");
-      expect(binToHex(decoded.outputs[0].token?.nft?.commitment!)).toBe("0a");
-
-      const signed = await aliceWallet.signUnsignedTransaction(
-        unsignedTransaction!,
-        sourceOutputs!,
-      );
-      await aliceWallet.submitTransaction(signed);
-      await aliceWallet.waitForUpdate();
-
-      expect(await aliceWallet.getNftTokenBalance(category)).toBe(2);
-      const tokenUtxos = await aliceWallet.getTokenUtxos(category);
-      expect(tokenUtxos.length).toBe(2);
-      expect(
-        tokenUtxos.filter(
-          (val) => val.token?.nft?.capability === NFTCapability.minting,
-        ).length,
-      ).toBe(1);
-      expect(
-        tokenUtxos.filter(
-          (val) => val.token?.nft?.capability === NFTCapability.none,
-        ).length,
-      ).toBe(1);
-    }
   });
 });

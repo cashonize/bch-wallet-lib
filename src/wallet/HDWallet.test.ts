@@ -1,8 +1,8 @@
 import { assertSuccess, decodeTransaction, hexToBin } from "@bitauth/libauth";
-import { stringify } from "../cache/index.js";
+import { stringify } from "../cache/walletCache.js";
 import { Config } from "../config.js";
 import { NFTCapability } from "../interface.js";
-import { mine } from "../mine/index.js";
+import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "../network/Connection.js";
 import { delay } from "../util/delay.js";
 import { getNextUnusedIndex } from "../util/hd.js";
@@ -10,6 +10,7 @@ import { GAP_SIZE, HDWallet, RegTestHDWallet } from "./HDWallet.js";
 import { CancelFn } from "./interface.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWallet, Wallet } from "./Wif.js";
+import { getTokenUtxos } from "#test/balances.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -563,43 +564,9 @@ describe("HDWallet", () => {
     expect(await hdWallet.getBalance()).toBe(0n);
   });
 
-  it("Should build unsigned transactions from an HDWallet", async () => {
-    const fundingWallet = await RegTestWallet.fromId(
-      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
-    );
-
-    const hdWallet = await RegTestHDWallet.newRandom();
-    expect(await hdWallet.getBalance()).toBe(0n);
-
-    const depositAddress = hdWallet.getDepositAddress();
-    await fundingWallet.send({
-      cashaddr: depositAddress,
-      value: 100000n,
-    });
-    await hdWallet.waitForUpdate({ depositIndex: 1 });
-
-    expect(await hdWallet.getBalance()).toBe(100000n);
-
-    const unsignedTx = await hdWallet.send(
-      {
-        cashaddr: (await RegTestWallet.newRandom()).getDepositAddress(),
-        value: 50000n,
-      },
-      {
-        buildUnsigned: true,
-      },
-    );
-
-    const tx = assertSuccess(
-      decodeTransaction(hexToBin(unsignedTx.unsignedTransaction!)),
-    );
-    expect(tx.inputs.length).toBe(1);
-    expect(tx.inputs[0].unlockingBytecode.length).toBe(0); // should be empty
-  });
-
   it("WalletCache persistence, addresses", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -648,12 +615,12 @@ describe("HDWallet", () => {
       otherWallet.walletCache.get(hdWallet.getChangeAddress(100)),
     ).toBeDefined();
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("WalletCache persistence, status and utxo", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -699,12 +666,12 @@ describe("HDWallet", () => {
       ),
     );
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("WalletCache persistence, rawHistory", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -749,7 +716,7 @@ describe("HDWallet", () => {
       ),
     );
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("getRawHistory uses cached data", async () => {
@@ -804,8 +771,8 @@ describe("HDWallet", () => {
   });
 
   it("incremental history fetching with lastConfirmedHeight", async () => {
-    const memoryCacheValue = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
 
     const hdWallet = await RegTestHDWallet.newRandom();
 
@@ -855,7 +822,7 @@ describe("HDWallet", () => {
     );
     expect(reloadedEntry?.rawHistory.length).toBe(2);
 
-    Config.UseMemoryCache = memoryCacheValue;
+    Config.UseIndexedDBCache = indexedDbCacheValue;
   });
 
   it("watchWallet registers and removes callbacks", async () => {
@@ -987,7 +954,7 @@ describe("HDWallet", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const newTokenUtxos = await alice.getTokenUtxos(category);
+    const newTokenUtxos = await getTokenUtxos(alice, category);
     expect(newTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
 
@@ -1022,8 +989,8 @@ describe("HDWallet", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    expect((await alice.getTokenUtxos(category)).length).toBe(0);
-    const bobTokenUtxos = await bob.getTokenUtxos(category);
+    expect((await getTokenUtxos(alice, category)).length).toBe(0);
+    const bobTokenUtxos = await getTokenUtxos(bob, category);
     expect(bobTokenUtxos.length).toBe(3);
     expect(category).toEqual(response.categories![0]);
   });

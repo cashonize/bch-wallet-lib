@@ -295,16 +295,12 @@ export class OpReturnData {
 
 export type SendRequestArray = Array<string | bigint | Uint8Array>;
 
-export type SourceOutput = Input & Output;
-
 export class SendResponse {
   txId?: string;
   balance?: bigint;
   explorerUrl?: string;
   categories?: string[];
   transaction?: string; // transaction hex
-  unsignedTransaction?: string; // unsigned transaction hex
-  sourceOutputs?: SourceOutput[]; // source outputs for signing unsigned transactions
 
   constructor({
     txId,
@@ -318,28 +314,6 @@ export class SendResponse {
     this.txId = txId;
     this.balance = balance;
     this.explorerUrl = explorerUrl;
-  }
-}
-
-export class XPubKey {
-  path: string;
-  xPubKey: string;
-
-  constructor({ path, xPubKey }: { path: string; xPubKey: string }) {
-    this.path = path;
-    this.xPubKey = xPubKey;
-  }
-
-  public async ready() {
-    await this.xPubKey;
-    return this.asObject();
-  }
-
-  public asObject() {
-    return {
-      path: this.path,
-      xPubKey: this.xPubKey,
-    };
   }
 }
 

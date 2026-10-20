@@ -1,6 +1,6 @@
 import { webSocket } from "@rpckit/websocket/electrum-cash";
 import { Network } from "../interface.js";
-import { createProvider, getNetworkProvider } from "./index.js";
+import { createProvider, getNetworkProvider } from "./default.js";
 
 test("Should get a transaction with bare rpckit transport", async () => {
   const transport = webSocket("wss://fulcrum.pat.mn:50004");

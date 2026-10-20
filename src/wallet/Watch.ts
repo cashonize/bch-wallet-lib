@@ -401,9 +401,7 @@ export class WatchWallet extends BaseWallet {
     await this.watchPromise;
     await this.updatePromise;
 
-    return this._slpSemiAware
-      ? this.utxos.filter((u) => u.satoshis > DUST_UTXO_THRESHOLD)
-      : this.utxos;
+    return this.utxos;
   }
 
   // Gets balance by summing value in all utxos in sats

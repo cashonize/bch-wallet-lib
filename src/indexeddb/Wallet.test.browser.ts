@@ -2,14 +2,10 @@ import {
   BaseWallet,
   Config,
   convert,
-  createWallet,
-  createWalletResponse,
   RegTestWallet,
   SignedMessage,
   TestNetWallet,
   Wallet,
-  WalletTypeEnum,
-  walletFromId,
 } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
 
@@ -20,24 +16,6 @@ describe("Wallet should function in the browser", () => {
 
   test("Should load module", async () => {
     expect(typeof TestNetWallet).toEqual("function");
-  });
-
-  test("Should create regtest wallet", async () => {
-    const result = await createWalletResponse({
-      name: "Alice's Regtest",
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-    });
-    expect(result.cashaddr!.slice(0, 8)).toBe("bchreg:q");
-  });
-
-  test("Should create testnet wallet", async () => {
-    const result = await createWalletResponse({
-      name: "Alice's TestNet",
-      type: WalletTypeEnum.Wif,
-      network: "testnet",
-    });
-    expect(result.cashaddr!.slice(0, 9)).toBe("bchtest:q");
   });
 
   test("Should throw Error on regtest wif to Testnet", async () => {
@@ -122,7 +100,9 @@ describe("Wallet should function in the browser", () => {
   });
 
   test("Should sign a message and verify it", async () => {
-    const alice = await walletFromId(`wif:regtest:${process.env.PRIVATE_WIF}`);
+    const alice = await RegTestWallet.fromId(
+      `wif:regtest:${process.env.PRIVATE_WIF}`,
+    );
     const result = SignedMessage.sign("test", alice.privateKey!);
     const verifyResult = SignedMessage.verify(
       "test",
@@ -136,12 +116,10 @@ describe("Wallet should function in the browser", () => {
   });
 
   test("Should send to Bob; sendMax all of Bob's funds back", async () => {
-    const alice = await walletFromId(`wif:regtest:${process.env.PRIVATE_WIF}`);
-    const bob = await createWallet({
-      type: WalletTypeEnum.Wif,
-      network: "regtest",
-      name: "Bob's random wallet",
-    });
+    const alice = await RegTestWallet.fromId(
+      `wif:regtest:${process.env.PRIVATE_WIF}`,
+    );
+    const bob = await RegTestWallet.newRandom();
     await alice.send([{ cashaddr: bob.cashaddr!, value: 3000n }]);
     const result = await bob.sendMax(alice.cashaddr!);
     expect(result.balance).toBe(0n);
@@ -176,24 +154,6 @@ describe("Wallet should function in the browser", () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bob = await RegTestWallet.newRandom();
 
-    let waitTxResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForTransaction({
-        getBalance: true,
-        getTransactionInfo: true,
-      });
-      expect(result.balance).toBeGreaterThan(0n);
-      expect(result.transactionInfo!.hash.length).toBe(64);
-      waitTxResult = true;
-    }, 0);
-
-    let waitBalanceResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForBalance(100000n);
-      expect(result).toBeGreaterThan(0n);
-      waitBalanceResult = true;
-    }, 0);
-
     let bobBalanceWatchResult = false;
     const bobBalanceWatchCancel = await bob.watchBalance(
       async (balance: bigint) => {
@@ -210,70 +170,6 @@ describe("Wallet should function in the browser", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 5000));
-    expect(waitTxResult).toBe(true);
-    expect(waitBalanceResult).toBe(true);
     expect(bobBalanceWatchResult).toBe(true);
-  });
-
-  test("Should use localStorage cache for transactions", async () => {
-    const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const txDecoded = await aliceWallet.getLastTransaction();
-    expect(txDecoded === null).toBe(false);
-    const txHash = txDecoded!.hash;
-    expect(
-      localStorage.getItem(`tx-${aliceWallet.provider!.network}-${txHash}`),
-    ).toBe(null);
-    Config.UseLocalStorageCache = true;
-    await aliceWallet.provider!.getRawTransaction(txHash);
-    await aliceWallet.provider!.getRawTransaction(txHash, true);
-
-    expect(
-      localStorage.getItem(
-        `txraw-${aliceWallet.provider!.network}-${txHash}`,
-      ) === null,
-    ).toBe(false);
-    expect(
-      typeof localStorage.getItem(
-        `txraw-${aliceWallet.provider!.network}-${txHash}`,
-      ) === "string",
-    ).toBe(true);
-    expect(typeof (await aliceWallet.provider!.getRawTransaction(txHash))).toBe(
-      "string",
-    );
-
-    expect(
-      localStorage.getItem(`tx-${aliceWallet.provider!.network}-${txHash}`) ===
-        null,
-    ).toBe(false);
-    expect(
-      typeof (await aliceWallet.provider!.getRawTransaction(txHash, true)),
-    ).toBe("object");
-
-    Config.UseLocalStorageCache = false;
-  });
-
-  test("Should use localStorage cache for block headers", async () => {
-    const aliceWallet = await Wallet.newRandom();
-    const height = 854724;
-    await aliceWallet.provider!.getHeader(854724);
-    expect(
-      localStorage.getItem(
-        `header-${aliceWallet.provider!.network}-${height}-${false}`,
-      ),
-    ).toBe(null);
-    Config.UseLocalStorageCache = true;
-    await aliceWallet.provider!.getHeader(854724);
-    await aliceWallet.provider!.getHeader(854724, true);
-
-    expect(
-      localStorage.getItem(
-        `header-${aliceWallet.provider!.network}-${height}-${false}`,
-      ) === null,
-    ).toBe(false);
-    expect(typeof (await aliceWallet.provider!.getHeader(854724))).toBe(
-      "object",
-    );
-
-    Config.UseLocalStorageCache = false;
   });
 });

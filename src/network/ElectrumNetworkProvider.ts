@@ -10,17 +10,8 @@ import type {
 import type { ElectrumCashSchema } from "@rpckit/core/electrum-cash";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { CacheProvider } from "../cache/interface.js";
-import { MemoryCache } from "../cache/MemoryCache.js";
-import { WebStorageCache } from "../cache/WebStorageCache.js";
 import { Config } from "../config.js";
-import {
-  DsproofData,
-  HeaderI,
-  HexHeaderI,
-  Network,
-  TxI,
-  Utxo,
-} from "../interface.js";
+import { HeaderI, HexHeaderI, Network, TxI, Utxo } from "../interface.js";
 import { decodeHeader } from "../util/header.js";
 import { getTransactionHash } from "../util/transaction.js";
 import { CancelFn } from "../wallet/interface.js";
@@ -45,25 +36,8 @@ export default class ElectrumNetworkProvider<
   private _cache: CacheProvider | undefined;
 
   get cache(): CacheProvider | undefined {
-    if (
-      !Config.UseMemoryCache &&
-      !Config.UseLocalStorageCache &&
-      !Config.UseIndexedDBCache
-    ) {
+    if (!Config.UseIndexedDBCache) {
       this._cache = undefined;
-      return this._cache;
-    }
-
-    if (Config.UseMemoryCache && !(this._cache instanceof MemoryCache)) {
-      this._cache = new MemoryCache();
-      return this._cache;
-    }
-
-    if (
-      Config.UseLocalStorageCache &&
-      !(this._cache instanceof WebStorageCache)
-    ) {
-      this._cache = new WebStorageCache();
       return this._cache;
     }
 
@@ -480,29 +454,6 @@ export default class ElectrumNetworkProvider<
     return this.subscribeToHeaders(waitForBlockCallback);
   }
 
-  // Wait for the next block or a block at given blockchain height.
-  public async waitForBlock(height?: number): Promise<HexHeaderI> {
-    return new Promise(async (resolve) => {
-      let cancelWatch: CancelFn;
-      if (this.currentHeight && !height) {
-        height = this.currentHeight + 1;
-      }
-
-      cancelWatch = await this.watchBlocks(async (header) => {
-        if (!height) {
-          height = header.height + 1;
-          return;
-        }
-
-        if (header.height >= height) {
-          await cancelWatch?.();
-          resolve(header);
-          return;
-        }
-      });
-    });
-  }
-
   // subscribe to notifications sent when new block is found, the block header is sent to callback
   async subscribeToHeaders(
     callback: (header: HexHeaderI) => void,
@@ -529,17 +480,6 @@ export default class ElectrumNetworkProvider<
   ): Promise<CancelFn> {
     return this.subscribeRequest(
       "blockchain.transaction.subscribe",
-      [txHash],
-      callback,
-    );
-  }
-
-  async subscribeToDsproof(
-    txHash: string,
-    callback: (data: [txHash: string, dsproof: DsproofData | null]) => void,
-  ): Promise<CancelFn> {
-    return this.subscribeRequest(
-      "blockchain.transaction.dsproof.subscribe",
       [txHash],
       callback,
     );

@@ -16,7 +16,7 @@ import {
   sha256,
   utf8ToBin,
 } from "@bitauth/libauth";
-import { HDWalletCache, WalletCacheI } from "../cache/index.js";
+import { HDWalletCache, WalletCacheI } from "../cache/walletCache.js";
 import { Config } from "../config.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import { NetworkType, prefixFromNetworkMap, UnitEnum } from "../enum.js";
@@ -668,11 +668,7 @@ export class HDWallet extends BaseWallet {
   public async getUtxos(options: { branches?: number[] } = {}) {
     await this.watchPromise;
 
-    const utxos = this.collectUtxosFromBranches(options.branches);
-
-    return this._slpSemiAware
-      ? utxos.filter((u) => u.satoshis > DUST_UTXO_THRESHOLD)
-      : utxos;
+    return this.collectUtxosFromBranches(options.branches);
   }
 
   // Gets balance by summing value in all utxos in sats
@@ -931,7 +927,7 @@ export class HDWallet extends BaseWallet {
     options?: SendRequestOptionsI,
     privateKey?: Uint8Array,
   ) {
-    if (!this.xPriv && !privateKey && options?.buildUnsigned !== true) {
+    if (!this.xPriv && !privateKey) {
       throw new Error(`Missing private key`);
     }
 

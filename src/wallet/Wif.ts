@@ -19,7 +19,6 @@ import {
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
-import { signUnsignedTransaction } from "../transaction/Wif.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
 import { checkWifNetwork } from "../util/checkWifNetwork.js";
 import { WalletTypeEnum } from "./enum.js";
@@ -29,7 +28,6 @@ import {
   SendRequest,
   SendRequestArray,
   SendResponse,
-  SourceOutput,
   TokenSendRequest,
 } from "./model.js";
 import { WatchWallet } from "./Watch.js";
@@ -517,7 +515,7 @@ export class Wallet extends WatchWallet {
   ) {
     privateKey = privateKey ?? this.privateKey;
 
-    if (!privateKey && options?.buildUnsigned !== true) {
+    if (!privateKey) {
       throw new Error(`Missing private key`);
     }
 
@@ -529,16 +527,6 @@ export class Wallet extends WatchWallet {
     );
   }
 
-  public async signUnsignedTransaction(
-    transaction: Uint8Array | string,
-    sourceOutputs: SourceOutput[],
-  ): Promise<Uint8Array> {
-    if (!this.privateKey) {
-      throw Error("Can not sign a transaction with watch-only wallet.");
-    }
-
-    return signUnsignedTransaction(transaction, sourceOutputs, this.privateKey);
-  }
   //#endregion Funds
 }
 

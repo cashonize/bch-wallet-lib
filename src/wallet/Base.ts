@@ -2,14 +2,7 @@ import { binToHex, CashAddressNetworkPrefix, sha256 } from "@bitauth/libauth";
 import { WalletCache } from "../cache/walletCache.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
-import {
-  DsproofData,
-  HexHeaderI,
-  NFTCapability,
-  TxI,
-  Utxo,
-  UtxoId,
-} from "../interface.js";
+import { HexHeaderI, NFTCapability, TxI, Utxo, UtxoId } from "../interface.js";
 import { getNetworkProvider } from "../network/default.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
@@ -30,12 +23,10 @@ import {
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
-import { FeePaidByEnum, WalletTypeEnum } from "./enum.js";
+import { WalletTypeEnum } from "./enum.js";
 import {
   CancelFn,
   SendRequestOptionsI,
-  WaitForTransactionOptions,
-  WaitForTransactionResponse,
   WalletI,
   WalletInfoI,
 } from "./interface.js";
@@ -46,7 +37,6 @@ import {
   SendRequestArray,
   SendRequestType,
   SendResponse,
-  SourceOutput,
   TokenBurnRequest,
   TokenGenesisRequest,
   TokenMintRequest,
@@ -69,7 +59,6 @@ export class BaseWallet implements WalletI {
   readonly provider: ElectrumNetworkProvider;
   readonly network: NetworkType;
   readonly walletType: WalletTypeEnum;
-  _slpSemiAware: boolean = false; // a flag which requires an utxo to have more than 546 sats to be spendable and counted in the balance
   readonly isTestnet: boolean;
   name: string = "";
   protected cancelFns: CancelFn[] = [];
@@ -81,11 +70,6 @@ export class BaseWallet implements WalletI {
   // Return wallet info
   public getInfo(): WalletInfoI {
     throw Error("getInfo not implemented in BaseWallet");
-  }
-
-  public slpSemiAware(value: boolean = true): this {
-    this._slpSemiAware = value;
-    return this;
   }
 
   //#region Accessors
@@ -467,64 +451,6 @@ export class BaseWallet implements WalletI {
     });
   }
 
-  // waits for address balance to be greater than or equal to the target value
-  // this call halts the execution
-  public async waitForBalance(value: bigint): Promise<bigint> {
-    // Check if condition is already met before watching
-    const currentBalance = await this.getBalance();
-    if (currentBalance >= value) {
-      return currentBalance;
-    }
-
-    return new Promise(async (resolve) => {
-      let watchCancel: CancelFn;
-      watchCancel = await this.watchBalance(async (balance: bigint) => {
-        if (balance >= value) {
-          await watchCancel?.();
-          resolve(balance);
-        }
-      });
-    });
-  }
-
-  // sets up a callback to be called upon wallet's token balance change
-  // can be cancelled by calling the function returned from this one
-  public async watchTokenBalance(
-    category: string,
-    callback: (balance: bigint) => void,
-  ): Promise<CancelFn> {
-    return await this.watchStatus(async () => {
-      const balance = await this.getTokenBalance(category);
-      callback(balance);
-    });
-  }
-
-  // waits for address token balance to be greater than or equal to the target amount
-  // this call halts the execution
-  public async waitForTokenBalance(
-    category: string,
-    amount: bigint,
-  ): Promise<bigint> {
-    // Check if condition is already met before watching
-    const currentBalance = await this.getTokenBalance(category);
-    if (currentBalance >= amount) {
-      return currentBalance;
-    }
-
-    return new Promise(async (resolve) => {
-      let watchCancel: CancelFn;
-      watchCancel = await this.watchTokenBalance(
-        category,
-        async (balance: bigint) => {
-          if (balance >= amount) {
-            await watchCancel?.();
-            resolve(balance);
-          }
-        },
-      );
-    });
-  }
-
   /**
    * Watch wallet for new transactions
    * @param callback - Called with new transaction hashes when they appear
@@ -587,33 +513,6 @@ export class BaseWallet implements WalletI {
     );
   }
 
-  /**
-   * Watch for double-spend proofs on incoming transactions.
-   * For each new unconfirmed transaction, subscribes to its dsproof
-   * for a short window. If a dsproof arrives, the callback is invoked.
-   *
-   * @param callback - Called with the dsproof data when a double-spend is detected
-   * @param window - How long (ms) to watch each transaction for dsproofs (default 5000)
-   * @returns Cancel function to stop watching
-   */
-  public async watchDoubleSpends(
-    callback: (dsproof: DsproofData) => void,
-    window: number = 5000,
-  ): Promise<CancelFn> {
-    return this.watchTransactionHashes(async (txHash: string) => {
-      const cancel = await this.provider.subscribeToDsproof(
-        txHash,
-        ([proofTxHash, dsproof]) => {
-          if (txHash === proofTxHash && dsproof !== null) {
-            callback(dsproof);
-          }
-        },
-      );
-
-      setTimeout(() => cancel(), window);
-    });
-  }
-
   protected async _getMaxAmountToSend(
     params: {
       outputCount?: number;
@@ -624,17 +523,6 @@ export class BaseWallet implements WalletI {
       options: {},
     },
   ): Promise<{ value: bigint; utxos: Utxo[] }> {
-    if (params.options && params.options.slpSemiAware) {
-      this._slpSemiAware = true;
-    }
-
-    let feePaidBy;
-    if (params.options && params.options.feePaidBy) {
-      feePaidBy = params.options.feePaidBy;
-    } else {
-      feePaidBy = FeePaidByEnum.change;
-    }
-
     // get inputs
     let utxos: Utxo[];
     const allUtxos = await this.getUtxos();
@@ -665,7 +553,6 @@ export class BaseWallet implements WalletI {
       utxos,
       undefined,
       bestHeight,
-      feePaidBy,
       sendRequests,
     );
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
@@ -674,7 +561,6 @@ export class BaseWallet implements WalletI {
       sendRequests: sendRequests,
       sourceAddress: placeholderCashAddr,
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      feePaidBy: feePaidBy,
     });
     const spendableAmount = sumUtxoValue(fundingUtxos);
 
@@ -714,9 +600,12 @@ export class BaseWallet implements WalletI {
       | SendRequestArray[],
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
-    const { encodedTransaction, categories, sourceOutputs } =
-      await this.encodeTransaction(requests, undefined, options);
-    return this._send(encodedTransaction, categories, sourceOutputs, options);
+    const { encodedTransaction, categories } = await this.encodeTransaction(
+      requests,
+      undefined,
+      options,
+    );
+    return this._send(encodedTransaction, categories, options);
   }
 
   /**
@@ -766,15 +655,18 @@ export class BaseWallet implements WalletI {
       value: maxSpendableAmount,
     });
 
-    const { encodedTransaction, categories, sourceOutputs } =
-      await this.encodeTransaction([sendRequest], true, options, privateKey);
-    return this._send(encodedTransaction, categories, sourceOutputs, options);
+    const { encodedTransaction, categories } = await this.encodeTransaction(
+      [sendRequest],
+      true,
+      options,
+      privateKey,
+    );
+    return this._send(encodedTransaction, categories, options);
   }
 
   protected async _send(
     encodedTransaction: Uint8Array,
     categories: string[],
-    sourceOutputs: SourceOutput[] | undefined,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
     const resp = new SendResponse({});
@@ -785,7 +677,7 @@ export class BaseWallet implements WalletI {
       resp.txId = binToHex(
         sha256.hash(sha256.hash(encodedTransaction)).reverse(),
       );
-    } else if (options?.buildUnsigned !== true) {
+    } else {
       const awaitPropagation =
         options?.awaitTransactionPropagation === undefined ||
         options?.awaitTransactionPropagation === true;
@@ -809,9 +701,6 @@ export class BaseWallet implements WalletI {
       ) {
         resp.balance = await this.getBalance();
       }
-    } else {
-      resp.unsignedTransaction = binToHex(encodedTransaction);
-      resp.sourceOutputs = sourceOutputs;
     }
 
     return resp;
@@ -835,17 +724,6 @@ export class BaseWallet implements WalletI {
     privateKey?: Uint8Array,
   ) {
     let sendRequests = asSendRequestObject(requests);
-
-    if (options && options.slpSemiAware) {
-      this._slpSemiAware = true;
-    }
-
-    let feePaidBy: FeePaidByEnum;
-    if (options?.feePaidBy) {
-      feePaidBy = options.feePaidBy;
-    } else {
-      feePaidBy = FeePaidByEnum.change;
-    }
 
     let changeAddress: string;
     if (options?.changeAddress) {
@@ -972,53 +850,38 @@ export class BaseWallet implements WalletI {
       sendRequests: sendRequests,
       sourceAddress: this.getDepositAddress(),
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      feePaidBy: feePaidBy,
     });
 
     const selectedUtxos = await getSuitableUtxos(
       utxos,
       spendAmount + feeEstimate,
       bestHeight,
-      feePaidBy,
       sendRequests,
       options?.ensureUtxos || [],
       options?.tokenOperation,
-      {
-        coinSelection: options?.coinSelection,
-        feePerByte: relayFeePerByteInSatoshi,
-      },
     );
     if (selectedUtxos.length === 0) {
       throw Error(
         "The available inputs couldn't satisfy the request with fees",
       );
     }
-    const fundingUtxos = options?.inputOrdering
-      ? options.inputOrdering({ inputs: selectedUtxos })
-      : selectedUtxos;
+    const fundingUtxos = selectedUtxos;
     const fee = await getFeeAmount({
       utxos: fundingUtxos,
       sendRequests: sendRequests,
       sourceAddress: this.getDepositAddress(),
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      feePaidBy: feePaidBy,
       walletCache: this.walletCache,
-      fee: options?.fee,
     });
-    const { encodedTransaction, sourceOutputs } = await buildEncodedTransaction(
-      {
-        inputs: fundingUtxos,
-        outputs: sendRequests,
-        signingKey: privateKey ?? placeholderPrivateKeyBin,
-        fee,
-        discardChange,
-        feePaidBy,
-        changeAddress,
-        buildUnsigned: options?.buildUnsigned === true,
-        walletCache: this.walletCache,
-        outputOrdering: options?.outputOrdering,
-      },
-    );
+    const { encodedTransaction } = await buildEncodedTransaction({
+      inputs: fundingUtxos,
+      outputs: sendRequests,
+      signingKey: privateKey ?? placeholderPrivateKeyBin,
+      fee,
+      discardChange,
+      changeAddress,
+      walletCache: this.walletCache,
+    });
 
     const categories = [
       ...fundingUtxos
@@ -1029,7 +892,7 @@ export class BaseWallet implements WalletI {
         .map((val) => (val as TokenSendRequest).category),
     ].filter((value, index, array) => array.indexOf(value) === index);
 
-    return { encodedTransaction, categories, sourceOutputs };
+    return { encodedTransaction, categories };
   }
 
   // Submit a raw transaction
@@ -1055,89 +918,6 @@ export class BaseWallet implements WalletI {
     throw Error("getRawHistory not implemented in BaseWallet");
   }
 
-  // gets last transaction of this wallet
-  public async getLastTransaction(
-    confirmedOnly: boolean = false,
-  ): Promise<ElectrumRawTransaction | null> {
-    let history: TxI[] = await this.getRawHistory();
-    if (confirmedOnly) {
-      history = history.filter((val) => val.height > 0);
-    }
-
-    if (!history.length) {
-      return null;
-    }
-
-    const [lastTx] = history.slice(-1);
-    return this.provider.getRawTransactionObject(lastTx.tx_hash);
-  }
-
-  // waits for next transaction, program execution is halted
-  public async waitForTransaction(
-    options: WaitForTransactionOptions = {
-      getTransactionInfo: true,
-      getBalance: false,
-      txHash: undefined,
-    },
-  ): Promise<WaitForTransactionResponse> {
-    if (options.getTransactionInfo === undefined) {
-      options.getTransactionInfo = true;
-    }
-
-    return new Promise(async (resolve) => {
-      let txHashSeen = false;
-
-      const makeResponse = async (txHash?: string) => {
-        const response = <WaitForTransactionResponse>{};
-        const promises: any[] = [undefined, undefined];
-
-        if (options.getBalance === true) {
-          promises[0] = this.getBalance();
-        }
-
-        if (options.getTransactionInfo === true) {
-          if (!txHash) {
-            promises[1] = this.getLastTransaction();
-          } else {
-            promises[1] = this.provider.getRawTransactionObject(txHash);
-          }
-        }
-
-        const result = await Promise.all(promises);
-        response.balance = result[0];
-        response.transactionInfo = result[1];
-
-        return response;
-      };
-
-      // waiting for a specific transaction to propagate
-      if (options.txHash) {
-        let cancel: CancelFn;
-
-        const waitForTransactionCallback = async (data) => {
-          if (data && data[0] === options.txHash! && data[1] !== null) {
-            txHashSeen = true;
-            await cancel?.();
-            resolve(makeResponse(options.txHash!));
-          }
-        };
-
-        cancel = await this.provider.subscribeToTransaction(
-          options.txHash,
-          waitForTransactionCallback,
-        );
-        return;
-      }
-
-      // waiting for any address transaction
-      let watchCancel: CancelFn;
-      watchCancel = await this.watchStatus(async (_status) => {
-        await watchCancel?.();
-        resolve(makeResponse());
-      });
-    });
-  }
-
   /**
    * watchBlocks Watch network blocks
    *
@@ -1151,16 +931,6 @@ export class BaseWallet implements WalletI {
     skipCurrentHeight: boolean = true,
   ): Promise<CancelFn> {
     return this.provider.watchBlocks(callback, skipCurrentHeight);
-  }
-
-  /**
-   * waitForBlock Wait for a network block
-   *
-   * @param height if specified waits for this exact blockchain height, otherwise resolves with the next block
-   *
-   */
-  public async waitForBlock(height?: number): Promise<HexHeaderI> {
-    return this.provider.waitForBlock(height);
   }
 
   //#endregion Funds
@@ -1448,84 +1218,6 @@ export class BaseWallet implements WalletI {
       ensureUtxos: ensureUtxos.length > 0 ? ensureUtxos : undefined,
       tokenOperation: "burn",
     });
-  }
-
-  /**
-   * getTokenUtxos Get unspent token outputs for the wallet
-   * will return utxos only for the specified token if `category` provided
-   * @param  {string?} category category to filter utxos by, if not set will return utxos from all tokens
-   * @returns  {Utxo[]} token utxos
-   */
-  public async getTokenUtxos(category?: string): Promise<Utxo[]> {
-    const utxos = await this.getUtxos();
-    return utxos.filter((val) =>
-      category ? val.token?.category === category : val.token,
-    );
-  }
-
-  /**
-   * getTokenBalance Gets fungible token balance
-   * for NFT token balance see @ref getNftTokenBalance
-   * @param  {string} category category to get balance for
-   * @returns  {bigint} fungible token balance
-   */
-  public async getTokenBalance(category: string): Promise<bigint> {
-    const utxos = (await this.getTokenUtxos(category)).filter(
-      (val) => val.token?.amount && val.token?.category === category,
-    );
-    return sumTokenAmounts(utxos, category);
-  }
-
-  /**
-   * getNftTokenBalance Gets non-fungible token (NFT) balance for a particular category
-   * disregards fungible token balances
-   * for fungible token balance see @ref getTokenBalance
-   * @param  {string} category category to get balance for
-   * @returns  {number} non-fungible token balance
-   */
-  public async getNftTokenBalance(category: string): Promise<number> {
-    const utxos = (await this.getTokenUtxos(category)).filter(
-      (val) => val.token?.nft?.commitment !== undefined,
-    );
-    return utxos.length;
-  }
-
-  /**
-   * getAllTokenBalances Gets all fungible token balances in this wallet
-   * @returns  {Object} a map [category => balance] for all tokens in this wallet
-   */
-  public async getAllTokenBalances(): Promise<{ [category: string]: bigint }> {
-    const result = {};
-    const utxos = (await this.getTokenUtxos()).filter(
-      (val) => val.token?.amount,
-    );
-    for (const utxo of utxos) {
-      if (!result[utxo.token!.category]) {
-        result[utxo.token!.category] = 0n;
-      }
-      result[utxo.token!.category] += utxo.token!.amount;
-    }
-    return result;
-  }
-
-  /**
-   * getAllNftTokenBalances Gets all non-fungible token (NFT) balances in this wallet
-   * @returns  {Object} a map [category => balance] for all NFTs in this wallet
-   */
-  public async getAllNftTokenBalances(): Promise<{
-    [category: string]: number;
-  }> {
-    const result = {};
-    const utxos = (await this.getTokenUtxos()).filter(
-      (val) => val.token?.nft?.commitment !== undefined,
-    );
-    for (const utxo of utxos) {
-      if (!result[utxo.token!.category]) {
-        result[utxo.token!.category] = 0;
-      }
-      result[utxo.token!.category] += 1;
-    }
-    return result;
   }
   //#endregion Cashtokens
 }

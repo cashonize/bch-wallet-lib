@@ -8,23 +8,17 @@ import {
 } from "@bitauth/libauth";
 import { bchParam } from "../chain.js";
 import { Config } from "../config.js";
-import { DERIVATION_PATHS, DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
-import { mine } from "../mine/index.js";
+import { DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
+import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "../network/Connection.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
 import json from "../test/json.test.js";
 import { delay } from "../util/delay.js";
-import { deriveHdPaths, getXPubKeys } from "../util/hd.js";
-import {
-  convert,
-  sumUtxoValue,
-  toBch,
-  toCurrency,
-  toSat,
-} from "../util/index.js";
+import { convert, sumUtxoValue } from "../util/index.js";
 import { CancelFn } from "./interface.js";
 import { OpReturnData, SendResponse, toUtxoId } from "./model.js";
 import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
+import { waitForBalance } from "#test/balances.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -233,177 +227,6 @@ describe(`Mnemonic wallet creation`, () => {
   });
 });
 
-describe(`XPubKey path derivation`, () => {
-  test("Expect '11x abandon about' to have the correct xpubs for common derivation paths, seed and path", async () => {
-    let w = await Wallet.fromId(
-      "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-    );
-    let commonPaths = await deriveHdPaths(
-      w.mnemonic!,
-      w.network,
-      DERIVATION_PATHS,
-    );
-    expect(commonPaths).toStrictEqual([
-      {
-        path: "m/0",
-        xPubKey:
-          "xpub68jrRzQfUmwSaf5Y37Yd5uwfnMRxiR14M3HBonDr91GB7GKEh7R9Mvu2UeCtbASfXZ9FdNo9FwFx6a37HNXUDiXVQFXuadXmevRBa3y7rL8",
-      },
-      {
-        path: "m/0'",
-        xPubKey:
-          "xpub68jrRzQopSUQm76hJ6TNtiJMJfhj38u1X12xCzExrw388hcN443UVnYpswdUkV7vPJ3KayiCdp3Q5E23s4wvkucohVTh7eSstJdBFyn2DMx",
-      },
-      {
-        path: "m/0'/0",
-        xPubKey:
-          "xpub6A7PsGUCo9qsn1jhZVB68WKWU9bTt1Wu7fzRqhczRbJ3u3xsF1bJmWBL1MvygTtrfmvNw1adLzmRjQHtDCJDXAHFa4K3wELpGGqEXL4e6d4",
-      },
-      {
-        path: "m/0'/0'",
-        xPubKey:
-          "xpub6A7PsGUM8pNqwy9AceVuFK6KxY88FhvFMRGP9fjEDKA3P4WpR1zyHH3Lmczj7eorx4RbDC4Qttd8C7HhLA2W9LsxxZzXo1DMCwJFb3zZKZ8",
-      },
-      {
-        path: "m/0'/0'/0'",
-        xPubKey:
-          "xpub6BiChRN7aqq51RA7RnAmKhqKdGckPncrHWLrj1xoj6ZMfdMJ1dX4Ysh9V3yEhpFCpC3BapjR83xPKY693XXTEU6qgWU3qZs78WBHA15uhYf",
-      },
-      {
-        path: "m/44'/0'/0'",
-        xPubKey:
-          "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj",
-      },
-      {
-        path: "m/44'/0'/0'/0",
-        xPubKey:
-          "xpub6ELHKXNimKbxMCytPh7EdC2QXx46T9qLDJWGnTraz1H9kMMFdcduoU69wh9cxP12wDxqAAfbaESWGYt5rREsX1J8iR2TEunvzvddduAPYcY",
-      },
-      {
-        path: "m/44'/145'/0'",
-        xPubKey:
-          "xpub6ByHsPNSQXTWZ7PLESMY2FufyYWtLXagSUpMQq7Un96SiThZH2iJB1X7pwviH1WtKVeDP6K8d6xxFzzoaFzF3s8BKCZx8oEDdDkNnp4owAZ",
-      },
-      {
-        path: "m/44'/145'/0'/0",
-        xPubKey:
-          "xpub6F2iaK2JUPcgrZ6RTGH6t8VybLPu1XzfrHsDsaKvK6NfULznU6i6aw6ZoefDW2DpNruSLw73RwQg46qvpqB3eryeJJ2tkFCF4Z6gbr8Pjja",
-      },
-      {
-        path: "m/44'/245'/0",
-        xPubKey:
-          "xpub6Ch34ms5osevEtkEZX81n8EG4c6vgHWGH1gQXBG2uf2Tihb1eed4H1wozLfZB31mV9JD7mymYTQxcLKFFjZHdM5NGdH2Ud1ksSkfwSFjjCg",
-      },
-      {
-        path: "m/44'/245'/0'",
-        xPubKey:
-          "xpub6Ch34msE9YBtQV7pZrLyRXHwocrpJtNN4KDG8bbyxyhGmEM5MirtqkiH4h9dvnVJ3MekET3w2Fkvej3fyo8WLz9bRPyDynDf6NXNfuydhv1",
-      },
-      {
-        path: "m/44'/245'/0'/0",
-        xPubKey:
-          "xpub6FFeETss5Zwkw78NDAibKEaGxigU3bgYzLihcqbQqqTyb6jorR9mgR9AexYydxmiPU8koAf5ndaQPjPWK3sDz1wjBjf2TkLbD982S9PWd9Z",
-      },
-    ]);
-  });
-  test("Expect '11x abandon about' to return 'protected' for root path", async () => {
-    expect.assertions(1);
-    try {
-      let w = await Wallet.fromId(
-        "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-      );
-      let commonPaths = await deriveHdPaths(w.mnemonic!, w.network, ["m"]);
-    } catch (e: any) {
-      expect(e.message).toBe(
-        "Storing or sharing of parent public key may lead to loss of funds. Storing or sharing *root* parent public keys is strongly discouraged, although all parent keys have risk. See: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#implications",
-      );
-    }
-  });
-
-  test("Expect '11x abandon about' to have the correct xpubs for common derivation paths, seed and path", async () => {
-    let w = await Wallet.fromId(
-      "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-    );
-    let commonPaths = await getXPubKeys(w.mnemonic!, w.network);
-    expect(commonPaths).toStrictEqual([
-      {
-        path: "m/0",
-        xPubKey:
-          "xpub68jrRzQfUmwSaf5Y37Yd5uwfnMRxiR14M3HBonDr91GB7GKEh7R9Mvu2UeCtbASfXZ9FdNo9FwFx6a37HNXUDiXVQFXuadXmevRBa3y7rL8",
-      },
-      {
-        path: "m/0'",
-        xPubKey:
-          "xpub68jrRzQopSUQm76hJ6TNtiJMJfhj38u1X12xCzExrw388hcN443UVnYpswdUkV7vPJ3KayiCdp3Q5E23s4wvkucohVTh7eSstJdBFyn2DMx",
-      },
-      {
-        path: "m/0'/0",
-        xPubKey:
-          "xpub6A7PsGUCo9qsn1jhZVB68WKWU9bTt1Wu7fzRqhczRbJ3u3xsF1bJmWBL1MvygTtrfmvNw1adLzmRjQHtDCJDXAHFa4K3wELpGGqEXL4e6d4",
-      },
-      {
-        path: "m/0'/0'",
-        xPubKey:
-          "xpub6A7PsGUM8pNqwy9AceVuFK6KxY88FhvFMRGP9fjEDKA3P4WpR1zyHH3Lmczj7eorx4RbDC4Qttd8C7HhLA2W9LsxxZzXo1DMCwJFb3zZKZ8",
-      },
-      {
-        path: "m/0'/0'/0'",
-        xPubKey:
-          "xpub6BiChRN7aqq51RA7RnAmKhqKdGckPncrHWLrj1xoj6ZMfdMJ1dX4Ysh9V3yEhpFCpC3BapjR83xPKY693XXTEU6qgWU3qZs78WBHA15uhYf",
-      },
-      {
-        path: "m/44'/0'/0'",
-        xPubKey:
-          "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj",
-      },
-      {
-        path: "m/44'/0'/0'/0",
-        xPubKey:
-          "xpub6ELHKXNimKbxMCytPh7EdC2QXx46T9qLDJWGnTraz1H9kMMFdcduoU69wh9cxP12wDxqAAfbaESWGYt5rREsX1J8iR2TEunvzvddduAPYcY",
-      },
-      {
-        path: "m/44'/145'/0'",
-        xPubKey:
-          "xpub6ByHsPNSQXTWZ7PLESMY2FufyYWtLXagSUpMQq7Un96SiThZH2iJB1X7pwviH1WtKVeDP6K8d6xxFzzoaFzF3s8BKCZx8oEDdDkNnp4owAZ",
-      },
-      {
-        path: "m/44'/145'/0'/0",
-        xPubKey:
-          "xpub6F2iaK2JUPcgrZ6RTGH6t8VybLPu1XzfrHsDsaKvK6NfULznU6i6aw6ZoefDW2DpNruSLw73RwQg46qvpqB3eryeJJ2tkFCF4Z6gbr8Pjja",
-      },
-      {
-        path: "m/44'/245'/0",
-        xPubKey:
-          "xpub6Ch34ms5osevEtkEZX81n8EG4c6vgHWGH1gQXBG2uf2Tihb1eed4H1wozLfZB31mV9JD7mymYTQxcLKFFjZHdM5NGdH2Ud1ksSkfwSFjjCg",
-      },
-      {
-        path: "m/44'/245'/0'",
-        xPubKey:
-          "xpub6Ch34msE9YBtQV7pZrLyRXHwocrpJtNN4KDG8bbyxyhGmEM5MirtqkiH4h9dvnVJ3MekET3w2Fkvej3fyo8WLz9bRPyDynDf6NXNfuydhv1",
-      },
-      {
-        path: "m/44'/245'/0'/0",
-        xPubKey:
-          "xpub6FFeETss5Zwkw78NDAibKEaGxigU3bgYzLihcqbQqqTyb6jorR9mgR9AexYydxmiPU8koAf5ndaQPjPWK3sDz1wjBjf2TkLbD982S9PWd9Z",
-      },
-    ]);
-  });
-  test("Expect '11x abandon about' to return 'protected' for root path", async () => {
-    expect.assertions(1);
-    try {
-      let w = await Wallet.fromId(
-        "seed:mainnet:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-      );
-      const { getXPubKeys } = await import("../util/hd.js");
-      let commonPaths = await getXPubKeys(w.mnemonic!, w.network, ["m"]);
-    } catch (e: any) {
-      expect(e.message).toBe(
-        "Storing or sharing of parent public key may lead to loss of funds. Storing or sharing *root* parent public keys is strongly discouraged, although all parent keys have risk. See: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#implications",
-      );
-    }
-  });
-});
-
 describe(`Watch only Wallets`, () => {
   test("Create a watch only testnet wallet from string id", async () => {
     let w = await TestNetWallet.fromId(
@@ -472,10 +295,7 @@ describe(`Watch only Wallets`, () => {
       // Build Bob's wallet from a public address, check his balance.
       expect(alice.getPublicKeyHash()!.length).toBe(20);
       const aliceBalance = await alice.getBalance();
-      expect(toBch(aliceBalance)).toBeGreaterThan(5000);
-      expect(await alice.getBalance()).toBeGreaterThan(
-        5000n * bchParam.subUnits,
-      );
+      expect(aliceBalance).toBeGreaterThan(5000n * bchParam.subUnits);
     }
   });
 
@@ -489,13 +309,13 @@ describe(`Watch only Wallets`, () => {
       // Build Bob's wallet from a public address, check his balance.
       expect(alice.getPublicKeyHash()!.length).toBe(20);
       const aliceBalance = await alice.getBalance();
-      expect(toBch(aliceBalance)).toBeGreaterThan(5000);
-      expect(await toCurrency(await alice.getBalance(), "eur")).toBeGreaterThan(
+      expect(await convert(Number(aliceBalance), "sat", "eur")).toBeGreaterThan(
         0,
       );
       expect(
-        await toCurrency(
-          await (await RegTestWallet.newRandom()).getBalance(),
+        await convert(
+          Number(await (await RegTestWallet.newRandom()).getBalance()),
+          "sat",
           "eur",
         ),
       ).toBe(0);
@@ -546,51 +366,8 @@ describe(`Watch only Wallets`, () => {
 
     expect(await bobWallet.getBalance()).toBe(2000n);
   });
-
-  test("Should get last transaction", async () => {
-    const aliceWif = `wif:regtest:${process.env.PRIVATE_WIF!}`;
-    const aliceWallet = await RegTestWallet.fromId(aliceWif);
-    const bobWallet = await RegTestWallet.newRandom();
-
-    expect(await bobWallet.getLastTransaction()).toBeNull();
-
-    await aliceWallet.send([
-      {
-        cashaddr: bobWallet.cashaddr!,
-        value: 2000n,
-      },
-    ]);
-
-    expect(await bobWallet.getLastTransaction()).not.toBeNull();
-  });
 });
 describe(`Wallet subscriptions`, () => {
-  test("Should wait for transaction", async () => {
-    const aliceWif = `wif:regtest:${process.env.PRIVATE_WIF!}`;
-    const aliceWallet = await RegTestWallet.fromId(aliceWif);
-    const bobWallet = await RegTestWallet.newRandom();
-
-    setTimeout(
-      () =>
-        aliceWallet.send([
-          {
-            cashaddr: bobWallet.cashaddr!,
-            value: 1000n,
-          },
-        ]),
-      0,
-    );
-
-    const response = await bobWallet.waitForTransaction({
-      getTransactionInfo: true,
-      getBalance: true,
-    });
-    expect(response.balance).toBeGreaterThan(0);
-    expect(response.transactionInfo!.hash).not.toBe("");
-
-    await bobWallet.sendMax(aliceWallet.cashaddr!);
-  });
-
   test("Should await and skip transaction propagation", async () => {
     const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bobWallet = await RegTestWallet.newRandom();
@@ -647,12 +424,12 @@ describe(`Wallet subscriptions`, () => {
       },
     ]);
 
-    let balance = await bobWallet.waitForBalance(2000n);
+    let balance = await waitForBalance(bobWallet, 2000n);
     expect(balance).toBeGreaterThanOrEqual(2000n);
     await bobWallet.sendMax(aliceWallet.cashaddr!);
   });
 
-  test("Should watch balance, then waitForBalance, then cancel watch", async () => {
+  test("Should watch balance, then wait for the balance, then cancel watch", async () => {
     const aliceId = `wif:regtest:${process.env.PRIVATE_WIF!}`;
     const alice = await RegTestWallet.fromId(aliceId);
     const bob = await RegTestWallet.newRandom();
@@ -664,7 +441,7 @@ describe(`Wallet subscriptions`, () => {
     ]);
 
     let cancel = await bob.watchBalance(() => {});
-    let balance = await bob.waitForBalance(2000n);
+    let balance = await waitForBalance(bob, 2000n);
     expect(balance).toBe(2000n);
     await cancel();
   });
@@ -687,7 +464,7 @@ describe(`Wallet subscriptions`, () => {
       600,
     );
 
-    let bobBalance = await bob.waitForBalance(1000n).catch((e) => {
+    let bobBalance = await waitForBalance(bob, 1000n).catch((e) => {
       throw e;
     });
     setTimeout(
@@ -700,7 +477,7 @@ describe(`Wallet subscriptions`, () => {
         ]),
       600,
     );
-    let charlieBalance = await charlie.waitForBalance(1000n);
+    let charlieBalance = await waitForBalance(charlie, 1000n);
     setTimeout(
       () =>
         alice.send([
@@ -711,71 +488,17 @@ describe(`Wallet subscriptions`, () => {
         ]),
       600,
     );
-    let daveBalance = await dave.waitForBalance(1000n);
+    let daveBalance = await waitForBalance(dave, 1000n);
     expect(bobBalance).toBe(1000n);
     expect(charlieBalance).toBe(1000n);
     expect(daveBalance).toBe(1000n);
-    setTimeout(
-      () =>
-        alice.send([
-          {
-            cashaddr: bob.cashaddr!,
-            value: 1000n,
-          },
-        ]),
-      600,
-    );
-    let bobResponse = await bob.waitForTransaction();
-    expect(bobResponse.transactionInfo!.version).toBe(2);
-    setTimeout(
-      () =>
-        alice.send([
-          {
-            cashaddr: bob.cashaddr!,
-            value: 1000n,
-          },
-        ]),
-      600,
-    );
-    bobResponse = await bob.waitForTransaction();
-    expect(bobResponse.transactionInfo!.version).toBe(2);
-    setTimeout(
-      () =>
-        alice.send([
-          {
-            cashaddr: bob.cashaddr!,
-            value: 1000n,
-          },
-        ]),
-      600,
-    );
-    bobResponse = await bob.waitForTransaction();
-    expect(bobResponse.transactionInfo!.version).toBe(2);
-    expect(await bob.getBalance()).toBe(4000n);
+    expect(await bob.getBalance()).toBe(1000n);
   });
 
   test("Test waiting and watching", async () => {
     const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
 
     const bob = await RegTestWallet.newRandom();
-
-    let waitTxResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForTransaction({
-        getBalance: true,
-        getTransactionInfo: true,
-      });
-      expect(result.balance!).toBeGreaterThan(0);
-      expect(result.transactionInfo!.hash.length).toBe(64);
-      waitTxResult = true;
-    }, 0);
-
-    let waitBalanceResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForBalance(toSat(0.001));
-      expect(result).toBeGreaterThan(0n);
-      waitBalanceResult = true;
-    }, 0);
 
     let aliceWatchResult = false;
     let aliceWatchCancel: CancelFn;
@@ -801,7 +524,7 @@ describe(`Wallet subscriptions`, () => {
         return;
       }
 
-      expect(balance).toBe(toSat(0.001));
+      expect(balance).toBe(100_000n);
       await bobBalanceWatchCancel?.();
       bobBalanceWatchResult = true;
     });
@@ -814,22 +537,6 @@ describe(`Wallet subscriptions`, () => {
       blockWatchResult = true;
     });
 
-    const blockNumber = await alice.provider!.getBlockHeight();
-
-    let blockWaitResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForBlock(blockNumber + 1);
-      expect(result.height).toBe(blockNumber + 1);
-      blockWaitResult = true;
-    }, 0);
-
-    let blockNumberWaitResult = false;
-    setTimeout(async () => {
-      const result = await alice.waitForBlock(blockNumber + 2);
-      expect(result.height).toBe(blockNumber + 2);
-      blockNumberWaitResult = true;
-    }, 0);
-
     const sendResponse = await alice.send({
       cashaddr: bob.getDepositAddress(),
       value: BigInt(await convert(0.001, "bch", "sat")),
@@ -840,15 +547,11 @@ describe(`Wallet subscriptions`, () => {
     await mine({ cashaddr: alice.cashaddr!, blocks: 1 });
 
     await delay(5000);
-    expect(waitTxResult).toBe(true);
-    expect(waitBalanceResult).toBe(true);
     expect(aliceWatchResult).toBe(true);
     expect(bobWatchResult).toBe(true);
     expect(bobTransactionId).toBe(sendResponse.txId);
     expect(bobBalanceWatchResult).toBe(true);
     expect(blockWatchResult).toBe(true);
-    expect(blockWaitResult).toBe(true);
-    expect(blockNumberWaitResult).toBe(true);
   });
 });
 
@@ -1008,135 +711,6 @@ describe(`Wallet extrema behavior regression testing`, () => {
     expect([...hexToBin(transaction.vout[1].scriptPubKey.hex)]).toStrictEqual([
       0x6a, 0x00,
     ]);
-  });
-
-  test("Test slpSemiAware", async () => {
-    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const bob = await RegTestWallet.newRandom();
-    await alice.send([
-      { cashaddr: bob.getDepositAddress(), value: 546n },
-      { cashaddr: bob.getDepositAddress(), value: 1000n },
-    ]);
-    await bob.waitForUpdate();
-    expect(sumUtxoValue(await bob.getUtxos())).toBe(1546n);
-    bob.slpSemiAware();
-    expect(sumUtxoValue(await bob.getUtxos())).toBe(1000n);
-
-    expect(
-      await bob.getMaxAmountToSend({ options: { slpSemiAware: true } }),
-    ).toBe(768n);
-    await bob.sendMax(alice.getDepositAddress());
-    expect(await bob.getBalance()).toBe(0n + 546n);
-
-    bob.slpSemiAware(false);
-    expect(await bob.getBalance()).toBe(546n);
-    expect(
-      await bob.getMaxAmountToSend({ options: { slpSemiAware: false } }),
-    ).toBeLessThanOrEqual(546n);
-  });
-
-  test("Should encode unsigned transactions", async () => {
-    const aliceWif = `wif:regtest:${process.env.PRIVATE_WIF!}`;
-    const aliceWallet = await RegTestWallet.fromId(aliceWif);
-    const bobWallet = await RegTestWallet.newRandom();
-    delete (aliceWallet as any).privateKey;
-
-    const aliceUtxos = await aliceWallet.getUtxos();
-
-    {
-      const { encodedTransaction, sourceOutputs } =
-        await aliceWallet.encodeTransaction(
-          [
-            {
-              cashaddr: bobWallet.cashaddr!,
-              value: 2000n,
-            },
-          ],
-          false,
-          { buildUnsigned: true },
-        );
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      // BigInts can't be serialized as strings
-      //
-      expect(json(aliceUtxos)).toBe(json(await aliceWallet.getUtxos()));
-
-      const decoded = decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw decoded;
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      const toCashAddress = (bytecode) => {
-        const cashaddr = lockingBytecodeToCashAddress({
-          bytecode: bytecode,
-          prefix: "bchreg",
-        });
-        if (typeof cashaddr === "string") {
-          throw Error(cashaddr);
-        }
-        return cashaddr.address;
-      };
-      expect(toCashAddress(decoded.outputs[0].lockingBytecode)).toBe(
-        bobWallet.cashaddr,
-      );
-      expect(toCashAddress(decoded.outputs[1].lockingBytecode)).toBe(
-        aliceWallet.cashaddr,
-      );
-      expect(sourceOutputs.length).toBe(decoded.inputs.length);
-    }
-
-    {
-      const { unsignedTransaction, sourceOutputs } = await aliceWallet.send(
-        [
-          {
-            cashaddr: bobWallet.cashaddr!,
-            value: 2000n,
-          },
-        ],
-        { buildUnsigned: true },
-      );
-      const encodedTransaction = hexToBin(unsignedTransaction!);
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      expect(json(aliceUtxos)).toBe(json(await aliceWallet.getUtxos()));
-
-      const decoded = decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw decoded;
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-    }
-
-    {
-      const { unsignedTransaction, sourceOutputs } = await aliceWallet.sendMax(
-        bobWallet.cashaddr!,
-        { buildUnsigned: true },
-      );
-      const encodedTransaction = hexToBin(unsignedTransaction!);
-      expect(encodedTransaction.length).toBeGreaterThan(0);
-
-      // check transaction was not submitted
-      expect(json(aliceUtxos)).toBe(json(await aliceWallet.getUtxos()));
-
-      const decoded = decodeTransaction(encodedTransaction);
-      if (typeof decoded === "string") {
-        throw decoded;
-      }
-
-      expect(
-        binsAreEqual(decoded.inputs[0].unlockingBytecode, Uint8Array.from([])),
-      ).toBe(true);
-      expect(sourceOutputs!.length).toBe(decoded.inputs.length);
-    }
   });
 
   test("Should send with utxoIds", async () => {

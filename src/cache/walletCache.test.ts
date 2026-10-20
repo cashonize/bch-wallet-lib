@@ -104,10 +104,10 @@ describe("HDWalletCache", () => {
   });
 
   test("persists entries keyed by arbitrary paths and reloads them on init", async () => {
-    // Use the process-wide MemoryCache so a second HDWalletCache instance can
-    // read what the first persisted.
-    const prevMemory = Config.UseMemoryCache;
-    Config.UseMemoryCache = true;
+    // Use the IndexedDB cache (fake-indexeddb in tests) so a second
+    // HDWalletCache instance can read what the first persisted.
+    const prevIndexedDb = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
     try {
       const node = publicNodeOf(xpubAt(ACCOUNT_PATH));
 
@@ -134,7 +134,7 @@ describe("HDWalletCache", () => {
       expect(reader.get(a1)?.address).toBe(a1);
       expect(reader.get(a7)?.address).toBe(a7);
     } finally {
-      Config.UseMemoryCache = prevMemory;
+      Config.UseIndexedDBCache = prevIndexedDb;
     }
   });
 });

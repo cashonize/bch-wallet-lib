@@ -1,5 +1,5 @@
 import { Network } from "../interface.js";
-import { mine } from "../mine/index.js";
+import { mine } from "#test/mine.js";
 import { getNetworkProvider } from "../network/default.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import { disconnectProviders, initProviders } from "./Connection.js";
@@ -83,49 +83,4 @@ describe("Rpc tests", () => {
     expect(result).toBe(true);
     await cancel();
   });
-
-  test("Wait for block timeout", async () => {
-    const provider = getNetworkProvider(Network.REGTEST);
-    let promiseResult;
-    const timeout = new Promise((resolve) =>
-      setTimeout(resolve, 1000, "timeout"),
-    );
-    await Promise.race([provider.waitForBlock(), timeout]).then(
-      (result) => (promiseResult = result),
-    );
-    expect(promiseResult).toBe("timeout");
-  });
-
-  test("Wait for block success", async () => {
-    const provider = getNetworkProvider(Network.REGTEST);
-
-    const aliceWallet = await RegTestWallet.fromId(aliceWif);
-    const bobWallet = await RegTestWallet.newRandom();
-    const minerWallet = await RegTestWallet.newRandom();
-
-    await aliceWallet.send([
-      {
-        cashaddr: bobWallet.cashaddr!,
-        value: 1000n,
-      },
-    ]);
-
-    const height = await provider.getBlockHeight();
-
-    setTimeout(
-      async () => await mine({ cashaddr: minerWallet.cashaddr!, blocks: 1 }),
-      2000,
-    );
-
-    let header = await provider.waitForBlock();
-    expect(header.height).toBe(height + 1);
-
-    setTimeout(
-      async () => await mine({ cashaddr: minerWallet.cashaddr!, blocks: 1 }),
-      2000,
-    );
-
-    header = await provider.waitForBlock(height + 2);
-    expect(header.height).toBe(height + 2);
-  }, 20000);
 });

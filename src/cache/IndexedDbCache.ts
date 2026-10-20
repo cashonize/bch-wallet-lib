@@ -153,20 +153,4 @@ export class IndexedDbCache implements CacheProvider {
       transaction.oncomplete = () => resolve();
     });
   }
-
-  async clear(): Promise<void> {
-    if (!this.db) {
-      throw new Error("Database is not initialized");
-    }
-
-    const transaction = this.db.transaction(this.objectStoreName, "readwrite");
-    const objectStore = transaction.objectStore(this.objectStoreName);
-
-    return new Promise((resolve, reject) => {
-      const request = objectStore.clear();
-
-      request.onerror = reject;
-      request.onsuccess = () => resolve();
-    });
-  }
 }

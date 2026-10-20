@@ -131,13 +131,6 @@ export default interface NetworkProvider {
   ): Promise<TxI[]>;
 
   /**
-   * Wait for the next block or a block at given blockchain height.
-   * @param height If specified, waits for blockchain to reach this height.
-   * @returns Block header.
-   */
-  waitForBlock(height?: number): Promise<HexHeaderI>;
-
-  /**
    * Subscribe to the address change events
    * @param cashaddr The CashAddress for which we wish to retrieve history.
    * @throws {Error} If the subscription failed.

@@ -7,7 +7,7 @@ import {
   createProvider,
   removeGlobalProvider,
   setGlobalProvider,
-} from "./index.js";
+} from "./default.js";
 
 describe("Provider subscription: blockchain.transaction.subscribe", () => {
   let provider: Awaited<ReturnType<typeof createProvider>>;
@@ -225,49 +225,5 @@ describe("Raw transport subscription format", () => {
     expect(typeof data[0].hex).toBe("string");
 
     await unsub();
-  });
-});
-
-describe("Wallet waitForTransaction with specific txHash", () => {
-  let wallet: Wallet;
-  let provider: Awaited<ReturnType<typeof createProvider>>;
-
-  beforeAll(async () => {
-    // Create provider for mainnet and set it globally
-    provider = await createProvider(Network.MAINNET);
-    await provider.connect();
-    setGlobalProvider(Network.MAINNET, provider);
-
-    // Create a mainnet wallet using the global provider
-    wallet = await Wallet.watchOnly(
-      "bitcoincash:qp3wjpa3tjlj042z2wv7hahsldgwhwy0rq9sywjpyy",
-    );
-  });
-
-  afterAll(async () => {
-    removeGlobalProvider(Network.MAINNET);
-    await provider?.disconnect();
-  });
-
-  test("Should resolve immediately for confirmed transaction", async () => {
-    // A well-known confirmed BCH transaction
-    const txHash =
-      "4db095f34d632a4daf942142c291f1f2abb5ba2e1ccac919d85bdc2f671fb251";
-
-    // waitForTransaction with a specific txHash should resolve when confirmations > 0
-    const result = await Promise.race([
-      wallet.waitForTransaction({
-        txHash,
-        getTransactionInfo: true,
-        getBalance: false,
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), 5000),
-      ),
-    ]);
-
-    expect(result).toBeDefined();
-    expect((result as any).transactionInfo).toBeDefined();
-    expect((result as any).transactionInfo.hash).toBe(txHash);
   });
 });

@@ -13,6 +13,76 @@ describe("IndexedDbCache Tests", () => {
     expect(value2).toBeNull();
   });
 
+  // the provider calls init() before every request
+  test("opens the database once however often init is called, and again after close", async () => {
+    const cache = new IndexedDbCache("IndexedDbCacheOpens");
+    const open = vi.spyOn(indexedDB, "open");
+    try {
+      await Promise.all([cache.init(), cache.init()]);
+      await cache.init();
+      expect(open).toHaveBeenCalledTimes(1);
+
+      await cache.close();
+      await cache.init();
+      expect(open).toHaveBeenCalledTimes(2);
+      await cache.setItem("key", "value");
+      expect(await cache.getItem("key")).toBe("value");
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  // a delete or upgrade elsewhere waits for every open connection to close
+  async function deleteDatabase(name: string): Promise<"deleted" | "blocked"> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(name);
+      request.onsuccess = () => resolve("deleted");
+      request.onblocked = () => resolve("blocked");
+      request.onerror = () =>
+        reject(request.error ?? new Error("deleteDatabase failed"));
+    });
+  }
+
+  test("a close while the database opens leaves no connection open", async () => {
+    const cache = new IndexedDbCache("IndexedDbCacheCloseWhileOpening");
+    const opening = cache.init();
+    await cache.close();
+    await opening;
+    expect(await deleteDatabase("IndexedDbCacheCloseWhileOpening")).toBe(
+      "deleted",
+    );
+  });
+
+  test("gives up its connection for a delete elsewhere, and opens again on the next call", async () => {
+    const cache = new IndexedDbCache("IndexedDbCacheVersionChange");
+    const open = vi.spyOn(indexedDB, "open");
+    try {
+      await cache.init();
+      expect(await deleteDatabase("IndexedDbCacheVersionChange")).toBe(
+        "deleted",
+      );
+      await cache.init();
+      expect(open).toHaveBeenCalledTimes(2);
+      await cache.setItem("key", "value");
+      expect(await cache.getItem("key")).toBe("value");
+    } finally {
+      open.mockRestore();
+      await cache.close();
+    }
+  });
+
+  test("opens again after the browser drops the connection", async () => {
+    const cache = new IndexedDbCache("IndexedDbCacheDropped");
+    await cache.init();
+    const database = cache["db"]!;
+    database.close();
+    database.onclose?.(new Event("close"));
+    await cache.init();
+    await cache.setItem("key", "value");
+    expect(await cache.getItem("key")).toBe("value");
+    await cache.close();
+  });
+
   test("a failed request or transaction rejects with an Error, not an Event", async () => {
     const cache = new IndexedDbCache("IndexedDbCacheFailures");
     await cache.init();

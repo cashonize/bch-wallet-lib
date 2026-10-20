@@ -4,6 +4,7 @@ import { CacheProvider } from "./interface.js";
 // super thin wrapper around indexedDB, compatible with localStorage API
 export class IndexedDbCache implements CacheProvider {
   private db: IDBDatabase | null = null;
+  private opening?: Promise<void>;
 
   constructor(
     private objectStoreName: string = "ElectrumNetworkProviderCache",
@@ -34,10 +35,46 @@ export class IndexedDbCache implements CacheProvider {
     }
   }
 
-  async init() {
+  // Opens the database once, however often it is called; a failed open is forgotten, so the next
+  // call tries again
+  init(): Promise<void> {
+    if (!this.opening) {
+      const opening = this.open().then(
+        (database) => {
+          // closed while it opened
+          if (this.opening !== opening) database.close();
+          else this.keep(database);
+        },
+        (error: unknown) => {
+          if (this.opening === opening) this.opening = undefined;
+          throw error;
+        },
+      );
+      this.opening = opening;
+    }
+    return this.opening;
+  }
+
+  // A connection the browser drops (WebKit does in a backgrounded tab), or gives up for another
+  // open's upgrade or delete, is opened again by the next init()
+  private keep(database: IDBDatabase) {
+    this.db = database;
+    const forget = () => {
+      if (this.db !== database) return;
+      this.db = null;
+      this.opening = undefined;
+    };
+    database.onclose = forget;
+    database.onversionchange = () => {
+      database.close();
+      forget();
+    };
+  }
+
+  private open(): Promise<IDBDatabase> {
     const db = indexedDB.open(this.objectStoreName, 1);
 
-    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
+    return new Promise<IDBDatabase>((resolve, reject) => {
       const request = db;
 
       request.onerror = () => reject(indexedDbError(request));
@@ -178,5 +215,6 @@ export class IndexedDbCache implements CacheProvider {
   async close(): Promise<void> {
     this.db?.close();
     this.db = null;
+    this.opening = undefined;
   }
 }

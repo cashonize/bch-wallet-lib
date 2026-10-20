@@ -59,6 +59,14 @@ export default class ElectrumNetworkProvider {
     return this._cache;
   }
 
+  // The cache, opened before it is read: a provider's first call can be a read, before any request
+  // has opened it
+  private async openedCache(): Promise<CacheProvider | undefined> {
+    const cache = this.cache;
+    await cache?.init();
+    return cache;
+  }
+
   /** @internal The subscriptions open on this provider, for the tests that check none leak. */
   get subscriptions(): number {
     return this.subscriptionCount;
@@ -115,9 +123,10 @@ export default class ElectrumNetworkProvider {
     const keys = hashes.map((hash) => `txraw-${this.network}-${hash}`);
 
     // batch cache read
+    const cache = await this.openedCache();
     let cached: Map<string, string | null> | undefined;
-    if (this.cache) {
-      cached = await this.cache.getItems(keys);
+    if (cache) {
+      cached = await cache.getItems(keys);
     }
 
     const misses: string[] = [];
@@ -145,12 +154,12 @@ export default class ElectrumNetworkProvider {
       );
 
       // batch cache write
-      if (this.cache) {
+      if (cache) {
         const entries: [string, string][] = fetched.map(([hash, tx]) => [
           `txraw-${this.network}-${hash}`,
           tx,
         ]);
-        await this.cache.setItems(entries);
+        await cache.setItems(entries);
       }
 
       for (const [hash, tx] of fetched) {
@@ -179,9 +188,10 @@ export default class ElectrumNetworkProvider {
     );
 
     // batch cache read
+    const cache = await this.openedCache();
     let cached: Map<string, string | null> | undefined;
-    if (this.cache) {
-      cached = await this.cache.getItems(keys);
+    if (cache) {
+      cached = await cache.getItems(keys);
     }
 
     const misses: number[] = [];
@@ -208,12 +218,12 @@ export default class ElectrumNetworkProvider {
       );
 
       // batch cache write
-      if (this.cache) {
+      if (cache) {
         const entries: [string, string][] = fetched.map(([height, result]) => [
           `header-${this.network}-${height}-true`,
           JSON.stringify(result),
         ]);
-        await this.cache.setItems(entries);
+        await cache.setItems(entries);
       }
 
       for (const [height, result] of fetched) {
@@ -250,14 +260,15 @@ export default class ElectrumNetworkProvider {
    */
   async getRawTransaction(txHash: string): Promise<string> {
     const key = `txraw-${this.network}-${txHash}`;
-    if (this.cache) {
-      const cached = await this.cache.getItem(key);
+    const cache = await this.openedCache();
+    if (cache) {
+      const cached = await cache.getItem(key);
       if (cached) return cached;
     }
 
     const hex = await this.fetchTransaction<string>(txHash, false);
-    if (this.cache) {
-      await this.cache.setItem(key, hex);
+    if (cache) {
+      await cache.setItem(key, hex);
     }
     return hex;
   }
@@ -332,8 +343,9 @@ export default class ElectrumNetworkProvider {
   ): Promise<ElectrumRawTransaction | ElectrumRawTransactionWithInputValues> {
     const key = `tx-${this.network}-${txHash}`;
     let cachedTx: CachedRawTransaction | undefined;
-    if (this.cache) {
-      const cached = await this.cache.getItem(key);
+    const cache = await this.openedCache();
+    if (cache) {
+      const cached = await cache.getItem(key);
       if (cached) {
         cachedTx = JSON.parse(cached) as CachedRawTransaction;
         if (cachedTx.confirmations > 0) {
@@ -353,8 +365,8 @@ export default class ElectrumNetworkProvider {
       );
       cachedTx.confirmations ??= 0;
       cachedTx.fetchHeight = await this.getBlockHeight();
-      if (this.cache) {
-        await this.cache.setItem(key, JSON.stringify(cachedTx));
+      if (cache) {
+        await cache.setItem(key, JSON.stringify(cachedTx));
       }
     }
 

@@ -1,5 +1,6 @@
 import { countRequests } from "#test/countRequests.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { Config } from "../config.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 import { createMockProvider } from "./MockNetworkProvider.js";
@@ -112,4 +113,17 @@ test("a transaction the server answers with another one is refused, rather than 
     refusal,
   );
   expect(await provider.getRawTransaction(other)).toMatch(/^[0-9a-f]+$/);
+});
+
+// a provider's first call can be a cache read, before any request has opened the cache
+test("reads the cache before its first request without failing", async () => {
+  const cacheSetting = Config.UseIndexedDBCache;
+  Config.UseIndexedDBCache = true;
+  try {
+    const provider = await createMockProvider();
+    const headers = await provider.getHeaders([1]);
+    expect(headers.get(1)?.height).toBe(1);
+  } finally {
+    Config.UseIndexedDBCache = cacheSetting;
+  }
 });

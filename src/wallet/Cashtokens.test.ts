@@ -1752,6 +1752,53 @@ describe("token change", () => {
     expect(await getTokenBalance(bob, category)).toBe(990n);
   });
 
+  // An issuer's wallet: the minting NFT carries the fungible reserve. A mutable NFT send must not
+  // put a copy of the mutable NFT on the change, which the minting NFT among the inputs could back,
+  // so the token conservation check would let it through and burn the minting NFT (cashonize#377)
+  test("sending a mutable NFT from a wallet whose minting NFT carries the reserve keeps one copy and the minting NFT", async () => {
+    const bob = await fundedWallet();
+    const carol = await RegTestWallet.newRandom();
+    const minting = { capability: NFTCapability.minting, commitment: "" };
+    const mutable = { capability: NFTCapability.mutable, commitment: "01" };
+    const genesis = await bob.tokenGenesis({ amount: 1000n, nft: minting });
+    const category = genesis.categories![0];
+    await bob.tokenMint(
+      new TokenMintRequest({
+        category,
+        cashaddr: bob.tokenaddr!,
+        nft: mutable,
+      }),
+    );
+
+    const response = await bob.send([
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr!,
+        category,
+        nft: mutable,
+      }),
+    ]);
+    const outputs = decodeOutputs(response.transaction!).filter(
+      (output) => output.token?.category === category,
+    );
+    expect(
+      outputs.filter(
+        (output) => output.token?.nft?.capability === NFTCapability.mutable,
+      ),
+    ).toEqual([
+      {
+        lockingBytecode: lockingBytecodeOf(carol.tokenaddr!),
+        value: 1000n,
+        token: { category, amount: 0n, nft: mutable },
+      },
+    ]);
+    const held = (await bob.getUtxos()).filter(
+      (utxo) => utxo.token?.category === category,
+    );
+    expect(held.map((utxo) => utxo.token)).toEqual([
+      { category, amount: 1000n, nft: minting },
+    ]);
+  });
+
   test("an immutable NFT is sendable while the wallet holds fungible tokens of its category", async () => {
     const bob = await fundedWallet();
     const carol = await RegTestWallet.newRandom();

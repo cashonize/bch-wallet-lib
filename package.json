@@ -26,7 +26,9 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "lint": "oxlint --type-aware",
+    "check:dist-imports": "node scripts/check-dist-imports.mjs",
+    "check:dist-errors": "node scripts/check-dist-errors.mjs",
+    "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "USE_MOCK_PROVIDER=1 vitest run --config test/vitest.config.ts",

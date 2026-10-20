@@ -635,15 +635,17 @@ export class HDWallet extends BaseWallet {
    * This is the foundation for watchWalletBalance and watchWalletTransactions
    * @param callback - Called when any address in the wallet has a status change; its errors go to
    * console.error
-   * @param options - `debounce` (ms, default 100)
+   * @param options - `debounce` (ms, default 100); `immediate` reports each status at once and
+   * without waiting for a discovery under way, for a caller reading addresses already watched
    * @returns Cancel function to stop watching
    */
   protected override async watchStatus(
     callback: (status: string | null, address: string) => unknown,
-    options: { debounce?: number } = {},
+    options: { debounce?: number; immediate?: boolean } = {},
   ): Promise<CancelFn> {
-    const debounce = options.debounce ?? 100;
-    await this.discovered();
+    let debounce = options.debounce ?? 100;
+    if (options.immediate) debounce = 0;
+    else await this.discovered();
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     let pendingStatus: string | null = null;
@@ -766,6 +768,12 @@ export class HDWallet extends BaseWallet {
   public async getUtxos(): Promise<Utxo[]> {
     await this.discovered();
 
+    return this.collectUtxosFromBranches();
+  }
+
+  // without waiting for a discovery under way, whose new addresses past the gap hold none of the
+  // coins a send waits for
+  protected override async coinsNow(): Promise<Utxo[]> {
     return this.collectUtxosFromBranches();
   }
 

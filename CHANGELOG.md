@@ -7,6 +7,7 @@
 - During discovery, a used address extends the watched window as soon as its status arrives, and counts as used even when the fetch of its coins fails.
 - Discovery, and `setProvider` moving a wallet's subscriptions, take at most 50 address subscriptions or fetches at a time per wallet, where they started all at once.
 - A history load (`getHistory`) keeps up to 32 requests in flight by default, where it kept 10; pass `concurrency` to change it.
+- A send returns sooner: `sendRawTransaction` broadcasts before subscribing to the transaction, and a send's wait for its coins skips the HD wallet's 100 ms debounce and any address discovery under way. A subscription that cannot be made no longer rejects `sendRawTransaction`; a lookup of the transaction decides (its txid when the server holds it, a `BroadcastTimeoutError` when not).
 
 ## 0.1.1 (2026-10-20)
 

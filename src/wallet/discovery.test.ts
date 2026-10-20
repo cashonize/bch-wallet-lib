@@ -136,3 +136,64 @@ test("moves a large range to a new provider a bounded number at a time", async (
   expect(inFlight.most()).toBeLessThanOrEqual(50);
   await wallet.stop();
 }, 10000);
+
+// A funded wallet sending to another, with the provider's address subscriptions held from the
+// moment hold() is called until the returned release runs
+async function sendSetup() {
+  const wallet = await RegTestHDWallet.newRandom();
+  await wallet["watchPromise"];
+  await fund(wallet.getDepositAddress(0), 100_000n);
+  await vi.waitFor(async () => {
+    expect(await wallet.getBalance()).toBe(100_000n);
+  });
+  const receiver = await RegTestHDWallet.newRandom();
+  await receiver.stop();
+
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const subscribe = provider.subscribeToAddress.bind(provider);
+  const hold = () => {
+    provider.subscribeToAddress = async (...args) => {
+      await held;
+      return subscribe(...args);
+    };
+  };
+  // without the fix under test the send waits out its 10 s ceiling on the coin view
+  const sendWithin3s = async () => {
+    try {
+      const started = Date.now();
+      await wallet.send({
+        cashaddr: receiver.getDepositAddress(0),
+        value: 10_000n,
+      });
+      expect(Date.now() - started).toBeLessThan(3_000);
+    } finally {
+      release();
+      await wallet.stop();
+    }
+  };
+  return { wallet, hold, sendWithin3s };
+}
+
+// coinsNow: a send's coin wait reads the coins without waiting for the discovery its new change
+// address starts, which adds only unused addresses past the gap
+test("returns from an HD send while the discovery its change address started is held", async () => {
+  const { hold, sendWithin3s } = await sendSetup();
+  hold();
+  await sendWithin3s();
+}, 15000);
+
+// watchStatus `immediate`: a discovery started before the coin wait registers its status watch is
+// not waited for either, the send's coins sitting on addresses already watched
+test("returns from an HD send while a discovery started before its coin wait is held", async () => {
+  const { wallet, hold, sendWithin3s } = await sendSetup();
+  // at broadcast: hold the subscriptions, then start a discovery with a wider window than the one
+  // watched, whose new addresses therefore stay held
+  const broadcast = provider.sendRawTransaction.bind(provider);
+  provider.sendRawTransaction = async (...args) => {
+    hold();
+    void wallet["startDiscovery"](40);
+    return broadcast(...args);
+  };
+  await sendWithin3s();
+}, 15000);

@@ -557,6 +557,8 @@ export class BaseWallet {
    */
   protected async watchStatus(
     callback: (status: string | null, address: string) => unknown,
+    // an HD wallet's `immediate` skips its debounce and discovery wait; one address has neither
+    _options: { immediate?: boolean } = {},
   ): Promise<CancelFn> {
     return this.subscribe((provider) =>
       provider.watchAddressStatus(this.getDepositAddress(), (status) =>
@@ -1278,6 +1280,11 @@ export class BaseWallet {
     return txId;
   }
 
+  // The coins a send's wait reads, without waiting on anything else
+  protected async coinsNow(): Promise<Utxo[]> {
+    return this.getUtxos();
+  }
+
   // Waits until the wallet's coins reflect a transaction the server holds: the status that
   // includes it may arrive after the broadcast returns, and other statuses before it. Never
   // throws, the transaction went through; a view that stays stale only risks a refused next spend
@@ -1303,7 +1310,7 @@ export class BaseWallet {
       return [toUtxoId({ txid: txId, vout })];
     });
     const reflected = async () => {
-      const ids = new Set((await this.getUtxos()).map(toUtxoId));
+      const ids = new Set((await this.coinsNow()).map(toUtxoId));
       return own.every((id) => ids.has(id)) && !spent.some((id) => ids.has(id));
     };
 
@@ -1312,10 +1319,15 @@ export class BaseWallet {
     let wake = () => {};
     let cancel: CancelFn | undefined;
     const wait = (async () => {
-      const made = await this.watchStatus(() => {
-        woken = true;
-        wake();
-      });
+      // each status is read at once: the wait is for this transaction, not a quiet moment, on
+      // addresses already watched, so not for a discovery under way either
+      const made = await this.watchStatus(
+        () => {
+          woken = true;
+          wake();
+        },
+        { immediate: true },
+      );
       if (done) {
         await made();
         return;

@@ -1,7 +1,7 @@
 import { WalletDbEntryI } from "./interface.js";
 
 export default abstract class StorageProvider {
-  public constructor(...args: any[]) {
+  public constructor(..._args: any[]) {
     throw new Error("StorageProvider is abstract and cannot be instantiated");
   }
 
@@ -18,13 +18,6 @@ export default abstract class StorageProvider {
    * @returns the storage provider
    */
   abstract close(): Promise<StorageProvider>;
-
-  /**
-   * Returns information about the storage provider
-   * @throws {Error} If there is no info
-   * @returns string
-   */
-  abstract getInfo(): string;
 
   /**
    * Add a wallet to the database
@@ -64,6 +57,8 @@ export default abstract class StorageProvider {
 
   /**
    * Delete a named wallet from the database. No-op if the row does not exist.
+   * Removes only the row: `deleteNamedWallet` also purges the wallet's cache record, which holds
+   * its derived private keys.
    * @param name The user-defined name of the wallet to remove.
    * @throws {Error} If the deletion fails for reasons other than absence.
    */

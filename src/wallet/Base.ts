@@ -1,5 +1,9 @@
 import { binToHex, CashAddressNetworkPrefix, sha256 } from "@bitauth/libauth";
-import { WalletCache } from "../cache/walletCache.js";
+import {
+  purgeWalletCache,
+  WalletCache,
+  walletCacheIdFromWalletId,
+} from "../cache/walletCache.js";
 import StorageProvider from "../db/StorageProvider.js";
 import { NetworkType, prefixFromNetworkMap } from "../enum.js";
 import { HexHeaderI, NFTCapability, TxI, Utxo, UtxoId } from "../interface.js";
@@ -23,7 +27,9 @@ import {
   toTokenaddr,
 } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
+import { walletIdKind } from "../util/walletIdError.js";
 import { WalletTypeEnum } from "./enum.js";
+import { InvalidWalletIdError } from "./errors.js";
 import { CancelFn, SendRequestOptionsI } from "./interface.js";
 import {
   fromUtxoId,
@@ -160,7 +166,7 @@ export class BaseWallet {
     if (name.length === 0) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this);
+    _checkContextSafety(this.network);
     this.name = name;
     dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
     const db = getStorageProvider(dbName);
@@ -213,7 +219,7 @@ export class BaseWallet {
     if (name.length === 0) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this);
+    _checkContextSafety(this.network);
     this.name = name;
     dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
     let db = getStorageProvider(dbName);
@@ -249,7 +255,7 @@ export class BaseWallet {
     if (name.length === 0) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this);
+    _checkContextSafety(this.network);
     dbName = dbName ? dbName : prefixFromNetworkMap[this.network];
     let db = getStorageProvider(dbName);
 
@@ -1195,12 +1201,12 @@ export class BaseWallet {
 /**
  * _checkContextSafety (internal) if running in nodejs, will disable saving
  * mainnet wallets on public servers if ALLOW_MAINNET_USER_WALLETS is set to false
- * @param {BaseWallet} wallet        a wallet
+ * @param network        the network of the wallet to save
  */
-export const _checkContextSafety = function (wallet: BaseWallet) {
+export const _checkContextSafety = function (network: NetworkType) {
   if (getRuntimePlatform() === "node") {
     if (process.env.ALLOW_MAINNET_USER_WALLETS === `false`) {
-      if (wallet.network === NetworkType.Mainnet) {
+      if (network === NetworkType.Mainnet) {
         throw Error(
           `Refusing to save wallet in an open public database, remove ALLOW_MAINNET_USER_WALLETS="false", if this service is secure and private`,
         );
@@ -1213,9 +1219,11 @@ export const _checkContextSafety = function (wallet: BaseWallet) {
  * getNamedWalletId - get the full wallet id from the database
  *
  * @param name   user friendly wallet alias
- * @param dbName name under which the wallet will be stored in the database
+ * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
  *
- * @returns boolean
+ * @throws {Error} if no StorageProvider is configured
+ * @returns the stored wallet id, or undefined if there is no wallet of that name or its row
+ * holds an empty id
  */
 export async function getNamedWalletId(
   name: string,
@@ -1225,22 +1233,156 @@ export async function getNamedWalletId(
     throw Error("Named wallets must have a non-empty name");
   }
 
-  dbName = dbName ? dbName : (dbName as string);
+  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
   let db = getStorageProvider(dbName);
 
   if (db) {
     await db.init();
     let savedWalletRecord = await db.getWallet(name);
     await db.close();
-    if (savedWalletRecord !== undefined) {
-      return savedWalletRecord.wallet;
-    } else {
-      throw Error(`No record was found for ${name} in db: ${dbName}`);
-    }
+    // an empty id names no wallet, as a missing row does
+    return savedWalletRecord?.wallet || undefined;
   } else {
     throw Error(
       "No database was available or configured to store the named wallet.",
     );
+  }
+}
+
+/**
+ * namedWalletExists - check whether a named wallet is stored in the database; constructs no
+ * wallet and opens no subscription
+ *
+ * @param name   user friendly wallet alias
+ * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
+ *
+ * @throws {Error} if no StorageProvider is configured
+ * @returns whether a wallet of that name is stored
+ */
+export async function namedWalletExists(
+  name: string,
+  dbName?: string,
+): Promise<boolean> {
+  if (name.length === 0) {
+    throw Error("Named wallets must have a non-empty name");
+  }
+
+  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
+  const db = getStorageProvider(dbName);
+  if (!db) {
+    throw Error(
+      "No database was available or configured to store the named wallet.",
+    );
+  }
+
+  await db.init();
+  try {
+    return await db.walletExists(name);
+  } finally {
+    await db.close();
+  }
+}
+
+/**
+ * saveNamedWallet - store a wallet id under a name, replacing the id stored under that name if
+ * there is one: the row `replaceNamed` writes, without constructing the wallet, so no provider
+ * is created and no subscription opened
+ *
+ * The id is checked for its form (a type a wallet class loads, a known network, a value), not
+ * for its key: store ids that `toDbString()` returned, or that a wallet class loaded.
+ *
+ * @param name   user friendly wallet alias
+ * @param walletId the wallet's id, as `toDbString()` returns it
+ * @param dbName database to store it in, the one of the id's network ("bitcoincash", "bchtest"
+ * or "bchreg") by default; another network's database is refused
+ *
+ * @throws {InvalidWalletIdError} if the id cannot be read, or if `dbName` is another network's
+ * database
+ * @throws {Error} if no StorageProvider is configured
+ */
+export async function saveNamedWallet(
+  name: string,
+  walletId: string,
+  dbName?: string,
+): Promise<void> {
+  if (name.length === 0) {
+    throw Error("Named wallets must have a non-empty name");
+  }
+  // the check deleteNamedWallet makes: a row it cannot read is one it cannot delete
+  walletCacheIdFromWalletId(walletId);
+  const network = walletId.split(":")[1] as NetworkType;
+  const networkDbName: string = prefixFromNetworkMap[network];
+  const networkDbNames: string[] = Object.values(prefixFromNetworkMap);
+  if (dbName && dbName !== networkDbName && networkDbNames.includes(dbName)) {
+    throw new InvalidWalletIdError(
+      `a ${network} walletId cannot be stored in the database ${dbName}`,
+      { kind: walletIdKind(walletId.split(":")[0]), reason: "network" },
+    );
+  }
+  _checkContextSafety(network);
+
+  const db = getStorageProvider(dbName || networkDbName);
+  if (!db) {
+    throw Error(
+      "No database was available or configured to store the named wallet.",
+    );
+  }
+
+  await db.init();
+  try {
+    if (await db.getWallet(name)) {
+      await db.updateWallet(name, walletId);
+    } else {
+      await db.addWallet(name, walletId);
+    }
+  } finally {
+    await db.close();
+  }
+}
+
+/**
+ * deleteNamedWallet - delete a named wallet from the database, and its cache record with it
+ *
+ * `StorageProvider.deleteWallet` removes only the row; the wallet's cache record (its derived
+ * private keys and history, see {@link purgeWalletCache}) is removed here too, before the row,
+ * and a loaded wallet of that id no longer writes it. That holds in this JavaScript process only:
+ * a wallet of that id open in another browser tab can write the record back, which
+ * `pruneWalletCaches` at a later start removes. No-op for a missing name.
+ *
+ * @param name   user friendly wallet alias
+ * @param dbName database the wallet is stored in, the mainnet one ("bitcoincash") by default
+ *
+ * @throws {InvalidWalletIdError} if the row's wallet id cannot be read (e.g. a `named:` alias)
+ * @throws {Error} if no StorageProvider is configured, or if the cache record could not be
+ * removed; the row is kept in each case
+ */
+export async function deleteNamedWallet(
+  name: string,
+  dbName?: string,
+): Promise<void> {
+  if (name.length === 0) {
+    throw Error("Named wallets must have a non-empty name");
+  }
+
+  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
+  const db = getStorageProvider(dbName);
+  if (!db) {
+    throw Error(
+      "No database was available or configured to store the named wallet.",
+    );
+  }
+
+  await db.init();
+  try {
+    const savedWalletRecord = await db.getWallet(name);
+    if (!savedWalletRecord) return;
+    // the cache record first: if it cannot be removed, the row that leads to it stays. The row
+    // goes before the purge is done, so a wallet opened from it meanwhile writes no record either
+    await purgeWalletCache(savedWalletRecord.wallet, () =>
+      db.deleteWallet(name),
+    );
+  } finally {
+    await db.close();
   }
 }
 

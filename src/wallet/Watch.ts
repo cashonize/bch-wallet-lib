@@ -181,11 +181,7 @@ export class WatchWallet extends BaseWallet {
   }
 
   protected async initWalletCache(): Promise<void> {
-    const cache = new SingleAddressWalletCache(
-      this.deriveWalletId(),
-      this.cashaddr,
-      this.tokenaddr,
-    );
+    const cache = new SingleAddressWalletCache(this.cashaddr, this.tokenaddr);
     await cache.init();
     const wallet = this as any;
     if (wallet.privateKey) {

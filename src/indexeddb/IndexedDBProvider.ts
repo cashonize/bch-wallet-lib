@@ -1,30 +1,33 @@
-import { StorageProvider, WalletDbEntryI } from "../index.js";
+import type StorageProvider from "../db/StorageProvider.js";
+import type { WalletDbEntryI } from "../db/interface.js";
+import { indexedDbError } from "../util/indexedDbError.js";
+
+// the object store mainnet-js 3.1.7 keeps its rows in, keyed by name
+const STORE_NAME = "wallet";
 
 export default class IndexedDBProvider implements StorageProvider {
   private dbName: string;
-  private storeName: string;
   private db: IDBDatabase | null = null;
 
-  constructor(dbName = "wallet", storeName = "wallet") {
+  constructor(dbName: string) {
     this.dbName = dbName;
-    this.storeName = storeName;
   }
 
   private async openDB(): Promise<IDBDatabase> {
     if (this.db) return this.db;
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, 31);
-      request.onupgradeneeded = (event) => {
+      request.onupgradeneeded = () => {
         const db = request.result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName, { keyPath: "name" });
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: "name" });
         }
       };
       request.onsuccess = () => {
         this.db = request.result;
         resolve(this.db);
       };
-      request.onerror = () => reject(request.error);
+      request.onerror = () => reject(indexedDbError(request));
     });
   }
 
@@ -41,15 +44,11 @@ export default class IndexedDBProvider implements StorageProvider {
     return this;
   }
 
-  public getInfo() {
-    return "indexedDB";
-  }
-
   public async addWallet(name: string, walletId: string): Promise<boolean> {
     const db = await this.openDB();
     return new Promise<boolean>((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readwrite");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
       const getReq = store.get(name);
       getReq.onsuccess = () => {
         if (getReq.result) {
@@ -57,40 +56,40 @@ export default class IndexedDBProvider implements StorageProvider {
         } else {
           const addReq = store.add({ name, wallet: walletId });
           addReq.onsuccess = () => resolve(true);
-          addReq.onerror = () => reject(addReq.error);
+          addReq.onerror = () => reject(indexedDbError(addReq));
         }
       };
-      getReq.onerror = () => reject(getReq.error);
+      getReq.onerror = () => reject(indexedDbError(getReq));
     });
   }
 
   public async getWallet(name: string): Promise<WalletDbEntryI | undefined> {
     const db = await this.openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readonly");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
       const req = store.get(name);
       req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+      req.onerror = () => reject(indexedDbError(req));
     });
   }
 
   public async getWallets(): Promise<Array<WalletDbEntryI>> {
     const db = await this.openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readonly");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
+      req.onerror = () => reject(indexedDbError(req));
     });
   }
 
   public async updateWallet(name: string, walletId: string): Promise<void> {
     const db = await this.openDB();
     return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readwrite");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
       const getReq = store.get(name);
       getReq.onsuccess = () => {
         if (!getReq.result) {
@@ -98,10 +97,10 @@ export default class IndexedDBProvider implements StorageProvider {
         } else {
           const putReq = store.put({ name, wallet: walletId });
           putReq.onsuccess = () => resolve();
-          putReq.onerror = () => reject(putReq.error);
+          putReq.onerror = () => reject(indexedDbError(putReq));
         }
       };
-      getReq.onerror = () => reject(getReq.error);
+      getReq.onerror = () => reject(indexedDbError(getReq));
     });
   }
 
@@ -112,11 +111,11 @@ export default class IndexedDBProvider implements StorageProvider {
   public async deleteWallet(name: string): Promise<void> {
     const db = await this.openDB();
     return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(this.storeName, "readwrite");
-      const store = tx.objectStore(this.storeName);
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
       const req = store.delete(name);
       req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      req.onerror = () => reject(indexedDbError(req));
     });
   }
 }

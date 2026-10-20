@@ -1,10 +1,8 @@
 // config
 export { Config } from "./config.js";
 export type { WalletDbEntryI } from "./db/interface.js";
-// db
-export { default as StorageProvider } from "./db/StorageProvider.js";
-// EncryptedStorageProvider is available via the sub-entry "mainnet-js/encrypted-storage"
-// so it stays out of the main bundle for consumers that don't use it.
+// cache
+export { pruneWalletCaches } from "./cache/walletCache.js";
 // Enum
 export { NetworkType, UnitEnum } from "./enum.js";
 // history
@@ -50,7 +48,14 @@ export type {
 // utils
 export * from "./util/index.js";
 // wallets - explicit exports for tree-shaking
-export { BaseWallet } from "./wallet/Base.js";
+export {
+  BaseWallet,
+  deleteNamedWallet,
+  getNamedWalletId,
+  namedWalletExists,
+  saveNamedWallet,
+} from "./wallet/Base.js";
+export { InvalidWalletIdError } from "./wallet/errors.js";
 export { WalletTypeEnum } from "./wallet/enum.js";
 export {
   HDWallet,

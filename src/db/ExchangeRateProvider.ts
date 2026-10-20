@@ -14,15 +14,8 @@ export default class ExchangeRateProvider {
     return undefined;
   }
 
-  public async setRate(
-    symbol: string,
-    rate: number,
-    ttl: number,
-  ): Promise<boolean> {
-    localStorage.setItem(
-      `rate-${symbol}`,
-      JSON.stringify({ symbol: symbol, rate: rate, ttl: ttl }),
-    );
+  public async setRate(entry: ExchangeRateI): Promise<boolean> {
+    localStorage.setItem(`rate-${entry.symbol}`, JSON.stringify(entry));
     return true;
   }
 }

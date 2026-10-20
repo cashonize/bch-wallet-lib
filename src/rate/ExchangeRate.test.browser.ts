@@ -1,8 +1,9 @@
 import { ExchangeRate } from "./ExchangeRate.js";
+import { liveTests } from "#test/live.js";
 
 describe("ExchangeRate in browser", () => {
-  test("Should get exchange rate in usd", async () => {
-    const rate = await ExchangeRate.get("usd");
+  test.skipIf(!liveTests)("Should get exchange rate in usd", async () => {
+    const { rate } = await ExchangeRate.getQuote("usd");
     expect(rate).toBeGreaterThan(0);
   });
 });

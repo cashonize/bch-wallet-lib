@@ -1,4 +1,4 @@
-export { ExchangeRate, getExchangeRatePromise } from "../rate/ExchangeRate.js";
+export { ExchangeRate } from "../rate/ExchangeRate.js";
 export { amountInSatoshi } from "./amountInSatoshi.js";
 export { asSendRequestObject } from "./asSendRequestObject.js";
 export * from "./checkUtxos.js";

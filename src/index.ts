@@ -42,6 +42,11 @@ export type {
 // xpub utilities
 export { getAddrsByXpubKey } from "./util/getAddrsByXpubKey.js";
 export { getXPubKey } from "./util/getXPubKey.js";
+// rates and conversion
+export type {
+  ExchangeRateOptions,
+  ExchangeRateQuote,
+} from "./rate/ExchangeRate.js";
 // utils
 export * from "./util/index.js";
 // wallets - explicit exports for tree-shaking

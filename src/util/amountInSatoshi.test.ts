@@ -1,6 +1,7 @@
 import { bchParam } from "../chain.js";
 import { ExchangeRate } from "../rate/ExchangeRate.js";
 import { amountInSatoshi } from "./amountInSatoshi.js";
+import { liveTests } from "#test/live.js";
 
 test("Get price of Bch, BCH, bch in sat", async () => {
   let rate = await amountInSatoshi(1, "Bch");
@@ -16,11 +17,11 @@ test("Get price of sat(s)", async () => {
   expect(rate).toBe(1n);
 });
 
-test("Get price of USD, Usd, usd", async () => {
-  // Clear exchange rate cache so ExchangeRate.get() inside amountInSatoshi
+test.skipIf(!liveTests)("Get price of USD, Usd, usd", async () => {
+  // Clear exchange rate cache so the rate inside amountInSatoshi
   // fetches a fresh rate consistent with what we read here
   globalThis.RATE = {};
-  let usdRate = await ExchangeRate.get("usd");
+  let { rate: usdRate } = await ExchangeRate.getQuote("usd");
   let rate = await amountInSatoshi(usdRate - 10, "USD");
   expect(rate).toBeLessThan(bchParam.subUnits);
   rate = await amountInSatoshi(usdRate - 10, "Usd");

@@ -19,6 +19,7 @@ import { CancelFn } from "./interface.js";
 import { OpReturnData, SendResponse, toUtxoId } from "./model.js";
 import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
 import { waitForBalance } from "#test/balances.js";
+import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -277,29 +278,30 @@ describe(`Watch only Wallets`, () => {
     }
   });
 
-  test("Should get the regtest wallet balance in eur", async () => {
-    // Build Alice's wallet from Wallet Import Format string, send some sats
-    if (!process.env.ADDRESS) {
-      throw Error("Attempted to pass an empty address");
-    } else {
-      Config.DefaultCurrency = "eur";
-      let alice = await RegTestWallet.watchOnly(process.env.ADDRESS); // insert WIF from #1
-      // Build Bob's wallet from a public address, check his balance.
-      expect(alice.getPublicKeyHash()!.length).toBe(20);
-      const aliceBalance = await alice.getBalance();
-      expect(await convert(Number(aliceBalance), "sat", "eur")).toBeGreaterThan(
-        0,
-      );
-      expect(
-        await convert(
-          Number(await (await RegTestWallet.newRandom()).getBalance()),
-          "sat",
-          "eur",
-        ),
-      ).toBe(0);
-      Config.DefaultCurrency = "usd";
-    }
-  });
+  test.skipIf(!liveTests)(
+    "Should get the regtest wallet balance in eur",
+    async () => {
+      // Build Alice's wallet from Wallet Import Format string, send some sats
+      if (!process.env.ADDRESS) {
+        throw Error("Attempted to pass an empty address");
+      } else {
+        let alice = await RegTestWallet.watchOnly(process.env.ADDRESS); // insert WIF from #1
+        // Build Bob's wallet from a public address, check his balance.
+        expect(alice.getPublicKeyHash()!.length).toBe(20);
+        const aliceBalance = await alice.getBalance();
+        expect(
+          await convert(Number(aliceBalance), "sat", "eur"),
+        ).toBeGreaterThan(0);
+        expect(
+          await convert(
+            Number(await (await RegTestWallet.newRandom()).getBalance()),
+            "sat",
+            "eur",
+          ),
+        ).toBe(0);
+      }
+    },
+  );
 
   (process.env.ALICE_TESTNET_WALLET_ID ? test : test.skip)(
     "Should send to testnet coins to a random address",

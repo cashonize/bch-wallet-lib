@@ -1,6 +1,6 @@
 import { bchParam } from "../chain.js";
 import { UnitEnum } from "../enum.js";
-import { ExchangeRate } from "../rate/ExchangeRate.js";
+import { getRate } from "../rate/ExchangeRate.js";
 import { sanitizeUnit } from "../util/sanitizeUnit.js";
 
 /**
@@ -23,7 +23,7 @@ export async function amountInSatoshi(
     case UnitEnum.SAT:
       return BigInt(value);
     default:
-      const Currency_over_BCH = await ExchangeRate.get(rawUnit);
+      const Currency_over_BCH = await getRate(rawUnit);
       const SAT_over_BCH = bchParam.subUnits;
 
       return BigInt(

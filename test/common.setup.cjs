@@ -1,6 +1,6 @@
 // test/node.setup.js
-require("dotenv").config({ path: ".env.regtest" });
-require("dotenv").config({ path: ".env.testnet" });
+require("dotenv").config({ path: ".env.regtest", quiet: true });
+require("dotenv").config({ path: ".env.testnet", quiet: true });
 const inspect = require("util").inspect;
 inspect.defaultOptions.depth = 10;
 inspect.defaultOptions.maxArrayLength = 1000;

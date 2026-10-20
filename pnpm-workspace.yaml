@@ -11,4 +11,4 @@ fund: false
 
 # Packages allowed to run install/build lifecycle scripts. Everything else is blocked, so a
 # dependency that adds an install script fails the install until reviewed and added here.
-allowBuilds: { core-js: set this to true or false }
+allowBuilds: {}

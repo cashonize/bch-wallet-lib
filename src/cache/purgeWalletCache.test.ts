@@ -84,6 +84,30 @@ async function withIndexedDbCache(
 }
 
 describe("walletCacheIdFromWalletId", () => {
+  test("derives the cache id each HD wallet keys its cache record by", async () => {
+    const hd = await RegTestHDWallet.fromId(`hd:regtest:${MNEMONIC}`);
+    const wallets: BaseWallet[] = [
+      hd,
+      await RegTestHDWallet.fromId(`hd:regtest:${MNEMONIC}:m/44'/145'/1'`),
+      await RegTestHDWallet.fromId(`hd:regtest:${hd["xPriv"]}`),
+      await RegTestHDWallet.fromId(`hd:regtest:${hd.xPub}`),
+    ];
+    try {
+      const cacheIds = new Set<string>();
+      for (const wallet of wallets) {
+        const cacheId = cacheIdOf(wallet);
+        expect(
+          walletCacheIdFromWalletId(wallet.toDbString()),
+          wallet.toDbString(),
+        ).toBe(cacheId);
+        cacheIds.add(cacheId);
+      }
+      expect(cacheIds.size).toBe(wallets.length);
+    } finally {
+      await Promise.all(wallets.map((wallet) => wallet.stop()));
+    }
+  });
+
   test("gives none for a single-address wallet, which keeps no cache record", async () => {
     const single = await RegTestWallet.fromId(`seed:regtest:${MNEMONIC}`);
     const wallets: BaseWallet[] = [
@@ -222,6 +246,25 @@ describe("wallet cache records in indexeddb", () => {
         removeItem.mockRestore();
         BaseWallet.StorageProvider = prevProvider;
       }
+    }));
+
+  test("stop writes the cache's pending write, and a purge after it leaves no record", () =>
+    withIndexedDbCache(async (storage) => {
+      const wallet = await quickWritingWallet();
+      const key = `walletCache-${cacheIdOf(wallet)}`;
+      wallet.getDepositAddress(500); // a new entry, a write in 20 ms
+      await wallet.stop();
+      expect(await storage.getItem(key)).toContain(
+        wallet.getDepositAddress(500),
+      );
+
+      await purgeWalletCache(wallet.toDbString());
+      expect(await storage.getItem(key)).toBeNull();
+
+      // the stopped wallet is still read, which writes nothing
+      wallet.getDepositAddress(501);
+      await afterDebouncedWrites();
+      expect(await storage.getItem(key)).toBeNull();
     }));
 
   test("a purge while a write is pending leaves no record", () =>

@@ -9,7 +9,7 @@ const root = path.resolve(import.meta.dirname, "..");
 dotenv.config({ path: path.resolve(root, ".env.regtest"), quiet: true });
 try {
   dotenv.config({ path: path.resolve(root, ".env.testnet"), quiet: true });
-} catch (e) {}
+} catch {}
 
 export default defineConfig({
   resolve: {
@@ -18,6 +18,11 @@ export default defineConfig({
     },
   },
   define: {
+    "process.env.USE_MOCK_PROVIDER": JSON.stringify(
+      process.env.USE_MOCK_PROVIDER || "",
+    ),
+    "process.env.LIVE_TESTS": JSON.stringify(process.env.LIVE_TESTS || ""),
+    "process.env.ADDRESS": JSON.stringify(process.env.ADDRESS || ""),
     "process.env.PRIVATE_WIF": JSON.stringify(process.env.PRIVATE_WIF || ""),
     "process.env.ALICE_ID": JSON.stringify(process.env.ALICE_ID || ""),
     "process.env.ALICE_TESTNET_ADDRESS": JSON.stringify(

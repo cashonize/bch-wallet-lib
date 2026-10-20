@@ -10,7 +10,10 @@ module.exports = async function (cwd) {
   }
 
   // Stop regtest server
-  child_process.spawnSync("./test/docker/stop.sh", null, {
+  let stopScript = "./test/docker/stop.sh";
+  if (process.env.REGTEST_BACKEND === "local")
+    stopScript = "./test/local/stop.sh";
+  child_process.spawnSync(stopScript, null, {
     shell: false,
     stdio: "inherit",
     cwd: cwd,

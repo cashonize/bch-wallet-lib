@@ -16,3 +16,5 @@ __screenshots__
 dist
 tsconfig.tsbuildinfo
 test/playwright
+# node-localstorage directory of the node test run
+scratch

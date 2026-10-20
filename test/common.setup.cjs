@@ -24,14 +24,31 @@ module.exports = async function (cwd) {
 
   console.log("Starting regtest network...");
 
+  // REGTEST_BACKEND=local runs BCHN and Fulcrum binaries from test/local, otherwise Docker
+  if (process.env.REGTEST_BACKEND === "local") {
+    // the browser config's instance runs this global setup a second time, in the same process
+    if (global.localRegtest) return;
+    const started = spawnSync(`./test/local/start.sh`, null, {
+      shell: false,
+      stdio: "inherit",
+      cwd: cwd,
+    });
+    if (started.status !== 0) {
+      throw new Error("test/local/start.sh failed to start the local regtest");
+    }
+    global.localRegtest = true;
+    return;
+  }
+
   let output = spawnSync("docker", ["ps"], {
     shell: false,
     stdio: "ignore",
   });
 
   if (output.status != 0) {
-    console.error("Docker is not running in your system. Aborting.");
-    process.exit(0);
+    throw new Error(
+      "Docker is not running; pnpm test:regtest:local runs on local binaries",
+    );
   }
 
   if (global.fulcrumRegtest === undefined) {
@@ -46,7 +63,7 @@ module.exports = async function (cwd) {
   }
 
   // ping bchd as a readiness signal, give up and run anyway after 10s
-  for (let i = 0; (await pingBchn()).length > 0 && i < 5; i++) {
+  for (let i = 0; pingBchn().length > 0 && i < 5; i++) {
     console.log("Waiting for bchn node");
     await delay(2000);
   }

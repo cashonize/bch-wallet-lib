@@ -31,10 +31,15 @@
     "format:check": "oxfmt --check",
     "test": "USE_MOCK_PROVIDER=1 vitest run --config test/vitest.config.ts",
     "test:regtest": "vitest run --config test/vitest.config.ts",
-    "test:browser": "vitest run --config test/vitest.config.browser.ts",
+    "test:browser": "USE_MOCK_PROVIDER=1 vitest run --config test/vitest.config.browser.ts",
+    "test:browser:regtest": "vitest run --config test/vitest.config.browser.ts",
+    "test:regtest:local": "REGTEST_BACKEND=local vitest run --config test/vitest.config.ts",
+    "test:browser:regtest:local": "REGTEST_BACKEND=local vitest run --config test/vitest.config.browser.ts",
     "coverage": "COVERAGE=true pnpm test",
     "regtest:up": "./test/docker/start.sh",
     "regtest:down": "./test/docker/stop.sh",
+    "regtest:local:up": "./test/local/start.sh",
+    "regtest:local:down": "./test/local/stop.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

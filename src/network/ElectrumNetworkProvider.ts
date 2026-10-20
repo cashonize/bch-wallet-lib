@@ -617,7 +617,10 @@ export default class ElectrumNetworkProvider {
     await this.transport.connect();
   }
 
-  /** Close the connection and the provider's own header subscription. */
+  /**
+   * Close the connection and the provider's own header subscription, for good: a request made on
+   * the provider afterwards rejects rather than connecting again. A new provider connects anew.
+   */
   async disconnect(): Promise<boolean> {
     await this.headerCancelFn?.();
     await this.transport.close();

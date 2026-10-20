@@ -77,6 +77,7 @@ export class ElectrumTransport implements Transport {
   private connecting?: Promise<void>;
   // Bumped by close(), so that work still under way does not connect again afterwards
   private epoch = 0;
+  private closed = false;
   private readonly subscriptions = new Map<string, Subscription>();
 
   constructor(
@@ -96,6 +97,7 @@ export class ElectrumTransport implements Transport {
   }
 
   async connect(): Promise<void> {
+    if (this.closed) throw new Error("The electrum transport was closed.");
     if (this.client?.status === ConnectionStatus.CONNECTED) return;
     if (!this.connecting) {
       const connecting = this.establish().finally(() => {
@@ -107,10 +109,13 @@ export class ElectrumTransport implements Transport {
   }
 
   /**
-   * Ends the connection and every subscription. Waits for a connect attempt still under way, which
-   * for a server given by URL gives up within about the connect timeout.
+   * Ends the connection and every subscription, for good: a closed transport refuses to connect
+   * again, so a request still holding it fails instead of reopening a connection to a server the
+   * caller has left. Waits for a connect attempt still under way, which for a server given by URL
+   * gives up within about the connect timeout.
    */
   async close(): Promise<void> {
+    this.closed = true;
     this.epoch++;
     const client = this.client;
     this.client = undefined;

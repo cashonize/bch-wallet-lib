@@ -421,7 +421,9 @@ describe("ElectrumTransport subscriptions", () => {
     expect(received).toHaveLength(2);
   });
 
-  test("delivers each notification once after close() and connect()", async () => {
+  // A caller that left a server closes its transport; a request still holding it must not open a
+  // connection to that server again
+  test("refuses to connect again once closed, so a late request fails instead of reconnecting", async () => {
     const fake = new FakeServer();
     serveStatuses(fake);
     fake.handlers.set("blockchain.relayfee", () => ({ result: 0.00001 }));
@@ -430,23 +432,21 @@ describe("ElectrumTransport subscriptions", () => {
     await transport.subscribe("blockchain.address.subscribe", [addressA], (d) =>
       before.push(d),
     );
+    await transport.close();
+    const connects = fake.connects;
 
-    for (let cycle = 0; cycle < 3; cycle++) {
-      await transport.close();
-      await transport.connect();
-    }
-    const received: unknown[] = [];
-    await transport.subscribe("blockchain.address.subscribe", [addressA], (d) =>
-      received.push(d),
+    await expect(transport.request("blockchain.relayfee")).rejects.toThrow(
+      "The electrum transport was closed.",
     );
-    fake.notify("blockchain.address.subscribe", [addressA, "new status"]);
-    await transport.request("blockchain.relayfee");
-
-    expect(received).toEqual([
-      [addressA, `status of ${addressA}`],
-      [addressA, "new status"],
-    ]);
+    await expect(
+      transport.subscribe("blockchain.address.subscribe", [addressA], () => {}),
+    ).rejects.toThrow("The electrum transport was closed.");
+    await expect(transport.connect()).rejects.toThrow(
+      "The electrum transport was closed.",
+    );
+    expect(fake.connects).toBe(connects);
     // close() ended the subscription made before it
+    fake.notify("blockchain.address.subscribe", [addressA, "new status"]);
     expect(before).toHaveLength(1);
   });
 });
@@ -463,6 +463,22 @@ describe("ElectrumTransport connecting", () => {
     await expect(transport.request("blockchain.relayfee")).rejects.toThrow(
       Error,
     );
+  });
+
+  // a failed connect is no close: the same transport connects once the server can be reached, which
+  // a caller's retry relies on
+  test("connects on a later attempt after a first connect that failed", async () => {
+    const fake = new FakeServer();
+    fake.hangOnConnect = true;
+    // as the socket of a server given by URL, which gives up within the connect timeout
+    fake.options.timeoutInMilliSeconds = 50;
+    fake.handlers.set("blockchain.relayfee", () => ({ result: 0.00001 }));
+    transport = new ElectrumTransport(asServer(fake), { connectTimeout: 50 });
+    await expect(transport.connect()).rejects.toThrow("timed out after 50 ms");
+
+    fake.hangOnConnect = false;
+    await transport.connect();
+    expect(await transport.request("blockchain.relayfee")).toBe(0.00001);
   });
 
   test("tries the servers in order and stays with the first that connects", async () => {

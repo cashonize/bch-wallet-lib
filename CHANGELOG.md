@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A closed transport, and so a disconnected provider (`provider.disconnect()`), refuses to connect again: a request or subscription made on it afterwards rejects with "The electrum transport was closed.", where it used to open a new connection to the same server. A request still in flight on a provider the caller replaced, e.g. a history load during a server change, no longer reconnects to the server the caller left. A caller that disconnected a provider to connect again later makes a new provider instead.
 - The client name sent to electrum servers in `server.version` is `@cashonize/bch-wallet-lib`, the package's name, where it was `bch-wallet-lib`.
 
 ## 0.1.0 (2026-10-20)

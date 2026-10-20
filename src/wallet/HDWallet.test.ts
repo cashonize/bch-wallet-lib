@@ -45,11 +45,12 @@ const expectedXprv =
 
 describe("HDWallet", () => {
   it("should create a new HDWallet instance", async () => {
+    // the xpub and xprv vectors are of the m/44'/0'/0' path
     const wallet = await Wallet.fromId(
-      "seed:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage",
+      "seed:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0'/0/0",
     );
     const walletSeed = await HDWallet.fromId(
-      `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage`,
+      `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0'`,
     );
     const walletPriv = await HDWallet.fromId(`hd:mainnet:${expectedXprv}`);
     const walletPub = await HDWallet.fromId(`hd:mainnet:${expectedXpub}`);
@@ -283,17 +284,18 @@ describe("HDWallet", () => {
     expect(await w.getBalance()).toBe(30_000n);
   });
 
+  // a wallet made without a path takes the default, BCH's m/44'/145'/0', and keeps it in its id
   it("should serialize", async () => {
     const wallet = await HDWallet.fromId(
       `hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage`,
     );
     expect(wallet.toDbString()).toBe(
-      "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0':0:0",
+      "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/145'/0':0:0",
     );
 
     wallet.name = "testWallet";
     expect(wallet.toDbString()).toBe(
-      "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/0'/0':0:0",
+      "hd:mainnet:divide battle bulb improve hockey favorite charge save merit fatal frog cage:m/44'/145'/0':0:0",
     );
 
     const xPrivWallet = await HDWallet.fromId(`hd:mainnet:${expectedXprv}`);
@@ -315,7 +317,9 @@ describe("HDWallet", () => {
   it("restores an xprv, tprv or xpub walletId", async () => {
     const mnemonic =
       "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
-    const fromSeed = await HDWallet.fromId(`hd:mainnet:${mnemonic}`);
+    const fromSeed = await HDWallet.fromId(
+      `hd:mainnet:${mnemonic}:m/44'/0'/0'`,
+    );
 
     const xPrivWallet = await HDWallet.fromId(`hd:mainnet:${expectedXprv}`);
     const xPrivRestored = await HDWallet.fromId(xPrivWallet.toDbString());

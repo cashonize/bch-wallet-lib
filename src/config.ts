@@ -1,7 +1,7 @@
 export class Config {
   // enforces all token-related methods to specify tokenaddr as recepient and change cashaddr
   static EnforceCashTokenReceiptAddresses = false;
-  static DefaultParentDerivationPath = "m/44'/0'/0'";
+  static DefaultParentDerivationPath = "m/44'/145'/0'";
   // caches raw transactions, headers and HD wallet records in IndexedDB; without it raw
   // transactions and headers are not cached, and an HD wallet keeps its cache in memory
   static UseIndexedDBCache = false;

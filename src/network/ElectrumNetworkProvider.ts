@@ -139,6 +139,7 @@ export default class ElectrumNetworkProvider {
             "blockchain.transaction.get",
             [hash, false],
           );
+          await checkTransactionHash(hash, tx);
           return [hash, tx] as [string, string];
         },
       );
@@ -261,9 +262,13 @@ export default class ElectrumNetworkProvider {
     return hex;
   }
 
-  private async fetchTransaction<T>(txHash: string, verbose: boolean) {
+  private async fetchTransaction<T extends string | { hex: string }>(
+    txHash: string,
+    verbose: boolean,
+  ): Promise<T> {
+    let transaction: T;
     try {
-      return await this.performRequest<T>("blockchain.transaction.get", [
+      transaction = await this.performRequest<T>("blockchain.transaction.get", [
         txHash,
         verbose,
       ]);
@@ -278,6 +283,11 @@ export default class ElectrumNetworkProvider {
         );
       else throw error;
     }
+    let hex: string;
+    if (typeof transaction === "string") hex = transaction;
+    else hex = transaction.hex;
+    await checkTransactionHash(txHash, hex);
+    return transaction;
   }
 
   private async enrichWithInputValues(
@@ -329,6 +339,9 @@ export default class ElectrumNetworkProvider {
         if (cachedTx.confirmations > 0) {
           const currentHeight = await this.getBlockHeight();
           cachedTx.confirmations += currentHeight - cachedTx.fetchHeight;
+        } else {
+          // an unconfirmed entry cannot tell whether it has confirmed since, so it is fetched again
+          cachedTx = undefined;
         }
       }
     }
@@ -614,6 +627,18 @@ export default class ElectrumNetworkProvider {
 
 // A server's error response to a broadcast is a refusal; a timeout or a lost connection is not, as
 // the transaction may still have reached the node
+// A server's transaction is cached by the txid it was asked for, where it would outlast a switch to
+// another server, so it must be the transaction of that txid. The server's decoded fields of a
+// verbose transaction are not checked against its hex.
+async function checkTransactionHash(txHash: string, hex: string) {
+  const hash = await getTransactionHash(hex);
+  if (hash !== txHash.toLowerCase()) {
+    throw new Error(
+      `The server answered the request for transaction ${txHash} with transaction ${hash}.`,
+    );
+  }
+}
+
 function broadcastError(error: unknown, txid: string): Error {
   if (serverErrorCode(error) === undefined) return toError(error);
   const { message } = error as Error;

@@ -88,3 +88,28 @@ test("the input values of a transaction are read at most 10 at a time", async ()
   expect(counts.byMethod["blockchain.transaction.get"]).toBe(13);
   expect(counts.maxInFlight).toBe(10);
 });
+
+test("a transaction the server answers with another one is refused, rather than cached under the txid asked for", async () => {
+  const provider = await createMockProvider();
+  await provider.connect();
+  const [asked, other] = await provider.mine(address, 2);
+  // performRequest is protected; the test wraps it from outside
+  const target = provider as unknown as {
+    performRequest(method: string, params: unknown[]): Promise<unknown>;
+  };
+  const performRequest = target.performRequest.bind(provider);
+  target.performRequest = (method, params) => {
+    if (method === "blockchain.transaction.get" && params[0] === asked) {
+      return performRequest(method, [other, ...params.slice(1)]);
+    }
+    return performRequest(method, params);
+  };
+
+  const refusal = `with transaction ${other}`;
+  await expect(provider.getRawTransaction(asked)).rejects.toThrow(refusal);
+  await expect(provider.getRawTransactions([asked])).rejects.toThrow(refusal);
+  await expect(provider.getRawTransactionObject(asked)).rejects.toThrow(
+    refusal,
+  );
+  expect(await provider.getRawTransaction(other)).toMatch(/^[0-9a-f]+$/);
+});

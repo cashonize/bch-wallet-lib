@@ -51,4 +51,33 @@ describe("Dynamic confirmations via fetchHeight", () => {
       Config.UseIndexedDBCache = indexedDbCacheValue;
     }
   });
+
+  test("a transaction cached unconfirmed reports its confirmations once mined", async () => {
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
+    try {
+      const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+      await (
+        alice.provider as unknown as { cache: CacheProvider }
+      ).cache.init();
+      const bob = await RegTestWallet.newRandom();
+      const { txId } = await alice.send({
+        cashaddr: bob.cashaddr!,
+        value: 1_000n,
+      });
+
+      const unconfirmed = await alice.provider.getRawTransactionObject(txId!);
+      expect(unconfirmed.confirmations).toBe(0);
+
+      await mine({ cashaddr: alice.cashaddr!, blocks: 1 });
+      await delay(1000);
+
+      const mined = await alice.provider.getRawTransactionObject(txId!);
+      expect(mined.confirmations).toBe(1);
+      expect(mined.blockhash).toBeDefined();
+      await bob.stop();
+    } finally {
+      Config.UseIndexedDBCache = indexedDbCacheValue;
+    }
+  });
 });

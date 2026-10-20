@@ -1,1 +1,1 @@
-IndexedDB wallet storage for browsers, imported as `bch-wallet-lib/indexeddb`.
+IndexedDB wallet storage for browsers, imported as `@cashonize/bch-wallet-lib/indexeddb`.

@@ -12,7 +12,7 @@ import {
   NetworkType,
   setGlobalProvider,
   WatchOnlyError,
-} from "bch-wallet-lib";
+} from "@cashonize/bch-wallet-lib";
 // off the entry, as the regtest classes are test infrastructure; the same built modules
 import { RegTestWallet } from "../dist/wallet/Wif.js";
 

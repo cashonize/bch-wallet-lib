@@ -4,9 +4,9 @@ Every name the package exports, every public class member and every option group
 
 A new export needs a row here and a real consumer. Rows marked **no consumer** have neither a Cashonize use nor a reason inside the library to be public: they are candidates for removal. "Planned" means a Cashonize change named in `docs/consumer-notes.md` section 4 that the branch has not made yet.
 
-Entry points (`package.json` `exports`): `bch-wallet-lib` and `bch-wallet-lib/indexeddb`.
+Entry points (`package.json` `exports`): `@cashonize/bch-wallet-lib` and `@cashonize/bch-wallet-lib/indexeddb`.
 
-## `bch-wallet-lib`
+## `@cashonize/bch-wallet-lib`
 
 ### Wallet classes and factories
 
@@ -183,7 +183,7 @@ Every error the library throws is an exported class (AGENTS.md "Conventions"), s
 | `Utxo`, `TokenI`, `TxI`, `HexHeaderI`                                     | Types across the app; `Utxo` in most stores, views and tools                                |
 | `HeaderI`                                                                 | The return type of `decodeHeader` and `getHeaders`                                          |
 
-## `bch-wallet-lib/indexeddb`
+## `@cashonize/bch-wallet-lib/indexeddb`
 
 | Export or member                            | Who needs it                                                                                       |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------- |

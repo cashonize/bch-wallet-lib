@@ -108,7 +108,7 @@ Every error the library throws is an exported class (AGENTS.md "Conventions"), s
 | `InvalidWalletIdError` (`kind`, `reason`)                                                      | Thrown by `fromId`, `named`, `replaceNamed`, `saveNamedWallet`, `deleteNamedWallet`; no Cashonize branch on it yet |
 | `InvalidWifError` (`reason`, `network`)                                                        | Thrown by `fromWIF` and `decodeWif`; the sweep keeps its own check for the localized message                       |
 | `BroadcastRejectedError` (`reason`, `txid`, `alreadyKnown`)                                    | `broadcastErrors.ts`, `store.ts`, `walletconnectStore.ts`, `wizardconnectStore.ts`, `transferAssets.ts`            |
-| `BroadcastTimeoutError` (`txid`)                                                               | `broadcastErrors.ts`: a broadcast the server accepted but never reported                                           |
+| `BroadcastTimeoutError` (`txid`, `transaction`)                                                | `broadcastErrors.ts`: a broadcast whose outcome is unknown                                                         |
 | `ElectrumTimeoutError`                                                                         | `broadcastErrors.ts`                                                                                               |
 
 ### Network

@@ -597,38 +597,77 @@ describe("a broadcast through the provider", () => {
     },
   );
 
-  test("a timed out broadcast stays an ElectrumTimeoutError", async () => {
+  // the outcome of a broadcast that timed out or lost its connection is told by asking for it
+  const holds = (fake: FakeServer) =>
+    fake.handlers.set("blockchain.transaction.get", () => ({ result: txHex }));
+  const dropsOnBroadcast = (fake: FakeServer) =>
+    fake.handlers.set("blockchain.transaction.broadcast", () => {
+      setTimeout(() => fake.drop(), 0);
+      return undefined;
+    });
+
+  test("a timed out broadcast the server does not hold is a BroadcastTimeoutError with the transaction", async () => {
     const fake = new FakeServer();
     const error = await provider(fake, { requestTimeout: 50 })
       .sendRawTransaction(txHex)
       .catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(ElectrumTimeoutError);
-    expect(error).not.toBeInstanceOf(BroadcastRejectedError);
+    expect(error).toBeInstanceOf(BroadcastTimeoutError);
+    const timedOut = error as BroadcastTimeoutError;
+    expect(timedOut.txid).toBe(await getTransactionHash(txHex));
+    expect(timedOut.transaction).toBe(txHex);
+    expect(timedOut.cause).toBeInstanceOf(ElectrumTimeoutError);
+    expect(fake.calls("blockchain.transaction.broadcast")).toHaveLength(1);
   });
 
-  test("a broadcast that loses its connection is not a refusal", async () => {
+  test("a timed out broadcast the server holds returns its txid", async () => {
     const fake = new FakeServer();
-    fake.handlers.set("blockchain.transaction.broadcast", () => {
-      setTimeout(() => fake.drop(), 0);
-      return undefined;
-    });
-    const error = await provider(fake)
+    holds(fake);
+    expect(
+      await provider(fake, { requestTimeout: 50 }).sendRawTransaction(txHex),
+    ).toBe(await getTransactionHash(txHex));
+    expect(fake.calls("blockchain.transaction.broadcast")).toHaveLength(1);
+  });
+
+  test("a broadcast that loses its connection is a BroadcastTimeoutError, not a refusal", async () => {
+    const fake = new FakeServer();
+    dropsOnBroadcast(fake);
+    const error = await provider(fake, { requestTimeout: 200 })
       .sendRawTransaction(txHex)
       .catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(Error);
-    expect(error).not.toBeInstanceOf(BroadcastRejectedError);
+    expect(error).toBeInstanceOf(BroadcastTimeoutError);
+    expect((error as BroadcastTimeoutError).transaction).toBe(txHex);
+    expect(((error as Error).cause as Error).message).toBe("Connection lost");
+    expect(fake.calls("blockchain.transaction.broadcast")).toHaveLength(1);
+  });
+
+  test("a broadcast that loses its connection, which the server holds after reconnecting, returns its txid", async () => {
+    const fake = new FakeServer();
+    dropsOnBroadcast(fake);
+    holds(fake);
+    expect(await provider(fake).sendRawTransaction(txHex)).toBe(
+      await getTransactionHash(txHex),
+    );
+    expect(fake.connects).toBe(2);
+    expect(fake.calls("blockchain.transaction.broadcast")).toHaveLength(1);
   });
 });
 
 describe("a broadcast through another Transport", () => {
-  // a Transport whose broadcast fails as given, and whose subscriptions never report
+  // a Transport whose broadcast fails as given, which does not hold the transaction, and whose
+  // subscriptions never report
   const failingTransport = (failure: Error): Transport => ({
     connect: async () => {},
     close: async () => {},
     request: async (method) => {
       if (method === "blockchain.transaction.broadcast") throw failure;
+      if (method === "blockchain.transaction.get") {
+        throw Object.assign(
+          new Error("No such mempool or blockchain transaction"),
+          { code: 2 },
+        );
+      }
       return null;
     },
     subscribe: async () => async () => {},
@@ -647,7 +686,8 @@ describe("a broadcast through another Transport", () => {
       .sendRawTransaction("0200")
       .catch((e: unknown) => e);
 
-    expect(error).toBe(failure);
+    expect(error).toBeInstanceOf(BroadcastTimeoutError);
+    expect((error as Error).cause).toBe(failure);
   });
 
   test("a JSON-RPC error on the Error itself is a refusal", async () => {
@@ -699,6 +739,7 @@ describe("a broadcast the server accepts but does not report", () => {
     const timedOut = error as BroadcastTimeoutError;
     expect(timedOut.name).toBe("BroadcastTimeoutError");
     expect(timedOut.txid).toBe(await getTransactionHash("0200"));
+    expect(timedOut.transaction).toBe("0200");
     expect(timedOut.cause).toBeInstanceOf(Error);
     expect(provider.subscriptions).toBe(0);
   });

@@ -8,8 +8,8 @@ const ALREADY_KNOWN_REASONS = [
 /**
  * Thrown when the server answers a broadcast with an error. `reason` is the node's reject reason
  * (BCHN's, e.g. "txn-mempool-conflict", "Missing inputs", "dust"), `txid` the refused
- * transaction's id and `cause` the server's error. The message is the server's own. A broadcast that times out is an
- * `ElectrumTimeoutError` instead, as the transaction may have reached the node all the same.
+ * transaction's id and `cause` the server's error. The message is the server's own. A broadcast that times out or
+ * loses its connection is no refusal, as the transaction may have reached the node all the same.
  *
  * `alreadyKnown` is set when the node's answer is that it already holds the transaction, in its
  * mempool or in a block: that is no refusal, an earlier broadcast of it went through.
@@ -33,20 +33,31 @@ export class BroadcastRejectedError extends Error {
 }
 
 /**
- * Thrown when the server accepted a broadcast but did not report the transaction afterwards, and
- * a lookup of it then failed: the transaction may or may not have reached the network. `txid` is
- * the transaction's id, `cause` the error of the lookup.
+ * Thrown when a broadcast's outcome is unknown and a lookup of the transaction then failed: the
+ * broadcast timed out or lost its connection, or the server accepted it but did not report it. The
+ * transaction may or may not have reached the network. `txid` is its id, `transaction` its signed
+ * hex, and `cause` the error of the broadcast or of the lookup.
+ *
+ * Broadcasting `transaction` again is safe and settles the outcome: the node either takes it or
+ * answers that it already holds it, which `sendRawTransaction` returns as success. Building a new
+ * transaction instead may spend other coins and pay twice.
  */
 export class BroadcastTimeoutError extends Error {
   readonly txid: string;
+  readonly transaction: string;
 
   constructor(
     message: string,
-    { txid, cause }: { txid: string; cause?: unknown },
+    {
+      txid,
+      transaction,
+      cause,
+    }: { txid: string; transaction: string; cause?: unknown },
   ) {
     super(message, { cause });
     this.name = "BroadcastTimeoutError";
     this.txid = txid;
+    this.transaction = transaction;
   }
 }
 

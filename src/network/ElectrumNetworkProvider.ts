@@ -357,11 +357,12 @@ export default class ElectrumNetworkProvider {
    * already holds the transaction (BroadcastRejectedError's `alreadyKnown`) has it from an earlier
    * broadcast, so that answer returns the txid too. A server that accepts the broadcast but does
    * not report the transaction within 30 seconds is asked for it once: the txid when it has it,
-   * a BroadcastTimeoutError when not.
+   * a BroadcastTimeoutError when not. A broadcast that times out or loses its connection may have
+   * reached the node all the same, so the server is asked for the transaction in that case too.
    * @param txHex The raw transaction hex to be broadcast.
    * @param options.statusTimeout @internal Milliseconds to wait for the report, for the tests.
    * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
-   * @throws {BroadcastTimeoutError} If the server accepted the broadcast but neither reported nor holds the transaction.
+   * @throws {BroadcastTimeoutError} If the broadcast's outcome is unknown and the server does not hold the transaction.
    * @returns The transaction ID (hash) corresponding to the broadcast transaction.
    */
   async sendRawTransaction(
@@ -389,19 +390,25 @@ export default class ElectrumNetworkProvider {
           if (settled) return;
           // the request timeout bounds the broadcast itself, this the report that follows it
           timer = setTimeout(() => {
-            this.holdsTransaction(txHash, statusTimeout).then(
-              () => finish(),
-              finish,
-            );
+            this.holdsTransaction(
+              txHash,
+              txHex,
+              `The server accepted transaction ${txHash} but did not report it within ${statusTimeout} ms`,
+            ).then(() => finish(), finish);
           }, statusTimeout);
         },
         (error) => {
           const rejection = broadcastError(error, txHash);
-          // the node holds a transaction of this txid, the hash of these very bytes
-          if (
-            rejection instanceof BroadcastRejectedError &&
-            rejection.alreadyKnown
-          ) {
+          if (!(rejection instanceof BroadcastRejectedError)) {
+            // not the server's answer: the transaction may have reached the node before the failure
+            this.holdsTransaction(
+              txHash,
+              txHex,
+              `The broadcast of transaction ${txHash} failed (${rejection.message})`,
+              rejection,
+            ).then(() => finish(), finish);
+          } else if (rejection.alreadyKnown) {
+            // the node holds a transaction of this txid, the hash of these very bytes
             finish();
           } else {
             finish(rejection);
@@ -413,17 +420,19 @@ export default class ElectrumNetworkProvider {
     return txHash;
   }
 
-  // The one check after a broadcast the server did not report: whether it holds the transaction
+  // The one check after a broadcast whose outcome is unknown: whether the server holds the transaction
   private async holdsTransaction(
     txHash: string,
-    waited: number,
+    txHex: string,
+    outcome: string,
+    cause?: unknown,
   ): Promise<void> {
     try {
       await this.performRequest("blockchain.transaction.get", [txHash, false]);
     } catch (error) {
       throw new BroadcastTimeoutError(
-        `The server accepted transaction ${txHash} but did not report it within ${waited} ms, and does not hold it.`,
-        { txid: txHash, cause: error },
+        `${outcome}, and the server does not hold it.`,
+        { txid: txHash, transaction: txHex, cause: cause ?? error },
       );
     }
   }

@@ -57,6 +57,11 @@ export class WatchWallet extends BaseWallet {
   private watch: Promise<void> = Promise.resolve();
   private watchFailed = false;
   private stopped = false;
+  // a status whose fetch failed after the first, which the next read fetches again
+  private failedStatus?: string;
+  private refetching?: Promise<void>;
+  // counts the fetches, so that one a newer notification overtook is not applied
+  private fetches = 0;
 
   // Live state - updated by subscription notifications
   private status: string | null = null;
@@ -184,7 +189,24 @@ export class WatchWallet extends BaseWallet {
   /// error of a watch that fails, rather than reading a cached or empty state
   private watched(): Promise<void> {
     if (this.watchFailed && !this.stopped) void this.startWatch();
+    if (this.failedStatus !== undefined && !this.stopped) {
+      return this.watch.then(() => this.refetch());
+    }
     return this.watch;
+  }
+
+  // Fetches a status again whose fetch failed; reads that come meanwhile wait on the same fetch
+  private refetch(): Promise<void> {
+    const status = this.failedStatus;
+    if (status === undefined) return this.refetching ?? Promise.resolve();
+    this.failedStatus = undefined;
+    const run = this.update(status)
+      .then(() => {})
+      .finally(() => {
+        if (this.refetching === run) this.refetching = undefined;
+      });
+    this.refetching = run;
+    return run;
   }
 
   /// Subscribe to the single address for status change notifications. Settles once the first
@@ -204,14 +226,20 @@ export class WatchWallet extends BaseWallet {
 
       const callback = ([address, status]: [string, string | null]) => {
         if (address !== addr || failed) return;
+        // a newer status replaces one whose fetch failed
+        this.failedStatus = undefined;
         this.update(status).then(
-          () => {
+          (applied) => {
+            // an update a newer one overtook leaves the first status to that one
+            if (!applied) return;
             watched = true;
             resolve();
           },
           (error: unknown) => {
-            // a later fetch that fails leaves the old status, so the next notification fetches again
-            if (!watched) fail(error);
+            if (watched) return;
+            // a first fetch that fails makes the watch again instead
+            this.failedStatus = undefined;
+            fail(error);
           },
         );
       };
@@ -229,17 +257,34 @@ export class WatchWallet extends BaseWallet {
     });
   }
 
-  private async update(status: string | null): Promise<void> {
+  /// Fetch the address's state for a status. A fetch that fails after the first leaves the old
+  /// state and marks the status for the next read to fetch again, which rejects if that fails too.
+  /// Resolves to whether it applied the status, false when a newer notification's update overtook it.
+  private async update(status: string | null): Promise<boolean> {
+    const attempt = ++this.fetches;
     if (status !== null && status !== this.status) {
-      const update = this.fetchData(status);
+      const update = this.fetchData(status, () => attempt === this.fetches);
       this.updatePromise = update.catch(() => {});
-      await update;
+      try {
+        await update;
+      } catch (error) {
+        // the newer fetch decides
+        if (attempt !== this.fetches) return false;
+        this.failedStatus = status;
+        throw error;
+      }
     }
+    // a newer notification's fetch has the address's state
+    if (attempt !== this.fetches) return false;
     this.status = status;
     this.notifyWatchCallbacks(status, this.cashaddr);
+    return true;
   }
 
-  private async fetchData(status: string | null): Promise<void> {
+  private async fetchData(
+    status: string | null,
+    isLatest: () => boolean,
+  ): Promise<void> {
     const addr = this.cashaddr;
     const fromHeight = this.lastConfirmedHeight;
 
@@ -247,6 +292,7 @@ export class WatchWallet extends BaseWallet {
       this.provider.getUtxos(addr),
       this.provider.getHistory(addr, fromHeight),
     ]);
+    if (!isLatest()) return;
 
     // Merge: keep confirmed items below fromHeight, add new items
     const confirmedFromHistory = this.rawHistory.filter(

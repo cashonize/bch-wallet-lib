@@ -76,6 +76,42 @@ async function fund(address: string, satoshis: bigint) {
   });
 }
 
+// The next getUtxos reads the state now but answers only once released, as a slow server whose
+// answer arrives after the one to a newer request
+function answerFirstFetchLate(): () => void {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let held = false;
+  const getUtxos = provider.getUtxos.bind(provider);
+  provider.getUtxos = async (...args) => {
+    const utxos = await getUtxos(...args);
+    if (!held) {
+      held = true;
+      await released;
+    }
+    return utxos;
+  };
+  return release;
+}
+
+// Holds each getUtxos answer until its release: releases[n]() lets the n-th call answer, with the
+// state read at that time
+function holdFetches(count: number): (() => void)[] {
+  const releases: (() => void)[] = [];
+  const held = Array.from(
+    { length: count },
+    () => new Promise<void>((resolve) => releases.push(resolve)),
+  );
+  let calls = 0;
+  const getUtxos = provider.getUtxos.bind(provider);
+  provider.getUtxos = async (...args) => {
+    const call = calls++;
+    if (call < count) await held[call];
+    return getUtxos(...args);
+  };
+  return releases;
+}
+
 async function newAddress() {
   const wallet = await RegTestWallet.newRandom();
   await wallet.stop();
@@ -301,7 +337,7 @@ describe("a single-address wallet's fetch that fails", () => {
     await wallet.stop();
   }, 5000);
 
-  test("later, leaves the old status for the next notification to fetch", async () => {
+  test("later, rejects the next read, which fetches again without a new notification", async () => {
     const wallet = await RegTestWallet.newRandom();
     expect(await wallet.getBalance()).toBe(0n);
     const balances: bigint[] = [];
@@ -312,14 +348,64 @@ describe("a single-address wallet's fetch that fails", () => {
     refuse.fetch = true;
     await fund(wallet.cashaddr, 5_000n);
     await delay(100);
-    expect(await wallet.getBalance()).toBe(0n);
+    // the old state is not read as the current one
+    await expect(wallet.getBalance()).rejects.toThrow("connection lost");
     expect(balances).toEqual([]);
 
     refuse.fetch = false;
+    expect(await wallet.getBalance()).toBe(5_000n);
+    await delay(20);
+    expect(balances).toEqual([5_000n]);
     await fund(wallet.cashaddr, 7_000n);
     await delay(100);
     expect(await wallet.getBalance()).toBe(12_000n);
-    expect(balances).toEqual([12_000n]);
+    await wallet.stop();
+  }, 5000);
+
+  test("settles its first read with the newest fetch when one that it overtook fails", async () => {
+    const address = await newAddress();
+    await fund(address, 5_000n);
+    let failFirst!: () => void;
+    const firstFails = new Promise<void>((_resolve, reject) => {
+      failFirst = () => reject(new Error("connection lost"));
+    });
+    let releaseSecond!: () => void;
+    const secondHeld = new Promise<void>(
+      (resolve) => (releaseSecond = resolve),
+    );
+    let calls = 0;
+    const getUtxos = provider.getUtxos.bind(provider);
+    provider.getUtxos = async (...args) => {
+      const call = calls++;
+      if (call === 0) await firstFails;
+      if (call === 1) await secondHeld;
+      return getUtxos(...args);
+    };
+    const wallet = await new RegTestWatchWallet()["watchOnly"](address);
+    const balance = wallet.getBalance();
+    await delay(20);
+    // the second notification's fetch starts, then the overtaken first one fails before it ends
+    await fund(address, 7_000n);
+    await delay(20);
+    failFirst();
+    await delay(20);
+    releaseSecond();
+    expect(await balance).toBe(12_000n);
+    await wallet.stop();
+  }, 5000);
+
+  test("does not apply a fetch that a newer notification's fetch overtook", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    expect(await wallet.getBalance()).toBe(0n);
+    const release = answerFirstFetchLate();
+
+    await fund(wallet.cashaddr, 5_000n);
+    await delay(50);
+    await fund(wallet.cashaddr, 7_000n);
+    await delay(100);
+    release();
+    await delay(50);
+    expect(await wallet.getBalance()).toBe(12_000n);
     await wallet.stop();
   }, 5000);
 });
@@ -344,7 +430,7 @@ describe("a fetch that fails during HD address discovery", () => {
     await wallet.stop();
   }, 5000);
 
-  test("after discovery, leaves the address for its next notification to fetch", async () => {
+  test("after discovery, rejects the next read, which fetches the address again", async () => {
     const wallet = await RegTestHDWallet.newRandom();
     await wallet["watchPromise"];
     const address = wallet.getDepositAddress(0);
@@ -352,11 +438,56 @@ describe("a fetch that fails during HD address discovery", () => {
     refuse.fetch = true;
     await fund(address, 5_000n);
     await delay(100);
-    expect(await wallet.getBalance()).toBe(0n);
+    // the old state is not read as the current one, nor the address handed out again as unused
+    await expect(wallet.getBalance()).rejects.toThrow("connection lost");
 
     refuse.fetch = false;
+    expect(await wallet.getBalance()).toBe(5_000n);
+    expect(wallet.indices.get(0)).toBe(1);
     await fund(address, 7_000n);
-    await wallet["waitForUpdate"]({ indices: { 0: 1 } });
+    await delay(100);
+    expect(await wallet.getBalance()).toBe(12_000n);
+    await wallet.stop();
+  }, 5000);
+
+  test("settles discovery with the newest fetch, not one that a newer notification overtook", async () => {
+    const seedWallet = await RegTestHDWallet.newRandom();
+    const address = seedWallet.getDepositAddress(0);
+    await seedWallet["watchPromise"];
+    await seedWallet.stop();
+    await fund(address, 5_000n);
+
+    const releases = holdFetches(2);
+    const wallet = await RegTestHDWallet.fromId(
+      `hd:regtest:${seedWallet.mnemonic!}:${seedWallet.derivation}`,
+    );
+    let balance: bigint | undefined;
+    void wallet.getBalance().then((value) => (balance = value));
+    await delay(20);
+    await fund(address, 7_000n);
+    await delay(20);
+    releases[0]();
+    await delay(50);
+    expect(balance).toBeUndefined();
+
+    releases[1]();
+    await delay(50);
+    expect(balance).toBe(12_000n);
+    await wallet.stop();
+  }, 5000);
+
+  test("does not apply a fetch that a newer notification's fetch overtook", async () => {
+    const wallet = await RegTestHDWallet.newRandom();
+    await wallet["watchPromise"];
+    const address = wallet.getDepositAddress(0);
+    const release = answerFirstFetchLate();
+
+    await fund(address, 5_000n);
+    await delay(50);
+    await fund(address, 7_000n);
+    await delay(100);
+    release();
+    await delay(50);
     expect(await wallet.getBalance()).toBe(12_000n);
     await wallet.stop();
   }, 5000);

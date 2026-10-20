@@ -30,6 +30,7 @@ import {
   getNextUnusedIndices,
 } from "../util/hd.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
+import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
 import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
@@ -104,6 +105,9 @@ export class HDWallet extends BaseWallet {
   private discovery: Promise<void> = Promise.resolve();
   private discoveryFailed = false;
   private stopped = false;
+  // addresses whose fetch failed after discovery, with the fetch the next read runs again
+  private failedFetches = new Map<string, () => Promise<void>>();
+  private refetching?: Promise<void>;
 
   public get networkPrefix(): CashAddressNetworkPrefix {
     return prefixFromNetworkMap[this.network];
@@ -316,7 +320,35 @@ export class HDWallet extends BaseWallet {
   /// the error of a discovery that fails, rather than reading an incomplete set of addresses
   private discovered(): Promise<void> {
     if (this.discoveryFailed && !this.stopped) void this.startDiscovery();
+    if (this.failedFetches.size > 0 && !this.stopped) {
+      return this.discovery.then(() => this.refetchFailed());
+    }
     return this.discovery;
+  }
+
+  // Fetches the addresses again whose fetch failed after discovery, rejecting if one fails again;
+  // reads that come meanwhile wait on the same fetches
+  private refetchFailed(): Promise<void> {
+    if (this.failedFetches.size === 0) {
+      return this.refetching ?? Promise.resolve();
+    }
+    const failed = [...this.failedFetches];
+    const run = mapConcurrent(
+      failed,
+      DEFAULT_CONCURRENCY,
+      ([address, fetch]) => {
+        // a newer notification replaced it, or a read started it already
+        if (this.failedFetches.get(address) !== fetch) return Promise.resolve();
+        this.failedFetches.delete(address);
+        return fetch();
+      },
+    )
+      .then(() => {})
+      .finally(() => {
+        if (this.refetching === run) this.refetching = undefined;
+      });
+    this.refetching = run;
+    return run;
   }
 
   /// Internal method to start watching addresses for activity, extending the watched range as needed
@@ -377,6 +409,8 @@ export class HDWallet extends BaseWallet {
             const index = startIndex + idx;
             let discovered = false;
             let failed = false;
+            // counts the fetches, so that one a newer notification overtook is not applied
+            let fetches = 0;
 
             if (statuses[index] !== undefined) {
               resolve();
@@ -414,17 +448,26 @@ export class HDWallet extends BaseWallet {
               if (address != addr || failed) {
                 return;
               }
+              // a newer status replaces one whose fetch failed
+              this.failedFetches.delete(addr);
               try {
-                await update(status);
+                // an update a newer one overtook leaves the first status to that one
+                if (!(await update(status))) return;
                 discovered = true;
                 resolve();
               } catch (error) {
-                // a later fetch that fails leaves the old status, so the next notification fetches again
-                if (!discovered) fail(error);
+                if (discovered) return;
+                // a first fetch that fails leaves the address unwatched for the next discovery instead
+                this.failedFetches.delete(addr);
+                fail(error);
               }
             };
 
-            const update = async (status: string | null) => {
+            // A fetch that fails after the first leaves the old state and marks the address for
+            // the next read to fetch again, which rejects if that fails too. Resolves to whether
+            // it applied the status, false when a newer notification's update overtook it.
+            const update = async (status: string | null): Promise<boolean> => {
+              const attempt = ++fetches;
               if (status === null) {
                 utxosArray[index] = [];
                 historyArray[index] = [];
@@ -435,18 +478,33 @@ export class HDWallet extends BaseWallet {
                 const fromHeight = lastConfirmedHeight;
                 const currentHistory = historyArray[index] || [];
 
-                const [utxos, newHistory] = await Promise.all([
-                  this.provider.getUtxos(addr).then((utxos) =>
-                    utxos.map((utxo) => {
-                      utxo.address = addr;
-                      return utxo;
-                    }),
-                  ),
-                  // Fetch only from last confirmed height to reduce server load
-                  this.provider.getHistory(addr, fromHeight),
-                ]);
+                let utxos: Utxo[];
+                let newHistory: TxI[];
+                try {
+                  [utxos, newHistory] = await Promise.all([
+                    this.provider.getUtxos(addr).then((utxos) =>
+                      utxos.map((utxo) => {
+                        utxo.address = addr;
+                        return utxo;
+                      }),
+                    ),
+                    // Fetch only from last confirmed height to reduce server load
+                    this.provider.getHistory(addr, fromHeight),
+                  ]);
+                } catch (error) {
+                  // the newer fetch decides
+                  if (attempt !== fetches) return false;
+                  if (!failed && !this.stopped) {
+                    this.failedFetches.set(addr, async () => {
+                      await update(status);
+                    });
+                  }
+                  throw error;
+                }
                 // failed while fetching, so the address must stay unwatched for a retry
-                if (failed) return;
+                if (failed) return false;
+                // a newer notification's fetch has the address's state
+                if (attempt !== fetches) return false;
 
                 // Merge: keep confirmed items from current history, add new items
                 const confirmedFromHistory = currentHistory.filter(
@@ -499,6 +557,7 @@ export class HDWallet extends BaseWallet {
 
               // Notify wallet watchers of the status change
               this.notifyWalletWatchers(status, addr);
+              return true;
             };
 
             this.subscribe((provider) =>

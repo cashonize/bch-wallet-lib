@@ -322,7 +322,8 @@ export class HDWallet extends BaseWallet {
   /// Internal method to start watching addresses for activity, extending the watched range as needed
   private async makeWatchPromise(gapSize: number = GAP_SIZE) {
     let needsMore = true;
-    while (needsMore) {
+    // a wallet stopped mid-discovery subscribes no further addresses
+    while (needsMore && !this.stopped) {
       // every branch settles before this fails; an address whose first status failed before its
       // subscribe resolved ends that subscription itself once it does
       const results = await Promise.allSettled(
@@ -352,6 +353,7 @@ export class HDWallet extends BaseWallet {
 
   /// Watch addresses of a specific branch for activity
   private async watchBranch(branch: number, gapSize: number): Promise<number> {
+    if (this.stopped) return 0;
     const statuses = this.statuses.get(branch)!;
     const utxosArray = this.utxos.get(branch)!;
     const historyArray = this.rawHistory.get(branch)!;

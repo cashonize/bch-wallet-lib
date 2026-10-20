@@ -194,6 +194,33 @@ describe("a subscription that cannot be made", () => {
     expect(provider.subscriptions).toBe(0);
   }, 5000);
 
+  test("ends an HD discovery that is still extending when the wallet is stopped", async () => {
+    const seedWallet = await RegTestHDWallet.newRandom();
+    // the last address of the first round is used, so discovery needs a second round
+    const address = seedWallet.getDepositAddress(19);
+    await seedWallet["watchPromise"];
+    await seedWallet.stop();
+    await fund(address, 5_000n);
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const getUtxos = provider.getUtxos.bind(provider);
+    provider.getUtxos = async (...args) => {
+      await held;
+      return getUtxos(...args);
+    };
+    const wallet = await RegTestHDWallet.fromId(
+      `hd:regtest:${seedWallet.mnemonic!}:${seedWallet.derivation}`,
+    );
+    // the first round is subscribed and its fetch of the used address held
+    await delay(50);
+    expect(provider.subscriptions).toBe(40);
+    await wallet.stop();
+    release();
+    await delay(100);
+    expect(provider.subscriptions).toBe(0);
+  }, 5000);
+
   test("subscribes again an HD address that failed between watched ones", async () => {
     const seedWallet = await RegTestHDWallet.newRandom();
     const address = seedWallet.getDepositAddress(5);

@@ -1,4 +1,4 @@
-import { randomNFT, randomToken, randomUtxo } from "@mem-cash/electrum";
+import { randomNFT, randomToken, randomUtxo } from "@paryonusd/mem-cash";
 import { Network } from "../interface.js";
 import { SendRequest, TokenSendRequest } from "../wallet/model.js";
 import { RegTestWallet } from "../wallet/Wif.js";
@@ -63,11 +63,13 @@ describe("MockNetworkProvider", () => {
       randomUtxo({ satoshis: 1000n, token: randomNFT() }),
     );
 
+    // listunspent comes back in Fulcrum's order, not in the order added
     const utxos = await provider.getUtxos(address);
     expect(utxos.length).toBe(2);
-    expect(utxos[0].token).toBeDefined();
-    expect(utxos[0].token!.amount).toBe(500n);
-    expect(utxos[1].token!.nft).toBeDefined();
+    const ft = utxos.find((u) => u.token?.nft === undefined);
+    const nft = utxos.find((u) => u.token?.nft !== undefined);
+    expect(ft?.token?.amount).toBe(500n);
+    expect(nft).toBeDefined();
   });
 
   test("should subscribe to address and receive initial status", async () => {

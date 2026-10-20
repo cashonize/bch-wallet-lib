@@ -14,26 +14,6 @@ export default defineConfig({
         root,
         "node_modules/@rpckit/fallback/dist/electrum-cash/index.js",
       ),
-      "@mem-cash/electrum": path.resolve(
-        root,
-        "node_modules/@mem-cash/electrum/dist/index.js",
-      ),
-      "@mem-cash/core": path.resolve(
-        root,
-        "node_modules/@mem-cash/core/dist/index.js",
-      ),
-      "@mem-cash/storage": path.resolve(
-        root,
-        "node_modules/@mem-cash/storage/dist/index.js",
-      ),
-      "@mem-cash/types": path.resolve(
-        root,
-        "node_modules/@mem-cash/types/dist/index.js",
-      ),
-      "@mem-cash/validation": path.resolve(
-        root,
-        "node_modules/@mem-cash/validation/dist/index.js",
-      ),
       "#test": path.resolve(__dirname),
     },
   },

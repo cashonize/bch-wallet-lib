@@ -1,8 +1,7 @@
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import {
   BaseWallet,
-  disconnectProviders,
   HDWallet,
-  initProviders,
   RegTestWallet,
   TestNetWallet,
   Wallet,

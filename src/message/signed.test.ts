@@ -5,7 +5,7 @@ import {
   encodeCashAddress,
 } from "@bitauth/libauth";
 import fs from "fs";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { RegTestWallet, TestNetWallet, Wallet } from "../wallet/Wif.js";
 import { hash_message, SignedMessage } from "./signed.js";
 

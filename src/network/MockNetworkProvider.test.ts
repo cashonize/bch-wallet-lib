@@ -1,10 +1,10 @@
+import { getNftTokenBalance, getTokenBalance } from "#test/balances.js";
 import { randomNFT, randomToken, randomUtxo } from "@paryonusd/mem-cash";
 import { Network } from "../interface.js";
 import { SendRequest, TokenSendRequest } from "../wallet/model.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import { removeGlobalProvider, setGlobalProvider } from "./default.js";
 import { MockNetworkProvider } from "./MockNetworkProvider.js";
-import { getTokenBalance, getNftTokenBalance } from "#test/balances.js";
 
 /** Fund a wallet with a UTXO in the mock provider. */
 async function fundWallet(
@@ -26,21 +26,9 @@ async function fundWallet(
 describe("MockNetworkProvider", () => {
   // --- Basic state management ---
 
-  test("should get balance", async () => {
-    const provider = new MockNetworkProvider();
-    await provider.ready();
-    const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
-
-    await provider.addUtxo(address, randomUtxo({ satoshis: 50000n }));
-    await provider.addUtxo(address, randomUtxo({ satoshis: 30000n }));
-
-    const balance = await provider.getBalance(address);
-    expect(balance).toBe(80000n);
-  });
-
   test("should get utxos", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, randomUtxo({ satoshis: 10000n }));
@@ -52,7 +40,7 @@ describe("MockNetworkProvider", () => {
 
   test("should get utxos with tokens", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(
@@ -75,7 +63,7 @@ describe("MockNetworkProvider", () => {
 
   test("should subscribe to address and receive initial status", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     const received: Array<[string, string | null]> = [];
@@ -92,7 +80,7 @@ describe("MockNetworkProvider", () => {
 
   test("should subscribe and get non-null status when funded", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, randomUtxo({ satoshis: 50000n }));
@@ -110,7 +98,7 @@ describe("MockNetworkProvider", () => {
 
   test("should get history", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, {
@@ -128,19 +116,19 @@ describe("MockNetworkProvider", () => {
 
   test("should get block height and header", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     await provider.setBlockHeight(300);
 
     const height = await provider.getBlockHeight();
     expect(height).toBe(300);
 
-    const header = await provider.getHeader(300);
-    expect((header as any).height).toBe(300);
+    const headers = await provider.getHeaders([300]);
+    expect(headers.get(300)?.height).toBe(300);
   });
 
   test("should reset state", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
 
     await provider.addUtxo(address, randomUtxo());
@@ -152,14 +140,14 @@ describe("MockNetworkProvider", () => {
 
   test("should work as global provider for wallets", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
       const address = "bchreg:qpttdv3qg2usm4nm7talhxhl05mlhms3ys43u76rn0";
       await provider.addUtxo(address, randomUtxo({ satoshis: 100000n }));
 
-      const wallet = await RegTestWallet.watchOnly(address);
+      const wallet = await RegTestWallet.fromId(`watch:regtest:${address}`);
       const balance = await wallet.getBalance();
       expect(balance).toBe(100000n);
 
@@ -180,7 +168,7 @@ describe("MockNetworkProvider", () => {
 
   test("should send BCH between wallets", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -213,7 +201,7 @@ describe("MockNetworkProvider", () => {
 
   test("should send multiple outputs", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -242,7 +230,7 @@ describe("MockNetworkProvider", () => {
 
   test("should chain transactions (send, then send again)", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -275,14 +263,14 @@ describe("MockNetworkProvider", () => {
 
   test("should reject invalid transactions", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
 
     await expect(provider.sendRawTransaction("deadbeef")).rejects.toThrow();
   });
 
   test("should send fungible tokens", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {
@@ -322,7 +310,7 @@ describe("MockNetworkProvider", () => {
 
   test("should send NFTs", async () => {
     const provider = new MockNetworkProvider();
-    await provider.ready();
+    await provider.connect();
     setGlobalProvider(Network.REGTEST, provider);
 
     try {

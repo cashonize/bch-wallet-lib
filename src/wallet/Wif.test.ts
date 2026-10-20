@@ -10,7 +10,7 @@ import { bchParam } from "../chain.js";
 import { Config } from "../config.js";
 import { DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
 import { mine } from "#test/mine.js";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
 import json from "../test/json.test.js";
 import { delay } from "../util/delay.js";
@@ -339,33 +339,25 @@ describe(`Watch only Wallets`, () => {
     ]);
     expect(encodedTransaction.length).toBeGreaterThan(0);
 
-    const txId = await aliceWallet.submitTransaction(encodedTransaction, true);
+    const txId = await aliceWallet.submitTransaction(encodedTransaction);
     expect(txId.length).toBeGreaterThan(0);
 
     expect(await bobWallet.getBalance()).toBe(2000n);
   });
 });
 describe(`Wallet subscriptions`, () => {
-  test("Should await and skip transaction propagation", async () => {
+  test("Should await transaction propagation", async () => {
     const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
     const bobWallet = await RegTestWallet.newRandom();
 
-    // awaitTransactionPropagation: true -> response includes updated balance
+    // the balance includes the send when it returns
     const balanceBefore = await aliceWallet.getBalance();
-    const resp = await aliceWallet.send(
-      [{ cashaddr: bobWallet.cashaddr!, value: 1000n }],
-      { awaitTransactionPropagation: true },
-    );
+    const resp = await aliceWallet.send([
+      { cashaddr: bobWallet.cashaddr!, value: 1000n },
+    ]);
     expect(resp.balance!).toBeLessThan(balanceBefore);
     expect(resp.balance!).toBe(await aliceWallet.getBalance());
-
-    // awaitTransactionPropagation: false -> send completes without waiting
-    // for the status notification round-trip; we only verify it succeeds.
-    const resp2 = await aliceWallet.send(
-      [{ cashaddr: bobWallet.cashaddr!, value: 1000n }],
-      { awaitTransactionPropagation: false },
-    );
-    expect(resp2.txId).toBeDefined();
+    expect(await bobWallet.getBalance()).toBe(1000n);
   });
 
   test("Create two wallets, get balances concurrently", async () => {

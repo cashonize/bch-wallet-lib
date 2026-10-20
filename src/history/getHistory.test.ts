@@ -1,5 +1,5 @@
 import { mine } from "#test/mine.js";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 
 beforeAll(async () => {

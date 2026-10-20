@@ -3,7 +3,7 @@ import { stringify } from "../cache/walletCache.js";
 import { Config } from "../config.js";
 import { NFTCapability } from "../interface.js";
 import { mine } from "#test/mine.js";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { delay } from "../util/delay.js";
 import { getNextUnusedIndex } from "../util/hd.js";
 import { GAP_SIZE, HDWallet, RegTestHDWallet } from "./HDWallet.js";

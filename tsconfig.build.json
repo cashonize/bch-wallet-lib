@@ -9,6 +9,8 @@
     "node_modules",
     "dist",
     "src/**/*.test.ts",
-    "src/**/*.test.browser.ts"
+    "src/**/*.test.browser.ts",
+    "src/network/MockNetworkProvider.ts",
+    "src/network/Connection.ts"
   ]
 }

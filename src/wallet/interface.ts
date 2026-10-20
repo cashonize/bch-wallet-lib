@@ -6,7 +6,6 @@ export interface SendRequestOptionsI {
   utxoIds?: string[] | Utxo[];
   changeAddress?: string;
   queryBalance?: boolean;
-  awaitTransactionPropagation?: boolean;
   checkTokenQuantities?: boolean; // true
   tokenOperation?: "send" | "genesis" | "mint" | "burn"; // undefined. internal use only
   ensureUtxos?: Utxo[]; // ensure these inputs will be consumed in the transaction

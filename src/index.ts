@@ -18,28 +18,27 @@ export type {
 } from "./message/interface.js";
 // message
 export { SignedMessage } from "./message/signed.js";
-export {
-  disconnectProviders,
-  initProvider,
-  initProviders,
-} from "./network/Connection.js";
 // provider
 export { DefaultProvider } from "./network/configuration.js";
 // network
 export {
   createProvider,
-  getGlobalProvider,
   getNetworkProvider,
   removeGlobalProvider,
   setGlobalProvider,
 } from "./network/default.js";
 export { default as ElectrumNetworkProvider } from "./network/ElectrumNetworkProvider.js";
+export {
+  BroadcastRejectedError,
+  BroadcastTimeoutError,
+} from "./network/errors.js";
+export { ElectrumTimeoutError } from "./network/ElectrumTransport.js";
+export type { ElectrumTransportOptions } from "./network/ElectrumTransport.js";
 export type {
   ElectrumRawTransaction,
   ElectrumRawTransactionVinWithValues,
   ElectrumRawTransactionWithInputValues,
 } from "./network/interface.js";
-export type { default as NetworkProvider } from "./network/NetworkProvider.js";
 // xpub utilities
 export { getAddrsByXpubKey } from "./util/getAddrsByXpubKey.js";
 export { getXPubKey } from "./util/getXPubKey.js";

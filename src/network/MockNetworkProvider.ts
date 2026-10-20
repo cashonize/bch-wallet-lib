@@ -1,10 +1,7 @@
-import type {
-  ElectrumCashTestSchema,
-  Indexer,
-  IndexerConfig,
-} from "@paryonusd/mem-cash";
+import type { Indexer, IndexerConfig } from "@paryonusd/mem-cash";
 import { asTransport, createIndexer } from "@paryonusd/mem-cash";
 import { Network, Utxo } from "../interface.js";
+import { setGlobalProvider } from "./default.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 
 export interface MockNetworkProviderOptions {
@@ -12,14 +9,17 @@ export interface MockNetworkProviderOptions {
   indexerConfig?: Partial<IndexerConfig>;
 }
 
+// Test infrastructure, left out of the build (tsconfig.build.json) so that no entry reaches
+// @paryonusd/mem-cash, a dev dependency
+
 /**
- * In-memory NetworkProvider backed by @paryonusd/mem-cash.
+ * An ElectrumNetworkProvider on an in-memory chain, @paryonusd/mem-cash.
  *
  * Inherits all Electrum protocol handling from ElectrumNetworkProvider.
  * Only adds test helpers (addUtxo, mine, setBlockHeight, reset) and
- * overrides mine() to use test.mine instead of daemon.passthrough.
+ * overrides mine() to use test.mine instead of the regtest node's RPC.
  */
-export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTestSchema> {
+export class MockNetworkProvider extends ElectrumNetworkProvider {
   /** The backing Indexer instance (extends Node). */
   public mc: Indexer;
   private connPromise?: Promise<void>;
@@ -28,9 +28,7 @@ export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTes
       addressPrefix: "bchreg",
       ...options?.indexerConfig,
     });
-    // IndexerTransport and rpckit Transport are structurally identical
-    // but TypeScript sees distinct ExtractParams types across packages.
-    super(asTransport(mc) as any, Network.REGTEST);
+    super(asTransport(mc), Network.REGTEST);
     this.mc = mc;
   }
 
@@ -55,12 +53,12 @@ export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTes
   // --- Test helpers ---
 
   async addUtxo(address: string, utxo: Omit<Utxo, "address">): Promise<void> {
-    await this.ready();
+    await this.connect();
     await this.mc.request("test.add_utxo", [address, utxo]);
   }
 
   override async mine(cashaddr: string, blocks: number): Promise<string[]> {
-    await this.ready();
+    await this.connect();
     const result = (await this.mc.request("test.mine", [cashaddr, blocks])) as {
       height: number;
       coinbaseTxids: string[];
@@ -69,12 +67,12 @@ export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTes
   }
 
   async setBlockHeight(height: number): Promise<void> {
-    await this.ready();
+    await this.connect();
     await this.mc.request("test.set_chain_tip", [height, 1700000000]);
   }
 
   async reset(): Promise<void> {
-    await this.ready();
+    await this.connect();
     await this.mc.request("test.reset", []);
     await this.mc.request("test.set_chain_tip", [200, 1700000000]);
   }
@@ -82,7 +80,7 @@ export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTes
   async seedAlice(): Promise<void> {
     const address = process.env.ADDRESS;
     if (!address) return;
-    await this.ready();
+    await this.connect();
     for (let i = 0; i < 110; i++) {
       await this.mc.request("test.add_utxo", [
         address,
@@ -94,4 +92,22 @@ export class MockNetworkProvider extends ElectrumNetworkProvider<ElectrumCashTes
       ]);
     }
   }
+}
+
+export async function createMockProvider(): Promise<MockNetworkProvider> {
+  let verifier: import("@paryonusd/mem-cash/validation").TxVerifier | undefined;
+  try {
+    const { createTxVerifier } = await import("@paryonusd/mem-cash/validation");
+    verifier = createTxVerifier({ vmVersion: "BCH_2026_05" });
+  } catch {}
+  return new MockNetworkProvider({ indexerConfig: { verifier } });
+}
+
+/** A mock chain as the global regtest provider, funding the address in `process.env.ADDRESS`. */
+export async function initMockProvider(): Promise<MockNetworkProvider> {
+  const provider = await createMockProvider();
+  await provider.connect();
+  await provider.seedAlice();
+  setGlobalProvider(Network.REGTEST, provider);
+  return provider;
 }

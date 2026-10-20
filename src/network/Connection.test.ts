@@ -1,6 +1,7 @@
 import { RegTestWallet, TestNetWallet, Wallet } from "../wallet/Wif.js";
-import { disconnectProviders, initProviders } from "./Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import { createProvider } from "./default.js";
+import { liveTests } from "#test/live.js";
 
 beforeAll(async () => {
   await initProviders();
@@ -10,7 +11,7 @@ afterAll(async () => {
   await disconnectProviders();
 });
 
-test("Should connect to mainnet", async () => {
+test.skipIf(!liveTests)("Should connect to mainnet", async () => {
   process.setMaxListeners(0);
 
   let wallet = await Wallet.newRandom();
@@ -21,14 +22,17 @@ test("Should connect to mainnet", async () => {
   expect(height).toBeGreaterThan(5000);
 });
 
-test("Should use global provider when creating testnet wallet", async () => {
-  let wallet = await TestNetWallet.newRandom();
-  expect(wallet.provider == globalThis.tBCH).toBeTruthy();
-  expect(await wallet.getBalance()).toBe(0n);
+test.skipIf(!liveTests)(
+  "Should use global provider when creating testnet wallet",
+  async () => {
+    let wallet = await TestNetWallet.newRandom();
+    expect(wallet.provider == globalThis.tBCH).toBeTruthy();
+    expect(await wallet.getBalance()).toBe(0n);
 
-  let height = await globalThis.tBCH.getBlockHeight();
-  expect(height).toBeGreaterThan(114);
-});
+    let height = await globalThis.tBCH.getBlockHeight();
+    expect(height).toBeGreaterThan(114);
+  },
+);
 
 test.skip("Should lower overhead in creating wallets", async () => {
   process.setMaxListeners(0);
@@ -42,11 +46,17 @@ test.skip("Should lower overhead in creating wallets", async () => {
   expect(height).toBeGreaterThan(114);
 });
 
-test("Should create a provider with custom servers", async () => {
-  let provider = await createProvider("mainnet", "wss://fulcrum.pat.mn:50004");
-  await provider.connect();
-  expect(provider == globalThis.BCH).toBeFalsy();
-  let blockheight = await provider.getBlockHeight();
-  expect(blockheight).toBeGreaterThan(10000);
-  await provider.disconnect();
-});
+test.skipIf(!liveTests)(
+  "Should create a provider with custom servers",
+  async () => {
+    let provider = await createProvider(
+      "mainnet",
+      "wss://fulcrum.pat.mn:50004",
+    );
+    await provider.connect();
+    expect(provider == globalThis.BCH).toBeFalsy();
+    let blockheight = await provider.getBlockHeight();
+    expect(blockheight).toBeGreaterThan(10000);
+    await provider.disconnect();
+  },
+);

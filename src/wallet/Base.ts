@@ -658,18 +658,10 @@ export class BaseWallet {
         sha256.hash(sha256.hash(encodedTransaction)).reverse(),
       );
     } else {
-      const awaitPropagation =
-        options?.awaitTransactionPropagation === undefined ||
-        options?.awaitTransactionPropagation === true;
-
-      let updatePromise: Promise<void>;
-      if (awaitPropagation) {
-        updatePromise = this.waitForUpdate({ timeout: 2500 });
-      }
-
+      // the wallet's own view of its coins includes the transaction when the send returns
       const [_, txId] = await Promise.all([
-        updatePromise!,
-        this.submitTransaction(encodedTransaction, awaitPropagation),
+        this.waitForUpdate({ timeout: 2500 }),
+        this.submitTransaction(encodedTransaction),
       ]);
 
       resp.txId = txId;
@@ -875,19 +867,17 @@ export class BaseWallet {
     return { encodedTransaction, categories };
   }
 
-  // Submit a raw transaction
-  public async submitTransaction(
-    transaction: Uint8Array,
-    awaitPropagation: boolean = true,
-  ): Promise<string> {
+  /**
+   * Broadcast a signed transaction and wait until the server reports it.
+   * @throws {BroadcastRejectedError} If the server refused the transaction.
+   * @returns The transaction id.
+   */
+  public async submitTransaction(transaction: Uint8Array): Promise<string> {
     if (!this.provider) {
       throw Error("Wallet network provider was not initialized");
     }
     const rawTransaction = binToHex(transaction);
-    return await this.provider.sendRawTransaction(
-      rawTransaction,
-      awaitPropagation,
-    );
+    return await this.provider.sendRawTransaction(rawTransaction);
   }
 
   // gets transaction history of this wallet

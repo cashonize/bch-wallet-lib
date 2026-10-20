@@ -12,7 +12,7 @@ import {
 import { bchParam } from "../chain.js";
 import { UnitEnum } from "../enum.js";
 import { TxI } from "../interface.js";
-import NetworkProvider from "../network/NetworkProvider.js";
+import type ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { ExchangeRate } from "../rate/ExchangeRate.js";
 import { sanitizeUnit } from "../util/sanitizeUnit.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
@@ -35,7 +35,7 @@ export const getHistory = async ({
   rawHistory,
 }: {
   addresses: string[];
-  provider: NetworkProvider;
+  provider: ElectrumNetworkProvider;
   unit?: UnitEnum;
   fromHeight?: number;
   toHeight?: number;
@@ -58,10 +58,12 @@ export const getHistory = async ({
     const allHistory = (
       await Promise.all(
         addresses.map(async (address) =>
-          provider.getHistory(address, fromHeight, toHeight),
+          provider.getHistory(address, fromHeight),
         ),
       )
-    ).flat();
+    )
+      .flat()
+      .filter((item) => toHeight === -1 || item.height <= toHeight);
 
     // Dedup using Set instead of O(N^2) findIndex
     const seen = new Set<string>();
@@ -365,8 +367,15 @@ export const getHistory = async ({
 
   // backfill the balances
   let prevBalance = (
-    await Promise.all(addresses.map((address) => provider.getBalance(address)))
-  ).reduce((a, b) => Number(a) + Number(b), 0);
+    await Promise.all(
+      addresses.map(async (address) =>
+        (await provider.getUtxos(address)).reduce(
+          (sum, utxo) => sum + Number(utxo.satoshis),
+          0,
+        ),
+      ),
+    )
+  ).reduce((a, b) => a + b, 0);
 
   let prevValueChange = 0;
   historyItems.forEach((tx) => {

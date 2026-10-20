@@ -7,7 +7,7 @@ import {
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NFTCapability } from "../interface.js";
-import { disconnectProviders, initProviders } from "../network/Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 import json from "../test/json.test.js";
 import { convert, delay } from "../util/index.js";
 import {

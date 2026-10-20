@@ -1,8 +1,7 @@
 import { Network } from "../interface.js";
-import { mine } from "#test/mine.js";
 import { getNetworkProvider } from "../network/default.js";
 import { RegTestWallet } from "../wallet/Wif.js";
-import { disconnectProviders, initProviders } from "./Connection.js";
+import { disconnectProviders, initProviders } from "#test/providers.js";
 
 const aliceWif = `wif:regtest:${process.env.PRIVATE_WIF!}`;
 
@@ -49,7 +48,6 @@ describe("Rpc tests", () => {
         async (data) => {
           // console.log("First", data);
           expect(data).not.toBe("");
-          data;
         },
       );
 
@@ -58,7 +56,6 @@ describe("Rpc tests", () => {
         async (data) => {
           // console.log("Second", data);
           expect(data).not.toBe("");
-          data;
         },
       );
 

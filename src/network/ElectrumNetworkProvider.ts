@@ -1,56 +1,71 @@
-import type {
-  ExtractParams,
-  ExtractRequestMethod,
-  ExtractReturn,
-  ExtractSubscriptionMethod,
-  Schema,
-  Transport,
-  Unsubscribe,
-} from "@rpckit/core";
-import type { ElectrumCashSchema } from "@rpckit/core/electrum-cash";
+import { binToBase64, utf8ToBin } from "@bitauth/libauth";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { CacheProvider } from "../cache/interface.js";
 import { Config } from "../config.js";
 import { HeaderI, HexHeaderI, Network, TxI, Utxo } from "../interface.js";
 import { decodeHeader } from "../util/header.js";
+import {
+  DEFAULT_CONCURRENCY,
+  Limiter,
+  mapConcurrent,
+} from "../util/mapConcurrent.js";
+import { toError } from "../util/toError.js";
 import { getTransactionHash } from "../util/transaction.js";
+import { runCallback, waitOnWatch } from "../util/watch.js";
 import { CancelFn } from "../wallet/interface.js";
 import {
   ElectrumRawTransaction,
   ElectrumRawTransactionVinWithValues,
   ElectrumRawTransactionWithInputValues,
+  ElectrumUtxo,
 } from "./interface.js";
-import { default as NetworkProvider } from "./NetworkProvider.js";
+import {
+  BroadcastRejectedError,
+  BroadcastTimeoutError,
+  parseRejection,
+  serverErrorCode,
+} from "./errors.js";
+import type { Transport } from "./Transport.js";
+
+/** Options of the provider calls that fan out over a list. */
+export interface ConcurrencyOptions {
+  /** Requests in flight at most for this call, a positive integer or `Infinity` (no limit). Default 10. */
+  concurrency?: number;
+  /** @internal A bound shared with other fan-outs, instead of `concurrency` */
+  limiter?: Limiter;
+}
+
+// Fulcrum reports a transaction it accepted within a second or two
+const BROADCAST_STATUS_TIMEOUT = 30_000;
 
 /** Internal type for cached verbose transactions. fetchHeight is stripped before returning. */
 type CachedRawTransaction = ElectrumRawTransaction & { fetchHeight: number };
 
-export default class ElectrumNetworkProvider<
-  S extends Schema = ElectrumCashSchema,
-> implements NetworkProvider {
-  public transport: Transport<S>;
-  public subscriptions: number = 0;
+/** The connection to one Electrum server (Fulcrum) that wallets read the chain from and broadcast to. */
+export default class ElectrumNetworkProvider {
+  private readonly transport: Transport;
+  private subscriptionCount: number = 0;
   private currentHeight: number = 0;
   private headerCancelFn?: CancelFn;
 
   private _cache: CacheProvider | undefined;
 
-  get cache(): CacheProvider | undefined {
+  private get cache(): CacheProvider | undefined {
     if (!Config.UseIndexedDBCache) {
       this._cache = undefined;
-      return this._cache;
-    }
-
-    if (Config.UseIndexedDBCache && !(this._cache instanceof IndexedDbCache)) {
+    } else if (!this._cache) {
       this._cache = new IndexedDbCache();
-      return this._cache;
     }
-
     return this._cache;
   }
 
+  /** @internal The subscriptions open on this provider, for the tests that check none leak. */
+  get subscriptions(): number {
+    return this.subscriptionCount;
+  }
+
   constructor(
-    transport: Transport<S>,
+    transport: Transport,
     public network: Network = Network.MAINNET,
   ) {
     if (transport) {
@@ -60,11 +75,15 @@ export default class ElectrumNetworkProvider<
     }
   }
 
+  /**
+   * All UTXOs (confirmed and unconfirmed) of an address, token coins included.
+   * @param cashaddr The CashAddress whose UTXOs to retrieve.
+   */
   async getUtxos(cashaddr: string): Promise<Utxo[]> {
-    const result = await this.performRequest("blockchain.address.listunspent", [
-      cashaddr,
-      "include_tokens",
-    ]);
+    const result = await this.performRequest<ElectrumUtxo[]>(
+      "blockchain.address.listunspent",
+      [cashaddr, "include_tokens"],
+    );
     return result.map((utxo) => ({
       address: cashaddr,
       txid: utxo.tx_hash,
@@ -80,36 +99,16 @@ export default class ElectrumNetworkProvider<
     }));
   }
 
-  async getBalance(cashaddr: string): Promise<bigint> {
-    const result = await this.performRequest("blockchain.address.get_balance", [
-      cashaddr,
-    ]);
-
-    return BigInt(result.confirmed) + BigInt(result.unconfirmed);
-  }
-
-  async getHeader(
-    height: number,
-    verbose: boolean = false,
-  ): Promise<HeaderI | HexHeaderI> {
-    const key = `header-${this.network}-${height}-${verbose}`;
-
-    if (this.cache) {
-      const cached = await this.cache.getItem(key);
-      if (cached) {
-        return verbose ? decodeHeader(JSON.parse(cached)) : JSON.parse(cached);
-      }
-    }
-
-    const result = await this.performRequest("blockchain.header.get", [height]);
-    if (this.cache) {
-      await this.cache.setItem(key, JSON.stringify(result));
-    }
-
-    return verbose ? decodeHeader(result) : result;
-  }
-
-  async getRawTransactions(hashes: string[]): Promise<Map<string, string>> {
+  /**
+   * Batch retrieve raw transactions by their hashes.
+   * @param hashes Array of transaction hashes.
+   * @param options.concurrency Requests in flight at most for the cache misses. Default 10.
+   * @returns Map from hash to hex transaction string.
+   */
+  async getRawTransactions(
+    hashes: string[],
+    options: ConcurrencyOptions = {},
+  ): Promise<Map<string, string>> {
     if (hashes.length === 0) return new Map();
 
     const results = new Map<string, string>();
@@ -132,15 +131,16 @@ export default class ElectrumNetworkProvider<
     }
 
     if (misses.length > 0) {
-      // rpckit automatically batches concurrent requests via BatchScheduler
-      const fetched = await Promise.all(
-        misses.map(async (hash) => {
-          const tx = await this.performRequest("blockchain.transaction.get", [
-            hash,
-            false,
-          ]);
-          return [hash, tx as string] as [string, string];
-        }),
+      const fetched = await mapConcurrent(
+        misses,
+        options.limiter ?? options.concurrency ?? DEFAULT_CONCURRENCY,
+        async (hash) => {
+          const tx = await this.performRequest<string>(
+            "blockchain.transaction.get",
+            [hash, false],
+          );
+          return [hash, tx] as [string, string];
+        },
       );
 
       // batch cache write
@@ -160,7 +160,16 @@ export default class ElectrumNetworkProvider<
     return results;
   }
 
-  async getHeaders(heights: number[]): Promise<Map<number, HeaderI>> {
+  /**
+   * Batch retrieve block headers by their heights.
+   * @param heights Array of block heights.
+   * @param options.concurrency Requests in flight at most for the cache misses. Default 10.
+   * @returns Map from height to decoded header.
+   */
+  async getHeaders(
+    heights: number[],
+    options: ConcurrencyOptions = {},
+  ): Promise<Map<number, HeaderI>> {
     if (heights.length === 0) return new Map();
 
     const results = new Map<number, HeaderI>();
@@ -185,14 +194,16 @@ export default class ElectrumNetworkProvider<
     }
 
     if (misses.length > 0) {
-      // rpckit automatically batches concurrent requests via BatchScheduler
-      const fetched = await Promise.all(
-        misses.map(async (height) => {
-          const result = await this.performRequest("blockchain.header.get", [
-            height,
-          ]);
+      const fetched = await mapConcurrent(
+        misses,
+        options.limiter ?? options.concurrency ?? DEFAULT_CONCURRENCY,
+        async (height) => {
+          const result = await this.performRequest<HexHeaderI>(
+            "blockchain.header.get",
+            [height],
+          );
           return [height, result] as [number, HexHeaderI];
-        }),
+        },
       );
 
       // batch cache write
@@ -212,6 +223,7 @@ export default class ElectrumNetworkProvider<
     return results;
   }
 
+  /** The current block height, kept up to date by a header subscription opened on the first call. */
   async getBlockHeight(): Promise<number> {
     if (!this.headerCancelFn) {
       this.headerCancelFn = await this.subscribeToHeaders(
@@ -231,83 +243,30 @@ export default class ElectrumNetworkProvider<
     return this.currentHeight;
   }
 
-  async getRawTransaction(
-    txHash: string,
-    verbose: true,
-    loadInputValues: true,
-  ): Promise<ElectrumRawTransactionWithInputValues>;
-  async getRawTransaction(
-    txHash: string,
-    verbose: true,
-    loadInputValues?: false,
-  ): Promise<ElectrumRawTransaction>;
-  async getRawTransaction(
-    txHash: string,
-    verbose?: false,
-    loadInputValues?: false,
-  ): Promise<string>;
-  async getRawTransaction(
-    txHash: string,
-    verbose: boolean = false,
-    loadInputValues: boolean = false,
-  ): Promise<
-    string | ElectrumRawTransaction | ElectrumRawTransactionWithInputValues
-  > {
-    const nonVerboseKey = `txraw-${this.network}-${txHash}`;
-    const verboseKey = `tx-${this.network}-${txHash}`;
-    const key = verbose ? verboseKey : nonVerboseKey;
-
+  /**
+   * The raw transaction hex of a transaction ID.
+   * @throws {Error} If the transaction does not exist
+   */
+  async getRawTransaction(txHash: string): Promise<string> {
+    const key = `txraw-${this.network}-${txHash}`;
     if (this.cache) {
       const cached = await this.cache.getItem(key);
-      if (cached) {
-        if (!verbose) {
-          return cached;
-        }
-
-        const cachedTx = JSON.parse(cached) as CachedRawTransaction;
-        if (cachedTx.confirmations > 0) {
-          const currentHeight = await this.getBlockHeight();
-          cachedTx.confirmations += currentHeight - cachedTx.fetchHeight;
-        }
-        const { fetchHeight: _, ...transaction } = cachedTx;
-
-        if (loadInputValues) {
-          return this.enrichWithInputValues(transaction);
-        }
-
-        return transaction;
-      }
+      if (cached) return cached;
     }
 
+    const hex = await this.fetchTransaction<string>(txHash, false);
+    if (this.cache) {
+      await this.cache.setItem(key, hex);
+    }
+    return hex;
+  }
+
+  private async fetchTransaction<T>(txHash: string, verbose: boolean) {
     try {
-      const result = await this.performRequest("blockchain.transaction.get", [
+      return await this.performRequest<T>("blockchain.transaction.get", [
         txHash,
         verbose,
       ]);
-
-      if (!verbose) {
-        const hex = result as string;
-        if (this.cache) {
-          await this.cache.setItem(key, hex);
-        }
-        return hex;
-      }
-
-      const cachedTx = result as CachedRawTransaction;
-      cachedTx.confirmations ??= 0;
-      cachedTx.fetchHeight = await this.getBlockHeight();
-
-      if (this.cache) {
-        await this.cache.setItem(key, JSON.stringify(cachedTx));
-      }
-
-      const { fetchHeight: _, ...transaction } = cachedTx;
-
-      if (loadInputValues) {
-        return this.enrichWithInputValues(transaction);
-      }
-
-      return transaction;
     } catch (error: any) {
       if (
         (error.message as string).indexOf(
@@ -325,8 +284,10 @@ export default class ElectrumNetworkProvider<
     transaction: ElectrumRawTransaction,
   ): Promise<ElectrumRawTransactionWithInputValues> {
     const hashes = [...new Set(transaction.vin.map((val) => val.txid))];
-    const transactions = await Promise.all(
-      hashes.map((hash) => this.getRawTransactionObject(hash, false)),
+    const transactions = await mapConcurrent(
+      hashes,
+      DEFAULT_CONCURRENCY,
+      (hash) => this.getRawTransactionObject(hash, false),
     );
     const transactionMap = new Map<string, ElectrumRawTransaction>();
     transactions.forEach((val) => transactionMap.set(val.hash, val));
@@ -342,7 +303,11 @@ export default class ElectrumNetworkProvider<
     return { ...transaction, vin: enrichedVin };
   }
 
-  // gets the decoded transaction in human readable form
+  /**
+   * The decoded transaction of a transaction ID.
+   * @param loadInputValues When true, each vin is enriched with value, address and tokenData from the parent output.
+   * @throws {Error} If the transaction does not exist
+   */
   async getRawTransactionObject(
     txHash: string,
     loadInputValues: true,
@@ -355,82 +320,144 @@ export default class ElectrumNetworkProvider<
     txHash: string,
     loadInputValues: boolean = false,
   ): Promise<ElectrumRawTransaction | ElectrumRawTransactionWithInputValues> {
-    if (loadInputValues) {
-      return this.getRawTransaction(txHash, true, true);
+    const key = `tx-${this.network}-${txHash}`;
+    let cachedTx: CachedRawTransaction | undefined;
+    if (this.cache) {
+      const cached = await this.cache.getItem(key);
+      if (cached) {
+        cachedTx = JSON.parse(cached) as CachedRawTransaction;
+        if (cachedTx.confirmations > 0) {
+          const currentHeight = await this.getBlockHeight();
+          cachedTx.confirmations += currentHeight - cachedTx.fetchHeight;
+        }
+      }
     }
-    return this.getRawTransaction(txHash, true);
+
+    if (!cachedTx) {
+      cachedTx = await this.fetchTransaction<CachedRawTransaction>(
+        txHash,
+        true,
+      );
+      cachedTx.confirmations ??= 0;
+      cachedTx.fetchHeight = await this.getBlockHeight();
+      if (this.cache) {
+        await this.cache.setItem(key, JSON.stringify(cachedTx));
+      }
+    }
+
+    const { fetchHeight: _, ...transaction } = cachedTx;
+    if (loadInputValues) {
+      return this.enrichWithInputValues(transaction);
+    }
+    return transaction;
   }
 
+  /**
+   * Broadcast a raw hex transaction and wait until the server reports it. A node that answers it
+   * already holds the transaction (BroadcastRejectedError's `alreadyKnown`) has it from an earlier
+   * broadcast, so that answer returns the txid too. A server that accepts the broadcast but does
+   * not report the transaction within 30 seconds is asked for it once: the txid when it has it,
+   * a BroadcastTimeoutError when not.
+   * @param txHex The raw transaction hex to be broadcast.
+   * @param options.statusTimeout @internal Milliseconds to wait for the report, for the tests.
+   * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
+   * @throws {BroadcastTimeoutError} If the server accepted the broadcast but neither reported nor holds the transaction.
+   * @returns The transaction ID (hash) corresponding to the broadcast transaction.
+   */
   async sendRawTransaction(
     txHex: string,
-    awaitPropagation: boolean = true,
+    options: { statusTimeout?: number } = {},
   ): Promise<string> {
-    return new Promise(async (resolve, reject) => {
-      let txHash = await getTransactionHash(txHex);
-      if (!awaitPropagation) {
-        this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-          () => {},
-        );
-        resolve(txHash);
-      } else {
-        let cancel: CancelFn;
-
-        const waitForTransactionCallback = async (
-          data: [txHash: string, confirmations: number | null],
-        ) => {
-          if (data && data[0] === txHash && data[1] !== null) {
-            await cancel?.();
-            resolve(txHash);
+    const txHash = await getTransactionHash(txHex);
+    const statusTimeout = options.statusTimeout ?? BROADCAST_STATUS_TIMEOUT;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // set once the wait has its outcome, so that a broadcast answered after it starts no timer
+    let settled = false;
+    await waitOnWatch<void>(async (done, { onError }) => {
+      const finish = (error?: unknown) => {
+        settled = true;
+        clearTimeout(timer);
+        if (error === undefined) done();
+        else onError(error);
+      };
+      const cancel = await this.subscribeToTransaction(txHash, (data) => {
+        if (data && data[0] === txHash && data[1] !== null) finish();
+      });
+      // broadcast once subscribed, so that the transaction's first status is not missed
+      this.performRequest("blockchain.transaction.broadcast", [txHex]).then(
+        () => {
+          if (settled) return;
+          // the request timeout bounds the broadcast itself, this the report that follows it
+          timer = setTimeout(() => {
+            this.holdsTransaction(txHash, statusTimeout).then(
+              () => finish(),
+              finish,
+            );
+          }, statusTimeout);
+        },
+        (error) => {
+          const rejection = broadcastError(error, txHash);
+          // the node holds a transaction of this txid, the hash of these very bytes
+          if (
+            rejection instanceof BroadcastRejectedError &&
+            rejection.alreadyKnown
+          ) {
+            finish();
+          } else {
+            finish(rejection);
           }
-        };
-        cancel = await this.subscribeToTransaction(
-          txHash,
-          waitForTransactionCallback,
-        );
-
-        this.performRequest("blockchain.transaction.broadcast", [txHex]).catch(
-          async (error) => {
-            await cancel?.();
-            reject(error);
-          },
-        );
-      }
+        },
+      );
+      return cancel;
     });
+    return txHash;
   }
 
-  // Get transaction history of a given cashaddr
-  async getHistory(
-    cashaddr: string,
-    fromHeight: number = 0,
-    toHeight: number = -1,
-  ): Promise<TxI[]> {
-    return this.performRequest("blockchain.address.get_history", [
+  // The one check after a broadcast the server did not report: whether it holds the transaction
+  private async holdsTransaction(
+    txHash: string,
+    waited: number,
+  ): Promise<void> {
+    try {
+      await this.performRequest("blockchain.transaction.get", [txHash, false]);
+    } catch (error) {
+      throw new BroadcastTimeoutError(
+        `The server accepted transaction ${txHash} but did not report it within ${waited} ms, and does not hold it.`,
+        { txid: txHash, cause: error },
+      );
+    }
+  }
+
+  /**
+   * The confirmed and unconfirmed history of an address, in the server's order.
+   * @param fromHeight @internal Only the transactions from this height on, and the unconfirmed ones; the wallets' incremental refresh.
+   */
+  async getHistory(cashaddr: string, fromHeight: number = 0): Promise<TxI[]> {
+    return this.performRequest<TxI[]>("blockchain.address.get_history", [
       cashaddr,
       fromHeight,
-      toHeight,
+      -1,
     ]);
   }
 
-  // Get the minimum fee a low-priority transaction must pay in order to be accepted to the daemon's memory pool.
+  /** The server's minimum relay fee, in BCH per kB. */
   async getRelayFee(): Promise<number> {
-    return this.performRequest("blockchain.relayfee");
+    return this.performRequest<number>("blockchain.relayfee");
   }
 
   public async watchAddressStatus(
     cashaddr: string,
-    callback: (status: string | null) => void,
+    callback: (status: string | null) => unknown,
   ): Promise<CancelFn> {
-    const watchAddressStatusCallback = async (
+    const watchAddressStatusCallback = (
       data: [address: string, status: string | null],
     ) => {
       // subscription acknowledgement is the latest known status or null if no status is known
       // status is an array: [ cashaddr, statusHash ]
-      if (data instanceof Array) {
-        if (data[0] !== cashaddr) {
-          return;
-        }
-        callback(data[1]);
+      if (data instanceof Array && data[0] === cashaddr) {
+        return callback(data[1]);
       }
+      return undefined;
     };
 
     return this.subscribeToAddress(cashaddr, watchAddressStatusCallback);
@@ -438,7 +465,7 @@ export default class ElectrumNetworkProvider<
 
   // watch for block headers and block height, if `skipCurrentHeight` is set, the notification about current block will not arrive
   public async watchBlocks(
-    callback: (header: HexHeaderI) => void,
+    callback: (header: HexHeaderI) => unknown,
     skipCurrentHeight: boolean = true,
   ): Promise<CancelFn> {
     let acknowledged = !skipCurrentHeight;
@@ -449,23 +476,27 @@ export default class ElectrumNetworkProvider<
       }
 
       _header = _header instanceof Array ? _header[0] : _header;
-      callback(_header);
+      return callback(_header);
     };
     return this.subscribeToHeaders(waitForBlockCallback);
   }
 
   // subscribe to notifications sent when new block is found, the block header is sent to callback
-  async subscribeToHeaders(
-    callback: (header: HexHeaderI) => void,
+  private async subscribeToHeaders(
+    callback: (header: HexHeaderI) => unknown,
   ): Promise<CancelFn> {
-    return this.subscribeRequest("blockchain.headers.subscribe", [], (data) => {
-      callback(data[0]);
-    });
+    return this.subscribeRequest("blockchain.headers.subscribe", [], (data) =>
+      callback(data[0]),
+    );
   }
 
+  /**
+   * Subscribe to an address's status: the callback gets `[cashaddr, status]`, first for the current
+   * status and then for every change.
+   */
   async subscribeToAddress(
     cashaddr: string,
-    callback: (data: [address: string, status: string | null]) => void,
+    callback: (data: [address: string, status: string | null]) => unknown,
   ): Promise<CancelFn> {
     return this.subscribeRequest(
       "blockchain.address.subscribe",
@@ -474,9 +505,13 @@ export default class ElectrumNetworkProvider<
     );
   }
 
+  /**
+   * Subscribe to a transaction's confirmation status: the callback gets `[txHash, confirmations]`,
+   * with null confirmations while the server does not know the transaction.
+   */
   async subscribeToTransaction(
     txHash: string,
-    callback: (data: [txHash: string, confirmations: number | null]) => void,
+    callback: (data: [txHash: string, confirmations: number | null]) => unknown,
   ): Promise<CancelFn> {
     return this.subscribeRequest(
       "blockchain.transaction.subscribe",
@@ -485,99 +520,98 @@ export default class ElectrumNetworkProvider<
     );
   }
 
-  public async daemonPassthrough<T = unknown>(
-    method: string,
-    params: unknown[] | Record<string, unknown> = [],
-  ): Promise<T> {
-    await this.ready();
-    return this.transport.request("daemon.passthrough", {
-      method,
-      params,
-    }) as Promise<T>;
-  }
-
-  async mine(cashaddr: string, blocks: number): Promise<any> {
-    return this.daemonPassthrough("generatetoaddress", [blocks, cashaddr]);
-  }
-
-  public async performRequest<
-    M extends ExtractRequestMethod<ElectrumCashSchema>,
-  >(
-    method: M,
-    parameters?: ExtractParams<ElectrumCashSchema, M>,
-  ): Promise<ExtractReturn<ElectrumCashSchema, M>> {
-    await this.ready();
-
-    const TIMEOUT_MSG = "electrum-cash request timed out, retrying";
-
-    const makeTimeout = () =>
-      new Promise<never>(function (_resolve, reject) {
-        setTimeout(function () {
-          reject(TIMEOUT_MSG);
-        }, 30000);
-      });
-
-    const ensureError = (e: unknown): Error => {
-      if (e instanceof Error) return e;
-      if (typeof e === "object" && e !== null && "message" in e)
-        return Object.assign(new Error((e as any).message), e);
-      return new Error(typeof e === "string" ? e : String(e));
+  /**
+   * @internal Regtest only. Fulcrum's daemon.passthrough takes named params, which electrum-cash
+   * cannot send, so this calls generatetoaddress on the node's own RPC, with the RPC_* settings of
+   * the regtest.
+   */
+  async mine(cashaddr: string, blocks: number): Promise<string[]> {
+    const env = typeof process === "undefined" ? {} : process.env;
+    const credentials = utf8ToBin(`${env.RPC_USER}:${env.RPC_PASS}`);
+    const init = {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${binToBase64(credentials)}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "1.0",
+        id: "mine",
+        method: "generatetoaddress",
+        params: [blocks, cashaddr],
+      }),
     };
 
-    const request = (
-      this.transport as unknown as Transport<ElectrumCashSchema>
-    ).request(method, parameters!);
-
-    try {
-      const value = await Promise.race([request, makeTimeout()]);
-      if (value instanceof Error) throw value;
-      return value;
-    } catch (e: unknown) {
-      const error = ensureError(e);
-      // Only retry on timeout, not on server errors
-      if (error.message !== TIMEOUT_MSG) throw error;
+    let unreachable: unknown;
+    for (const host of ["127.0.0.1", "host.docker.internal"]) {
+      let response: Response;
       try {
-        const value = await Promise.race([request, makeTimeout()]);
-        if (value instanceof Error) throw value;
-        return value;
-      } catch (e2: unknown) {
-        throw ensureError(e2);
+        response = await fetch(`http://${host}:${env.RPC_PORT}/`, init);
+      } catch (error) {
+        unreachable = error;
+        continue;
       }
+      const { result, error } = await response.json();
+      if (error) throw new Error(`generatetoaddress failed: ${error.message}`);
+      return result;
     }
+    throw new Error("The regtest node's RPC is not reachable.", {
+      cause: unreachable,
+    });
   }
 
-  public async subscribeRequest<
-    M extends ExtractSubscriptionMethod<ElectrumCashSchema>,
-  >(
-    method: M,
-    parameters: ExtractParams<ElectrumCashSchema, M>,
-    callback: (data: ExtractReturn<ElectrumCashSchema, M>) => void,
-  ): Promise<CancelFn> {
-    await this.ready();
+  protected async performRequest<T = unknown>(
+    method: string,
+    parameters: unknown[] = [],
+  ): Promise<T> {
+    await this.connect();
+    return this.transport.request(method, parameters) as Promise<T>;
+  }
 
-    const unsubscribe: Unsubscribe = await (
-      this.transport as unknown as Transport<ElectrumCashSchema>
-    ).subscribe(method, parameters, callback);
-    this.subscriptions++;
+  protected async subscribeRequest(
+    method: string,
+    parameters: unknown[],
+    callback: (data: any) => unknown,
+  ): Promise<CancelFn> {
+    await this.connect();
+
+    // a callback's throw or rejection is reported, and it stays subscribed
+    const unsubscribe = await this.transport.subscribe(
+      method,
+      parameters,
+      (data) => runCallback(() => callback(data)),
+    );
+    this.subscriptionCount++;
 
     return async () => {
       await unsubscribe();
-      this.subscriptions--;
+      this.subscriptionCount--;
     };
   }
 
-  async ready(): Promise<boolean | unknown> {
-    return this.connect();
-  }
-
+  /** Connect to the server; resolves when connected, rejects when no connection can be made. */
   async connect(): Promise<void> {
     await this.cache?.init();
     await this.transport.connect();
   }
 
+  /** Close the connection and the provider's own header subscription. */
   async disconnect(): Promise<boolean> {
     await this.headerCancelFn?.();
     await this.transport.close();
     return true;
   }
+}
+
+// A server's error response to a broadcast is a refusal; a timeout or a lost connection is not, as
+// the transaction may still have reached the node
+function broadcastError(error: unknown, txid: string): Error {
+  if (serverErrorCode(error) === undefined) return toError(error);
+  const { message } = error as Error;
+  const reason = parseRejection(message);
+  return new BroadcastRejectedError(message, {
+    reason,
+    txid,
+    cause: error,
+  });
 }

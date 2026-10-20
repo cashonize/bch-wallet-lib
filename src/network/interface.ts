@@ -1,10 +1,5 @@
 import { NFTCapability } from "../interface.js";
 
-export interface BlockHeader {
-  height: number;
-  hex: string;
-}
-
 export interface ElectrumTokenData {
   amount: string;
   category: string;

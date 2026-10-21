@@ -1,5 +1,6 @@
 import { countRequests } from "#test/countRequests.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { Config } from "../config.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
@@ -125,5 +126,66 @@ test("reads the cache before its first request without failing", async () => {
     expect(headers.get(1)?.height).toBe(1);
   } finally {
     Config.UseIndexedDBCache = cacheSetting;
+  }
+});
+
+// the browser can drop the cache's connection while a fetch is out (WebKit does in a backgrounded
+// tab, a delete elsewhere asks it to close), between the cache read and the write after it
+test("a cache connection dropped during a fetch neither fails it nor loses the write", async () => {
+  const cacheSetting = Config.UseIndexedDBCache;
+  Config.UseIndexedDBCache = true;
+  try {
+    const provider = await createMockProvider();
+    await provider.connect();
+    const [txId] = await provider.mine(address, 1);
+
+    const target = provider as unknown as {
+      performRequest: (method: string, params: unknown[]) => Promise<unknown>;
+      cache: { db: IDBDatabase | null };
+    };
+    const performRequest = target.performRequest.bind(provider);
+    target.performRequest = (method, params) => {
+      const database = target.cache.db;
+      if (method === "blockchain.transaction.get" && database) {
+        database.close();
+        database.onclose?.(new Event("close"));
+      }
+      return performRequest(method, params);
+    };
+
+    const transactions = await provider.getRawTransactions([txId!]);
+    expect(transactions.get(txId!)).toMatch(/^[0-9a-f]+$/);
+    target.performRequest = performRequest;
+
+    const { counts, restore } = countRequests(provider);
+    await provider.getRawTransactions([txId!]);
+    restore();
+    expect(counts.byMethod["blockchain.transaction.get"] ?? 0).toBe(0);
+  } finally {
+    Config.UseIndexedDBCache = cacheSetting;
+  }
+});
+
+test("a cache write that fails does not fail the fetch", async () => {
+  const cacheSetting = Config.UseIndexedDBCache;
+  Config.UseIndexedDBCache = true;
+  try {
+    const provider = await createMockProvider();
+    await provider.connect();
+    const [txId] = await provider.mine(address, 1);
+    const cache = (provider as unknown as { cache: IndexedDbCache }).cache;
+    const quota = () => Promise.reject(new Error("QuotaExceededError"));
+    vi.spyOn(cache, "setItems").mockImplementation(quota);
+    vi.spyOn(cache, "setItem").mockImplementation(quota);
+
+    expect((await provider.getRawTransactions([txId!])).get(txId!)).toMatch(
+      /^[0-9a-f]+$/,
+    );
+    expect(await provider.getRawTransaction(txId!)).toMatch(/^[0-9a-f]+$/);
+    expect((await provider.getRawTransactionObject(txId!)).txid).toBe(txId);
+    expect((await provider.getHeaders([1])).get(1)?.height).toBe(1);
+  } finally {
+    Config.UseIndexedDBCache = cacheSetting;
+    vi.restoreAllMocks();
   }
 });

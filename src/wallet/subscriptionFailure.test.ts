@@ -1,6 +1,7 @@
 import { randomUtxo } from "@paryonusd/mem-cash";
 import { Network } from "../interface.js";
 import { removeGlobalProvider, setGlobalProvider } from "../network/default.js";
+import { BroadcastRejectedError } from "../network/errors.js";
 import { MockNetworkProvider } from "../network/MockNetworkProvider.js";
 import { delay } from "../util/delay.js";
 import { RegTestHDWallet } from "./HDWallet.js";
@@ -128,11 +129,51 @@ describe("a subscription that cannot be made", () => {
     await wallet.stop();
   }, 5000);
 
-  test("rejects sendRawTransaction awaiting propagation", async () => {
+  // the broadcast goes out before the subscription is made, so the outcome comes from the server's
+  // answer and a lookup, never from the subscription alone
+  test("leaves a refused broadcast a refusal when its subscription cannot be made", async () => {
     refuse.transaction = true;
-    await expect(provider.sendRawTransaction("00")).rejects.toThrow(
-      "subscription refused",
+    await expect(provider.sendRawTransaction("00")).rejects.toBeInstanceOf(
+      BroadcastRejectedError,
     );
+  }, 5000);
+
+  test("returns the txid of a broadcast whose subscription cannot be made, once the server holds it", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    await fund(wallet.cashaddr, 10_000n);
+    const { transaction, txId } = await wallet.send(
+      { cashaddr: wallet.cashaddr, value: 5_000n },
+      { broadcast: false },
+    );
+    await wallet.stop();
+    refuse.transaction = true;
+
+    expect(await provider.sendRawTransaction(transaction!)).toBe(txId);
+    expect(await provider.getRawTransaction(txId)).toBe(transaction);
+    expect(provider.subscriptions).toBe(0);
+  }, 5000);
+
+  test("broadcasts without waiting for the transaction's subscription", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    await fund(wallet.cashaddr, 10_000n);
+    const { transaction, txId } = await wallet.send(
+      { cashaddr: wallet.cashaddr, value: 5_000n },
+      { broadcast: false },
+    );
+    await wallet.stop();
+    let sentBeforeSubscribed = false;
+    const subscribe = provider.subscribeToTransaction.bind(provider);
+    provider.subscribeToTransaction = async (txHash, callback) => {
+      await delay(50);
+      sentBeforeSubscribed = await provider.getRawTransaction(txHash).then(
+        () => true,
+        () => false,
+      );
+      return subscribe(txHash, callback);
+    };
+
+    expect(await provider.sendRawTransaction(transaction!)).toBe(txId);
+    expect(sentBeforeSubscribed).toBe(true);
   }, 5000);
 
   test("a broadcast whose report never comes returns the txid of the transaction the chain took", async () => {
@@ -248,9 +289,10 @@ describe("a subscription that cannot be made", () => {
     const wallet = await RegTestHDWallet.fromId(
       `hd:regtest:${seedWallet.mnemonic!}:${seedWallet.derivation}`,
     );
-    // the first round is subscribed and its fetch of the used address held
+    // the first round is subscribed, and the window the used address extended alongside its held
+    // fetch
     await delay(50);
-    expect(provider.subscriptions).toBe(40);
+    expect(provider.subscriptions).toBe(60);
     await wallet.stop();
     release();
     await delay(100);
@@ -537,14 +579,17 @@ describe("a fetch that fails during HD address discovery", () => {
 
     refuseNew = false;
     expect(await wallet.getBalance()).toBe(0n);
-    expect(newProvider.subscriptions).toBe(40);
+    // the used address counts as used although its fetch failed, so the gap after it reaches 21
+    expect(newProvider.subscriptions).toBe(41);
     // the address is watched on the new provider
     await newProvider.addUtxo(wallet.getDepositAddress(0), {
       ...randomUtxo({ vout: 0, satoshis: 3_000n }),
       height: 100,
     });
-    await wallet["waitForUpdate"]({ indices: { 0: 1 }, timeout: 1000 });
-    expect(await wallet.getBalance()).toBe(3_000n);
+    // the index is 1 already, so the coin's arrival is waited for by the balance it brings
+    await vi.waitFor(async () => {
+      expect(await wallet.getBalance()).toBe(3_000n);
+    });
     await wallet.stop();
   }, 5000);
 });

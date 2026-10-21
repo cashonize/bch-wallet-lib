@@ -261,6 +261,31 @@ describe("HDWalletCache", () => {
     }
   });
 
+  test("usedLength counts addresses with a stored status, up to a bound", () => {
+    const cache = new HDWalletCache(
+      "wallet-acc",
+      publicNodeOf(xpubAt(ACCOUNT_PATH)),
+      "bitcoincash",
+    );
+    cache.getByIndex(9, 0);
+    for (const [index, branch] of [
+      [4, 0],
+      [2, 1],
+    ]) {
+      const { address } = cache.getByIndex(index, branch);
+      cache.setStatusAndUtxos(address, "status", [], [], 0);
+    }
+    expect(cache.usedLength(0)).toBe(5);
+    expect(cache.usedLength(1)).toBe(3);
+    expect(cache.usedLength(7)).toBe(0);
+
+    // an entry missing its status is not used, and a damaged index is cut to the bound
+    (cache.getByIndex(30, 0) as any).status = undefined;
+    cache.getByIndex(10_000_000, 1).status = "status";
+    expect(cache.usedLength(0)).toBe(5);
+    expect(cache.usedLength(1)).toBe(2000);
+  });
+
   test("get() returns only the entry of the address asked for", async () => {
     const prevIndexedDb = Config.UseIndexedDBCache;
     Config.UseIndexedDBCache = true;

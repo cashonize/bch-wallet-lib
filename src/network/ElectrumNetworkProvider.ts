@@ -59,6 +59,14 @@ export default class ElectrumNetworkProvider {
     return this._cache;
   }
 
+  // The cache, opened before it is read: a provider's first call can be a read, before any request
+  // has opened it
+  private async openedCache(): Promise<CacheProvider | undefined> {
+    const cache = this.cache;
+    await cache?.init();
+    return cache;
+  }
+
   /** @internal The subscriptions open on this provider, for the tests that check none leak. */
   get subscriptions(): number {
     return this.subscriptionCount;
@@ -115,9 +123,10 @@ export default class ElectrumNetworkProvider {
     const keys = hashes.map((hash) => `txraw-${this.network}-${hash}`);
 
     // batch cache read
+    const cache = await this.openedCache();
     let cached: Map<string, string | null> | undefined;
-    if (this.cache) {
-      cached = await this.cache.getItems(keys);
+    if (cache) {
+      cached = await cache.getItems(keys);
     }
 
     const misses: string[] = [];
@@ -145,12 +154,12 @@ export default class ElectrumNetworkProvider {
       );
 
       // batch cache write
-      if (this.cache) {
+      if (cache) {
         const entries: [string, string][] = fetched.map(([hash, tx]) => [
           `txraw-${this.network}-${hash}`,
           tx,
         ]);
-        await this.cache.setItems(entries);
+        await cache.setItems(entries);
       }
 
       for (const [hash, tx] of fetched) {
@@ -179,9 +188,10 @@ export default class ElectrumNetworkProvider {
     );
 
     // batch cache read
+    const cache = await this.openedCache();
     let cached: Map<string, string | null> | undefined;
-    if (this.cache) {
-      cached = await this.cache.getItems(keys);
+    if (cache) {
+      cached = await cache.getItems(keys);
     }
 
     const misses: number[] = [];
@@ -208,12 +218,12 @@ export default class ElectrumNetworkProvider {
       );
 
       // batch cache write
-      if (this.cache) {
+      if (cache) {
         const entries: [string, string][] = fetched.map(([height, result]) => [
           `header-${this.network}-${height}-true`,
           JSON.stringify(result),
         ]);
-        await this.cache.setItems(entries);
+        await cache.setItems(entries);
       }
 
       for (const [height, result] of fetched) {
@@ -250,14 +260,15 @@ export default class ElectrumNetworkProvider {
    */
   async getRawTransaction(txHash: string): Promise<string> {
     const key = `txraw-${this.network}-${txHash}`;
-    if (this.cache) {
-      const cached = await this.cache.getItem(key);
+    const cache = await this.openedCache();
+    if (cache) {
+      const cached = await cache.getItem(key);
       if (cached) return cached;
     }
 
     const hex = await this.fetchTransaction<string>(txHash, false);
-    if (this.cache) {
-      await this.cache.setItem(key, hex);
+    if (cache) {
+      await cache.setItem(key, hex);
     }
     return hex;
   }
@@ -332,8 +343,9 @@ export default class ElectrumNetworkProvider {
   ): Promise<ElectrumRawTransaction | ElectrumRawTransactionWithInputValues> {
     const key = `tx-${this.network}-${txHash}`;
     let cachedTx: CachedRawTransaction | undefined;
-    if (this.cache) {
-      const cached = await this.cache.getItem(key);
+    const cache = await this.openedCache();
+    if (cache) {
+      const cached = await cache.getItem(key);
       if (cached) {
         cachedTx = JSON.parse(cached) as CachedRawTransaction;
         if (cachedTx.confirmations > 0) {
@@ -353,8 +365,8 @@ export default class ElectrumNetworkProvider {
       );
       cachedTx.confirmations ??= 0;
       cachedTx.fetchHeight = await this.getBlockHeight();
-      if (this.cache) {
-        await this.cache.setItem(key, JSON.stringify(cachedTx));
+      if (cache) {
+        await cache.setItem(key, JSON.stringify(cachedTx));
       }
     }
 
@@ -371,7 +383,8 @@ export default class ElectrumNetworkProvider {
    * broadcast, so that answer returns the txid too. A server that accepts the broadcast but does
    * not report the transaction within 30 seconds is asked for it once: the txid when it has it,
    * a BroadcastTimeoutError when not. A broadcast that times out or loses its connection may have
-   * reached the node all the same, so the server is asked for the transaction in that case too.
+   * reached the node all the same, so the server is asked for the transaction in that case too, as
+   * it is when the subscription for the report cannot be made.
    * @param txHex The raw transaction hex to be broadcast.
    * @param options.statusTimeout @internal Milliseconds to wait for the report, for the tests.
    * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
@@ -394,32 +407,46 @@ export default class ElectrumNetworkProvider {
         if (error === undefined) done();
         else onError(error);
       };
-      const cancel = await this.subscribeToTransaction(txHash, (data) => {
-        if (data && data[0] === txHash && data[1] !== null) finish();
-      });
-      // broadcast once subscribed, so that the transaction's first status is not missed
+      const lookUp = (outcome: string, cause?: unknown) =>
+        this.holdsTransaction(txHash, txHex, outcome, cause).then(
+          () => finish(),
+          finish,
+        );
+      // The broadcast goes out first and the subscription right behind it, without waiting a round
+      // trip in between. The server may answer the subscription first (Fulcrum answers it from its
+      // index while the broadcast waits on the node), but then notifies its subscribers once its
+      // mempool sync takes the transaction in, so a status is not missed either way. A broadcast
+      // the server `accepted` whose subscription failed (`unwatched`) is left to a lookup, as the
+      // transaction may be out all the same.
+      let accepted = false;
+      let unwatched = false;
+      const lookUpUnwatched = () =>
+        void lookUp(
+          `The server accepted transaction ${txHash}, which could not be watched`,
+        );
       this.performRequest("blockchain.transaction.broadcast", [txHex]).then(
         () => {
           if (settled) return;
+          accepted = true;
+          if (unwatched) {
+            lookUpUnwatched();
+            return;
+          }
           // the request timeout bounds the broadcast itself, this the report that follows it
           timer = setTimeout(() => {
-            this.holdsTransaction(
-              txHash,
-              txHex,
+            void lookUp(
               `The server accepted transaction ${txHash} but did not report it within ${statusTimeout} ms`,
-            ).then(() => finish(), finish);
+            );
           }, statusTimeout);
         },
         (error) => {
           const rejection = broadcastError(error, txHash);
           if (!(rejection instanceof BroadcastRejectedError)) {
             // not the server's answer: the transaction may have reached the node before the failure
-            this.holdsTransaction(
-              txHash,
-              txHex,
+            void lookUp(
               `The broadcast of transaction ${txHash} failed (${rejection.message})`,
               rejection,
-            ).then(() => finish(), finish);
+            );
           } else if (rejection.alreadyKnown) {
             // the node holds a transaction of this txid, the hash of these very bytes
             finish();
@@ -428,7 +455,18 @@ export default class ElectrumNetworkProvider {
           }
         },
       );
-      return cancel;
+      try {
+        return await this.subscribeToTransaction(txHash, (data) => {
+          if (data && data[0] === txHash && data[1] !== null) finish();
+        });
+      } catch {
+        unwatched = true;
+        if (accepted && !settled) {
+          clearTimeout(timer);
+          lookUpUnwatched();
+        }
+        return async () => {};
+      }
     });
     return txHash;
   }

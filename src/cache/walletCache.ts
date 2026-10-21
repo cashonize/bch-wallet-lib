@@ -247,6 +247,11 @@ export async function pruneWalletCaches(
   return unreadable;
 }
 
+// How far a discovery started from the cache subscribes in its first round, so that a damaged
+// record cannot make it subscribe an unbounded range; a wallet used further is found by discovery
+// extending its window from there.
+const USED_LENGTH_LIMIT = 2000;
+
 /// Cache for single-address wallets (WatchWallet, Wif), in memory only as in mainnet-js 3.1.7: the
 /// wallet's own database record already holds its key, and a cache record would be a second copy
 export class SingleAddressWalletCache implements WalletCacheI {
@@ -430,6 +435,23 @@ export class HDWalletCache implements WalletCacheI {
       rawHistory: [],
       lastConfirmedHeight: 0,
     };
+  }
+
+  /**
+   * The index after the highest address of branch 0 or 1 with a stored status: how far the wallet
+   * was used when the cache was last written, read from the stored entries alone, and at most
+   * USED_LENGTH_LIMIT. 0 for other branches, which are not stored.
+   */
+  public usedLength(branch: number): number {
+    if (branch !== 0 && branch !== 1) return 0;
+    const change = branch === 1;
+    let length = 0;
+    for (const entry of Object.values(this.walletCache)) {
+      if (entry.change !== change || typeof entry.status !== "string") continue;
+      if (entry.index !== undefined && entry.index + 1 > length)
+        length = entry.index + 1;
+    }
+    return Math.min(length, USED_LENGTH_LIMIT);
   }
 
   /**

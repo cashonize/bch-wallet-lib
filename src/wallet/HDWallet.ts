@@ -30,7 +30,11 @@ import {
   getNextUnusedIndices,
 } from "../util/hd.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
-import { DEFAULT_CONCURRENCY, mapConcurrent } from "../util/mapConcurrent.js";
+import {
+  DEFAULT_CONCURRENCY,
+  Limiter,
+  mapConcurrent,
+} from "../util/mapConcurrent.js";
 import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
@@ -63,6 +67,12 @@ export const DEFAULT_BRANCHES: readonly number[] = [0, 1];
 /** Branch convention: 0 = deposit (external), 1 = change (internal). */
 export const DEPOSIT_BRANCH = 0;
 export const CHANGE_BRANCH = 1;
+
+// Slots for discovery's address subscriptions and fetches, a fetch being two requests (listunspent
+// and get_history), so up to about 100 requests in flight. Higher than the library's default: an
+// electrum server answers these from its index rather than from the node, and a discovery started
+// from the cache subscribes the whole used range in one round.
+const DISCOVERY_CONCURRENCY = 50;
 
 export class HDWallet extends BaseWallet {
   readonly mnemonic!: string;
@@ -105,6 +115,7 @@ export class HDWallet extends BaseWallet {
   private discovery: Promise<void> = Promise.resolve();
   private discoveryFailed = false;
   private stopped = false;
+  private readonly discoveryLimiter = new Limiter(DISCOVERY_CONCURRENCY);
   // addresses whose fetch failed after discovery, with the fetch the next read runs again
   private failedFetches = new Map<string, () => Promise<void>>();
   private refetching?: Promise<void>;
@@ -264,15 +275,23 @@ export class HDWallet extends BaseWallet {
       this.watchCancels.set(branch, []);
     }
 
-    // @ts-ignore
-    this.walletCache = new HDWalletCache(
+    const cache = new HDWalletCache(
       this.walletId,
       cacheNode,
       this.networkPrefix,
     );
+    // @ts-ignore
+    this.walletCache = cache;
 
     // init wallet cache
-    await this.walletCache.init();
+    await cache.init();
+    // discovery starts where the cache saw the wallet used, watching that range in one round
+    // instead of extending its window one round trip at a time
+    for (const branch of this.branches) {
+      const used = cache.usedLength(branch);
+      if (used > (this.indices.get(branch) ?? 0))
+        this.indices.set(branch, used);
+    }
     // start watching addresses asynchronously
     void this.startDiscovery();
 
@@ -463,6 +482,21 @@ export class HDWallet extends BaseWallet {
               }
             };
 
+            // Moves the index past this used address and, when that shrinks the gap below gapSize,
+            // extends the watched window: after discovery as a discovery of its own, so that a
+            // failure reaches the next read
+            const extendGap = (): Promise<number> | undefined => {
+              if (index + 1 > getCurrentIndex()) setCurrentIndex(index + 1);
+              if (this.watchedLength(branch) - getCurrentIndex() >= gapSize) {
+                return undefined;
+              }
+              if (discovered) {
+                void this.startDiscovery(gapSize);
+                return undefined;
+              }
+              return this.watchBranch(branch, gapSize);
+            };
+
             // A fetch that fails after the first leaves the old state and marks the address for
             // the next read to fetch again, which rejects if that fails too. Resolves to whether
             // it applied the status, false when a newer notification's update overtook it.
@@ -473,6 +507,14 @@ export class HDWallet extends BaseWallet {
                 historyArray[index] = [];
               }
 
+              // During discovery the window extends alongside this address's fetch, not after it; a
+              // later status moves the index only once its coins are applied
+              let extension: Promise<number> | undefined;
+              if (status !== null && !discovered) {
+                extension = extendGap();
+                extension?.catch(() => {});
+              }
+
               if (status !== null && status !== statuses[index]) {
                 // Use lastConfirmedHeight from closure for incremental fetch
                 const fromHeight = lastConfirmedHeight;
@@ -481,16 +523,18 @@ export class HDWallet extends BaseWallet {
                 let utxos: Utxo[];
                 let newHistory: TxI[];
                 try {
-                  [utxos, newHistory] = await Promise.all([
-                    this.provider.getUtxos(addr).then((utxos) =>
-                      utxos.map((utxo) => {
-                        utxo.address = addr;
-                        return utxo;
-                      }),
-                    ),
-                    // Fetch only from last confirmed height to reduce server load
-                    this.provider.getHistory(addr, fromHeight),
-                  ]);
+                  [utxos, newHistory] = await this.discoveryLimiter.run(() =>
+                    Promise.all([
+                      this.provider.getUtxos(addr).then((utxos) =>
+                        utxos.map((utxo) => {
+                          utxo.address = addr;
+                          return utxo;
+                        }),
+                      ),
+                      // Fetch only from last confirmed height to reduce server load
+                      this.provider.getHistory(addr, fromHeight),
+                    ]),
+                  );
                 } catch (error) {
                   // the newer fetch decides
                   if (attempt !== fetches) return false;
@@ -539,36 +583,33 @@ export class HDWallet extends BaseWallet {
               }
               statuses[index] = status;
 
-              if (status !== null) {
-                const newIndex = index + 1;
-                if (newIndex > getCurrentIndex()) {
-                  setCurrentIndex(newIndex);
-                }
-
-                // Maintain the gap: extend watched range if it shrank
-                const gap = this.watchedLength(branch) - getCurrentIndex();
-                if (gap < gapSize && discovered) {
-                  // as a discovery of its own, so that a failure reaches the next read
-                  void this.startDiscovery(gapSize);
-                } else if (gap < gapSize) {
-                  await this.watchBranch(branch, gapSize);
-                }
-              }
+              if (extension) await extension;
+              if (status !== null) await extendGap();
 
               // Notify wallet watchers of the status change
               this.notifyWalletWatchers(status, addr);
               return true;
             };
 
-            this.subscribe((provider) =>
-              provider.subscribeToAddress(addr, callback as any),
-            ).then((cancel) => {
-              if (failed) {
-                cancel().catch(() => {});
-              } else {
-                watchCancels[index] = cancel;
-              }
-            }, fail);
+            this.discoveryLimiter
+              .run(async () => {
+                // stopped while it waited for a slot: subscribes nothing, as stop() is past, and
+                // settles as a subscription made before stop() would, so that reads still return
+                if (this.stopped) {
+                  resolve();
+                  return async () => {};
+                }
+                return this.subscribe((provider) =>
+                  provider.subscribeToAddress(addr, callback as any),
+                );
+              })
+              .then((cancel) => {
+                if (failed) {
+                  cancel().catch(() => {});
+                } else {
+                  watchCancels[index] = cancel;
+                }
+              }, fail);
           }),
       ),
     );
@@ -594,15 +635,17 @@ export class HDWallet extends BaseWallet {
    * This is the foundation for watchWalletBalance and watchWalletTransactions
    * @param callback - Called when any address in the wallet has a status change; its errors go to
    * console.error
-   * @param options - `debounce` (ms, default 100)
+   * @param options - `debounce` (ms, default 100); `immediate` reports each status at once and
+   * without waiting for a discovery under way, for a caller reading addresses already watched
    * @returns Cancel function to stop watching
    */
   protected override async watchStatus(
     callback: (status: string | null, address: string) => unknown,
-    options: { debounce?: number } = {},
+    options: { debounce?: number; immediate?: boolean } = {},
   ): Promise<CancelFn> {
-    const debounce = options.debounce ?? 100;
-    await this.discovered();
+    let debounce = options.debounce ?? 100;
+    if (options.immediate) debounce = 0;
+    else await this.discovered();
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     let pendingStatus: string | null = null;
@@ -725,6 +768,12 @@ export class HDWallet extends BaseWallet {
   public async getUtxos(): Promise<Utxo[]> {
     await this.discovered();
 
+    return this.collectUtxosFromBranches();
+  }
+
+  // without waiting for a discovery under way, whose new addresses past the gap hold none of the
+  // coins a send waits for
+  protected override async coinsNow(): Promise<Utxo[]> {
     return this.collectUtxosFromBranches();
   }
 
@@ -964,7 +1013,7 @@ export class HDWallet extends BaseWallet {
    * @note this method tries to recreate the history tab view of Electron Cash wallet, however, it may not be 100% accurate if the tnransaction value changes are the same in the same block (ordering)
    *
    * @param count optional, the newest `count` items. Default -1, meaning that all history items will be returned
-   * @param concurrency optional, requests in flight at most while loading, `Infinity` for no limit. Default 10
+   * @param concurrency optional, requests in flight at most while loading, `Infinity` for no limit. Default 32
    *
    * @returns an array of transaction history items, with input values and addresses encoded in cashaddress format. @see `TransactionHistoryItem` type
    */

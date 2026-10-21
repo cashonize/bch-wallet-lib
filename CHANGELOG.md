@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 (2026-10-21)
+
+- With `Config.UseIndexedDBCache`, the provider opens its IndexedDB cache once instead of before every request, and opens it again after the connection is lost. A provider whose first call reads the cache (`getRawTransactions`, `getHeaders`, `getRawTransaction`, `getRawTransactionObject`) no longer fails with "Database is not initialized".
+- An HD wallet's address discovery starts where its cache saw the wallet used (at most 2000 addresses per branch), watching the used range in one round instead of about 20 addresses per round trip from index 0. `indices` therefore holds that value right after construction, before discovery has run; the cache format is unchanged.
+- During discovery, a used address extends the watched window as soon as its status arrives, and counts as used even when the fetch of its coins fails.
+- Discovery, and `setProvider` moving a wallet's subscriptions, take at most 50 address subscriptions or fetches at a time per wallet, where they started all at once.
+- A history load (`getHistory`) keeps up to 32 requests in flight by default, where it kept 10; pass `concurrency` to change it.
+- A send returns sooner: `sendRawTransaction` broadcasts before subscribing to the transaction, and a send's wait for its coins skips the HD wallet's 100 ms debounce and any address discovery under way. A subscription that cannot be made no longer rejects `sendRawTransaction`; a lookup of the transaction decides (its txid when the server holds it, a `BroadcastTimeoutError` when not).
+
 ## 0.1.1 (2026-10-20)
 
 - A closed transport, and so a disconnected provider (`provider.disconnect()`), refuses to connect again: a request or subscription made on it afterwards rejects with "The electrum transport was closed.", where it used to open a new connection to the same server. A request still in flight on a provider the caller replaced, e.g. a history load during a server change, no longer reconnects to the server the caller left. A caller that disconnected a provider to connect again later makes a new provider instead.

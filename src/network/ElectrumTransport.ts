@@ -7,6 +7,7 @@ import {
 } from "@electrum-cash/network";
 import { ElectrumWebSocket } from "@electrum-cash/web-socket";
 import { toError } from "../util/toError.js";
+import { withTimeout } from "../util/withTimeout.js";
 import { serverErrorCode } from "./errors.js";
 import type { Transport, Unsubscribe } from "./Transport.js";
 
@@ -363,20 +364,4 @@ function firstAnswer<T>(earlier: Promise<T>, latest: Promise<T>): Promise<T> {
     earlier.then(resolve, () => {});
     latest.then(resolve, reject);
   });
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  milliseconds: number,
-  timeoutError: () => Error,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(timeoutError()), milliseconds);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
 }

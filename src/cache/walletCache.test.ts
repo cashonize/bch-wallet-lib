@@ -64,6 +64,38 @@ const ACCOUNT_PATH = "m/44'/145'/0'"; // depth 3
 const CHANGE_PATH = "m/44'/145'/0'/0"; // depth 4 (external branch)
 
 describe("HDWalletCache", () => {
+  // Cashonize's delete-all deletes the database while the wallet still runs, then reloads; a
+  // later write must not put the wallet's keys back
+  test("a running wallet writes no record into a database the app deleted", async () => {
+    const indexedDbCacheValue = Config.UseIndexedDBCache;
+    Config.UseIndexedDBCache = true;
+    try {
+      const cache = new HDWalletCache(
+        "wallet-deleted",
+        privateNodeAt(ACCOUNT_PATH),
+        "bitcoincash",
+        /* writeTimeout */ 0,
+      );
+      await cache.init();
+      cache.getByPath("0/0");
+      await cache.persist(true);
+
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase("WalletCache");
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(new Error("deleteDatabase failed"));
+      });
+      cache.getByPath("0/1");
+      await cache.persist(true).catch(() => {});
+
+      expect(
+        (await indexedDB.databases()).map((database) => database.name),
+      ).not.toContain("WalletCache");
+    } finally {
+      Config.UseIndexedDBCache = indexedDbCacheValue;
+    }
+  });
+
   test("getByPath derives at the given relative path and caches the result", () => {
     const cache = new HDWalletCache(
       "wallet-acc",

@@ -67,6 +67,20 @@ export default class ElectrumNetworkProvider {
     return cache;
   }
 
+  // Writes what a fetch brought to the cache, opening it again first: the browser can drop the
+  // connection while the fetch is out (a backgrounded tab, a delete of the database elsewhere). A
+  // write that still fails, e.g. on a full quota, is an entry lost, never a failure of the fetch
+  private async cacheWrite(
+    write: (cache: CacheProvider) => Promise<void>,
+  ): Promise<void> {
+    try {
+      const cache = await this.openedCache();
+      if (cache) await write(cache);
+    } catch {
+      // nothing to undo
+    }
+  }
+
   /** @internal The subscriptions open on this provider, for the tests that check none leak. */
   get subscriptions(): number {
     return this.subscriptionCount;
@@ -159,7 +173,7 @@ export default class ElectrumNetworkProvider {
           `txraw-${this.network}-${hash}`,
           tx,
         ]);
-        await cache.setItems(entries);
+        await this.cacheWrite((cache) => cache.setItems(entries));
       }
 
       for (const [hash, tx] of fetched) {
@@ -223,7 +237,7 @@ export default class ElectrumNetworkProvider {
           `header-${this.network}-${height}-true`,
           JSON.stringify(result),
         ]);
-        await cache.setItems(entries);
+        await this.cacheWrite((cache) => cache.setItems(entries));
       }
 
       for (const [height, result] of fetched) {
@@ -268,7 +282,7 @@ export default class ElectrumNetworkProvider {
 
     const hex = await this.fetchTransaction<string>(txHash, false);
     if (cache) {
-      await cache.setItem(key, hex);
+      await this.cacheWrite((cache) => cache.setItem(key, hex));
     }
     return hex;
   }
@@ -366,7 +380,9 @@ export default class ElectrumNetworkProvider {
       cachedTx.confirmations ??= 0;
       cachedTx.fetchHeight = await this.getBlockHeight();
       if (cache) {
-        await cache.setItem(key, JSON.stringify(cachedTx));
+        await this.cacheWrite((cache) =>
+          cache.setItem(key, JSON.stringify(cachedTx)),
+        );
       }
     }
 

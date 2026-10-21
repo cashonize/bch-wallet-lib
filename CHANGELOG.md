@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3 (2026-10-21)
+
+- With `Config.UseIndexedDBCache`, a cache connection dropped while a fetch was out no longer fails the fetch with "Database is not initialized" (a 0.1.2 regression): the provider opens the cache again before writing, and a cache write that still fails is ignored.
+- An exchange rate lookup, `Config.GetExchangeRateFn` included, gives up after 12 s instead of waiting forever (each built-in source's request after 5 s, so the next source still gets its turn), and callers missing the cache for the same symbol at once share one fetch.
+
 ## 0.1.2 (2026-10-21)
 
 - With `Config.UseIndexedDBCache`, the provider opens its IndexedDB cache once instead of before every request, and opens it again after the connection is lost. A provider whose first call reads the cache (`getRawTransactions`, `getHeaders`, `getRawTransaction`, `getRawTransactionObject`) no longer fails with "Database is not initialized".

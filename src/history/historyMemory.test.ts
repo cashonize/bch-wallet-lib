@@ -27,15 +27,19 @@ test("a history keeps its hex strings flat", async () => {
   // holds the only reference
   const heapWithHistory = async () => {
     const history = await receiver.getHistory();
-    expect(history[0].outputs.length).toBe(outputs + 1);
     gc();
-    return process.memoryUsage().heapUsed;
+    const heap = process.memoryUsage().heapUsed;
+    // read after the measurement, so the history is certainly alive while it is taken
+    return { heap, outputCount: history[0].outputs.length };
   };
-  const withHistory = await heapWithHistory();
+  const { heap: withHistory, outputCount } = await heapWithHistory();
+  expect(outputCount).toBe(outputs + 1);
   gc();
   const perOutput = (withHistory - process.memoryUsage().heapUsed) / outputs;
 
-  // each output keeps its locking bytecode as hex: built two characters at a time, as libauth's
-  // binToHex does, that is about 1 KB of string pieces per output instead of about 100 B
+  // each output keeps its locking bytecode as hex: about 1.2 KB per output built two characters at
+  // a time, as libauth's binToHex does, about 190 B flat; the lower bound fails a measurement that
+  // measured nothing
   expect(perOutput).toBeLessThan(400);
+  expect(perOutput).toBeGreaterThan(50);
 });

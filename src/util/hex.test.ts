@@ -6,7 +6,10 @@ test("gives the same hex as binToHex", () => {
   const everyByte = Uint8Array.from({ length: 256 }, (_, byte) => byte);
   expect(toHex(everyByte)).toBe(binToHex(everyByte));
   for (const length of [1, 20, 32, 33, 300]) {
-    const bytes = crypto.getRandomValues(new Uint8Array(length));
+    const bytes = Uint8Array.from(
+      { length },
+      (_, i) => (i * 37 + length) % 256,
+    );
     expect(toHex(bytes)).toBe(binToHex(bytes));
   }
 });

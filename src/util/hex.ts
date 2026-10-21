@@ -9,8 +9,8 @@ const decoder = new TextDecoder();
 
 /**
  * Lowercase hex of `bytes` as one flat string, the same as libauth's `binToHex`. That one appends
- * two characters at a time, which V8 keeps as a chain of pieces: about 1.5 KB of heap for a 32-byte
- * hash instead of about 90 B, for as long as the string lives. For hex that is kept, like a history.
+ * two characters at a time, which V8 keeps as a chain of pieces for as long as the string lives;
+ * for hex that is kept, like a history.
  */
 export const toHex = (bytes: Uint8Array): string => {
   const ascii = new Uint8Array(bytes.length * 2);

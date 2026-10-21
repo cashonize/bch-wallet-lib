@@ -150,7 +150,7 @@ export const getHistory = async ({
 
   // The transaction each input spends, by hash: those of the history itself are decoded already,
   // so only the other parents are fetched and decoded, once each
-  const parents = new Map<string, TransactionCommon>(
+  const prevoutTransactions = new Map<string, TransactionCommon>(
     historicTransactions.map((tx) => [tx.hash, tx]),
   );
   const ZERO_HASH =
@@ -159,24 +159,25 @@ export const getHistory = async ({
   for (const tx of historicTransactions) {
     for (const input of tx.inputs) {
       const hash = getOutpointHash(input.outpointTransactionHash);
-      if (hash !== ZERO_HASH && !parents.has(hash)) {
+      if (hash !== ZERO_HASH && !prevoutTransactions.has(hash)) {
         prevoutHashSet.add(hash);
       }
     }
   }
 
-  // Batch fetch prevout transactions
-  const prevoutHashes = [...prevoutHashSet];
-  const prevoutHexMap = await provider.getRawTransactions(prevoutHashes, {
-    limiter,
-  });
-
-  for (const [hash, hex] of prevoutHexMap) {
-    const decoded = decodeTransaction(hexToBin(hex));
-    if (typeof decoded === "string") {
-      throw new Error(decoded);
+  // Batch fetch prevout transactions; their hex is let go once decoded
+  {
+    const prevoutHashes = [...prevoutHashSet];
+    const prevoutHexMap = await provider.getRawTransactions(prevoutHashes, {
+      limiter,
+    });
+    for (const [hash, hex] of prevoutHexMap) {
+      const decoded = decodeTransaction(hexToBin(hex));
+      if (typeof decoded === "string") {
+        throw new Error(decoded);
+      }
+      prevoutTransactions.set(hash, decoded);
     }
-    parents.set(hash, decoded);
   }
 
   const decoded = assertSuccess(decodeCashAddress(addresses[0]));
@@ -208,7 +209,7 @@ export const getHistory = async ({
         };
       }
 
-      const prevoutTx = parents.get(
+      const prevoutTx = prevoutTransactions.get(
         getOutpointHash(input.outpointTransactionHash),
       );
       if (!prevoutTx) {

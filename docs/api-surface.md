@@ -175,6 +175,7 @@ Every error the library throws is an exported class (AGENTS.md "Conventions"), s
 | `getXPubKey(seed, path, network)`, `getAddrsByXpubKey(xpub, path, count)` | The import's derivation-path scan: `walletUtils.ts`                                         |
 | `decodeWif(wif)`                                                          | Planned: the sweep's QR filter reads a WIF's network from it                                |
 | `decodeHeader(hexHeader)`                                                 | Tip age check: `utils.ts`                                                                   |
+| `toHex(bytes)`                                                            | Hex kept in bulk, as flat strings: `transactionIndex.ts`                                    |
 | `getTransactionHash(rawTransactionHex)`                                   | **No consumer**: the provider uses it internally; libauth's `hashTransaction` does the same |
 | `MAX_OP_RETURN_BYTES`                                                     | BCMR publication size: `authchainIdentity.ts`                                               |
 | `GAP_SIZE`, `DEPOSIT_BRANCH`, `CHANGE_BRANCH`                             | HD address rows: `store.ts`, `addressRows.ts`, `hdAddresses.vue`, `hdAddressSelect.vue`     |

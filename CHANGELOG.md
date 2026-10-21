@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5 (2026-10-21)
+
+- `toHex(bytes)` is exported: the same lowercase hex as libauth's `binToHex`, as one flat string, for hex an app keeps in bulk.
+
 ## 0.1.4 (2026-10-21)
 
 - A history keeps its hex strings (outpoints, locking bytecode, token categories and commitments) as flat strings, about 6x less memory per output than libauth's `binToHex` pieces.

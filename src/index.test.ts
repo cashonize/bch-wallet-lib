@@ -68,6 +68,7 @@ test("the entry exports the utilities Cashonize uses and none of the removed one
     "NFTCapability",
     "NetworkType",
     "SignedMessage",
+    "toHex",
   ]) {
     expect(entry).toHaveProperty(name);
   }

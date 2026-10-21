@@ -1,6 +1,6 @@
 {
   "name": "@cashonize/bch-wallet-lib",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Bitcoin Cash wallet library with CashTokens support, built for the Cashonize wallet and continued from mainnet-js",
   "keywords": [
     "bch",

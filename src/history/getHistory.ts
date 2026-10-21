@@ -1,6 +1,5 @@
 import {
   assertSuccess,
-  binToHex,
   CashAddressNetworkPrefix,
   decodeCashAddress,
   decodeTransaction,
@@ -11,6 +10,7 @@ import {
 } from "@bitauth/libauth";
 import { TxI, Utxo } from "../interface.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
+import { toHex } from "../util/hex.js";
 import { Limiter, mapConcurrent } from "../util/mapConcurrent.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
@@ -25,7 +25,7 @@ export const historyAddress = (
     prefix,
   });
   if (typeof result === "string") {
-    return `SCRIPT: ${binToHex(lockingBytecode)}`;
+    return `SCRIPT: ${toHex(lockingBytecode)}`;
   }
   return result.address;
 };
@@ -121,12 +121,12 @@ export const getHistory = async ({
     timestampMap[height] = header.timestamp;
   }
 
-  // Precompute binToHex for each input's outpoint hash once
+  // Precompute the hex of each input's outpoint hash once
   const inputOutpointHashes = new WeakMap<Uint8Array, string>();
   const getOutpointHash = (bytes: Uint8Array): string => {
     let hash = inputOutpointHashes.get(bytes);
     if (hash === undefined) {
-      hash = binToHex(bytes);
+      hash = toHex(bytes);
       inputOutpointHashes.set(bytes, hash);
     }
     return hash;
@@ -242,19 +242,19 @@ export const getHistory = async ({
         value: Number(prevoutOutput.valueSatoshis),
         token: prevoutOutput.token
           ? {
-              category: binToHex(prevoutOutput.token.category),
+              category: toHex(prevoutOutput.token.category),
               amount: prevoutOutput.token.amount,
               nft: prevoutOutput.token.nft
                 ? {
                     capability: prevoutOutput.token.nft.capability,
-                    commitment: binToHex(prevoutOutput.token.nft.commitment),
+                    commitment: toHex(prevoutOutput.token.nft.commitment),
                   }
                 : undefined,
             }
           : undefined,
         outpointTransactionHash: getOutpointHash(input.outpointTransactionHash),
         outpointIndex: input.outpointIndex,
-        lockingBytecode: binToHex(prevoutOutput.lockingBytecode),
+        lockingBytecode: toHex(prevoutOutput.lockingBytecode),
       };
     });
 
@@ -263,7 +263,7 @@ export const getHistory = async ({
       let address: string;
       if (!cached) {
         if (output.lockingBytecode[0] === Opcodes.OP_RETURN) {
-          address = `OP_RETURN: ${binToHex(output.lockingBytecode)}`;
+          address = `OP_RETURN: ${toHex(output.lockingBytecode)}`;
         } else {
           address = historyAddress(output.lockingBytecode, prefix);
           addressCache[output.lockingBytecode as any] = address;
@@ -279,17 +279,17 @@ export const getHistory = async ({
         value: Number(output.valueSatoshis),
         token: output.token
           ? {
-              category: binToHex(output.token.category),
+              category: toHex(output.token.category),
               amount: output.token.amount,
               nft: output.token.nft
                 ? {
                     capability: output.token.nft.capability,
-                    commitment: binToHex(output.token.nft.commitment),
+                    commitment: toHex(output.token.nft.commitment),
                   }
                 : undefined,
             }
           : undefined,
-        lockingBytecode: binToHex(output.lockingBytecode),
+        lockingBytecode: toHex(output.lockingBytecode),
       };
     });
 

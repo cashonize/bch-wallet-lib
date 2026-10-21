@@ -148,14 +148,18 @@ export const getHistory = async ({
     return transaction;
   });
 
-  // Collect unique prevout hashes using Set, excluding already-fetched txs
+  // The transaction each input spends, by hash: those of the history itself are decoded already,
+  // so only the other parents are fetched and decoded, once each
+  const parents = new Map<string, TransactionCommon>(
+    historicTransactions.map((tx) => [tx.hash, tx]),
+  );
   const ZERO_HASH =
     "0000000000000000000000000000000000000000000000000000000000000000";
   const prevoutHashSet = new Set<string>();
   for (const tx of historicTransactions) {
     for (const input of tx.inputs) {
       const hash = getOutpointHash(input.outpointTransactionHash);
-      if (hash !== ZERO_HASH && !txHexMap.has(hash)) {
+      if (hash !== ZERO_HASH && !parents.has(hash)) {
         prevoutHashSet.add(hash);
       }
     }
@@ -167,23 +171,12 @@ export const getHistory = async ({
     limiter,
   });
 
-  // Build prevout transaction map (decode all prevout txs)
-  const prevoutTransactionMap: Record<string, TransactionCommon> = {};
-  const allPrevoutSources = new Map([...txHexMap, ...prevoutHexMap]);
-  for (const tx of historicTransactions) {
-    for (const input of tx.inputs) {
-      const hash = getOutpointHash(input.outpointTransactionHash);
-      if (hash === ZERO_HASH || prevoutTransactionMap[hash]) continue;
-
-      const hex = allPrevoutSources.get(hash);
-      if (!hex) continue;
-
-      const decoded = decodeTransaction(hexToBin(hex));
-      if (typeof decoded === "string") {
-        throw new Error(decoded);
-      }
-      prevoutTransactionMap[hash] = decoded;
+  for (const [hash, hex] of prevoutHexMap) {
+    const decoded = decodeTransaction(hexToBin(hex));
+    if (typeof decoded === "string") {
+      throw new Error(decoded);
     }
+    parents.set(hash, decoded);
   }
 
   const decoded = assertSuccess(decodeCashAddress(addresses[0]));
@@ -215,8 +208,9 @@ export const getHistory = async ({
         };
       }
 
-      const prevoutTx =
-        prevoutTransactionMap[getOutpointHash(input.outpointTransactionHash)];
+      const prevoutTx = parents.get(
+        getOutpointHash(input.outpointTransactionHash),
+      );
       if (!prevoutTx) {
         throw new Error("Could not find prevout transaction");
       }

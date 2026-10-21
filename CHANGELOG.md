@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4 (2026-10-21)
+
+- A history keeps its hex strings (outpoints, locking bytecode, token categories and commitments) as flat strings, about 6x less memory per output than libauth's `binToHex` pieces.
+- A history decodes each transaction once: a transaction that is also the parent of another one in the history is no longer decoded a second time.
+
 ## 0.1.3 (2026-10-21)
 
 - With `Config.UseIndexedDBCache`, a cache connection dropped while a fetch was out no longer fails the fetch with "Database is not initialized" (a 0.1.2 regression): the provider opens the cache again before writing, and a cache write that still fails is ignored.

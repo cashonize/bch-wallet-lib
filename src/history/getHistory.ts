@@ -1,6 +1,5 @@
 import {
   assertSuccess,
-  binToHex,
   CashAddressNetworkPrefix,
   decodeCashAddress,
   decodeTransaction,
@@ -11,6 +10,7 @@ import {
 } from "@bitauth/libauth";
 import { TxI, Utxo } from "../interface.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
+import { toHex } from "../util/hex.js";
 import { Limiter, mapConcurrent } from "../util/mapConcurrent.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { InOutput, TransactionHistoryItem } from "./interface.js";
@@ -25,7 +25,7 @@ export const historyAddress = (
     prefix,
   });
   if (typeof result === "string") {
-    return `SCRIPT: ${binToHex(lockingBytecode)}`;
+    return `SCRIPT: ${toHex(lockingBytecode)}`;
   }
   return result.address;
 };
@@ -121,12 +121,12 @@ export const getHistory = async ({
     timestampMap[height] = header.timestamp;
   }
 
-  // Precompute binToHex for each input's outpoint hash once
+  // Precompute the hex of each input's outpoint hash once
   const inputOutpointHashes = new WeakMap<Uint8Array, string>();
   const getOutpointHash = (bytes: Uint8Array): string => {
     let hash = inputOutpointHashes.get(bytes);
     if (hash === undefined) {
-      hash = binToHex(bytes);
+      hash = toHex(bytes);
       inputOutpointHashes.set(bytes, hash);
     }
     return hash;
@@ -148,14 +148,18 @@ export const getHistory = async ({
     return transaction;
   });
 
-  // Collect unique prevout hashes using Set, excluding already-fetched txs
+  // The transaction each input spends, by hash: those of the history itself are decoded already,
+  // so only the other parents are fetched and decoded, once each
+  const parents = new Map<string, TransactionCommon>(
+    historicTransactions.map((tx) => [tx.hash, tx]),
+  );
   const ZERO_HASH =
     "0000000000000000000000000000000000000000000000000000000000000000";
   const prevoutHashSet = new Set<string>();
   for (const tx of historicTransactions) {
     for (const input of tx.inputs) {
       const hash = getOutpointHash(input.outpointTransactionHash);
-      if (hash !== ZERO_HASH && !txHexMap.has(hash)) {
+      if (hash !== ZERO_HASH && !parents.has(hash)) {
         prevoutHashSet.add(hash);
       }
     }
@@ -167,23 +171,12 @@ export const getHistory = async ({
     limiter,
   });
 
-  // Build prevout transaction map (decode all prevout txs)
-  const prevoutTransactionMap: Record<string, TransactionCommon> = {};
-  const allPrevoutSources = new Map([...txHexMap, ...prevoutHexMap]);
-  for (const tx of historicTransactions) {
-    for (const input of tx.inputs) {
-      const hash = getOutpointHash(input.outpointTransactionHash);
-      if (hash === ZERO_HASH || prevoutTransactionMap[hash]) continue;
-
-      const hex = allPrevoutSources.get(hash);
-      if (!hex) continue;
-
-      const decoded = decodeTransaction(hexToBin(hex));
-      if (typeof decoded === "string") {
-        throw new Error(decoded);
-      }
-      prevoutTransactionMap[hash] = decoded;
+  for (const [hash, hex] of prevoutHexMap) {
+    const decoded = decodeTransaction(hexToBin(hex));
+    if (typeof decoded === "string") {
+      throw new Error(decoded);
     }
+    parents.set(hash, decoded);
   }
 
   const decoded = assertSuccess(decodeCashAddress(addresses[0]));
@@ -215,8 +208,9 @@ export const getHistory = async ({
         };
       }
 
-      const prevoutTx =
-        prevoutTransactionMap[getOutpointHash(input.outpointTransactionHash)];
+      const prevoutTx = parents.get(
+        getOutpointHash(input.outpointTransactionHash),
+      );
       if (!prevoutTx) {
         throw new Error("Could not find prevout transaction");
       }
@@ -242,19 +236,19 @@ export const getHistory = async ({
         value: Number(prevoutOutput.valueSatoshis),
         token: prevoutOutput.token
           ? {
-              category: binToHex(prevoutOutput.token.category),
+              category: toHex(prevoutOutput.token.category),
               amount: prevoutOutput.token.amount,
               nft: prevoutOutput.token.nft
                 ? {
                     capability: prevoutOutput.token.nft.capability,
-                    commitment: binToHex(prevoutOutput.token.nft.commitment),
+                    commitment: toHex(prevoutOutput.token.nft.commitment),
                   }
                 : undefined,
             }
           : undefined,
         outpointTransactionHash: getOutpointHash(input.outpointTransactionHash),
         outpointIndex: input.outpointIndex,
-        lockingBytecode: binToHex(prevoutOutput.lockingBytecode),
+        lockingBytecode: toHex(prevoutOutput.lockingBytecode),
       };
     });
 
@@ -263,7 +257,7 @@ export const getHistory = async ({
       let address: string;
       if (!cached) {
         if (output.lockingBytecode[0] === Opcodes.OP_RETURN) {
-          address = `OP_RETURN: ${binToHex(output.lockingBytecode)}`;
+          address = `OP_RETURN: ${toHex(output.lockingBytecode)}`;
         } else {
           address = historyAddress(output.lockingBytecode, prefix);
           addressCache[output.lockingBytecode as any] = address;
@@ -279,17 +273,17 @@ export const getHistory = async ({
         value: Number(output.valueSatoshis),
         token: output.token
           ? {
-              category: binToHex(output.token.category),
+              category: toHex(output.token.category),
               amount: output.token.amount,
               nft: output.token.nft
                 ? {
                     capability: output.token.nft.capability,
-                    commitment: binToHex(output.token.nft.commitment),
+                    commitment: toHex(output.token.nft.commitment),
                   }
                 : undefined,
             }
           : undefined,
-        lockingBytecode: binToHex(output.lockingBytecode),
+        lockingBytecode: toHex(output.lockingBytecode),
       };
     });
 

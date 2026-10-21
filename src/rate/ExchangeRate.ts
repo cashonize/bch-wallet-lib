@@ -6,6 +6,12 @@ import {
   getRuntimePlatform,
   RuntimePlatform,
 } from "../util/getRuntimePlatform.js";
+import { withTimeout } from "../util/withTimeout.js";
+
+// How long a rate source may take before it fails as one that errs, so a hanging source never
+// holds its callers; a built-in source's own request gives up sooner, leaving time for the next
+const RATE_TIMEOUT = 12_000;
+const SOURCE_REQUEST_TIMEOUT = 5_000;
 
 export interface ExchangeRateOptions {
   // when the fetch fails, return the last cached rate of the current source, however old, instead of throwing
@@ -132,7 +138,7 @@ async function getQuote(
 
   let freshRate: number;
   try {
-    freshRate = await fetchRate(source, symbol);
+    freshRate = await sharedFetch(source, symbol, sourceTag);
     if (!isRate(freshRate)) {
       throw new Error(
         `The exchange rate source returned no usable rate for '${symbol}': ${String(freshRate)}`,
@@ -175,6 +181,32 @@ function getTtl() {
   return Math.trunc(Date.now() + EXCHANGE_RATE_TTL);
 }
 
+// One fetch per symbol and source at a time, shared by the callers that miss the cache together,
+// e.g. every token row of a wallet once the cached rate expires
+const fetching = new Map<string, Promise<number>>();
+
+function sharedFetch(
+  source: typeof Config.GetExchangeRateFn,
+  symbol: string,
+  sourceTag: string,
+): Promise<number> {
+  const key = `${sourceTag}:${symbol.toLocaleLowerCase()}`;
+  let pending = fetching.get(key);
+  if (!pending) {
+    const request = withTimeout(
+      fetchRate(source, symbol),
+      RATE_TIMEOUT,
+      () =>
+        new Error(
+          `The exchange rate source did not answer for '${symbol}' within ${RATE_TIMEOUT / 1000} s`,
+        ),
+    ).finally(() => fetching.delete(key));
+    fetching.set(key, request);
+    pending = request;
+  }
+  return pending;
+}
+
 async function fetchRate(
   source: typeof Config.GetExchangeRateFn,
   symbol: string,
@@ -191,13 +223,16 @@ async function fetchRate(
     try {
       const response = await fetch(
         "https://markets.api.bitcoin.com/live/bitcoin",
+        { signal: AbortSignal.timeout(SOURCE_REQUEST_TIMEOUT) },
       );
       const data = await response.json();
       return data["data"]["BCH"];
     } catch {}
   }
 
-  const response = await fetch("https://bitpay.com/rates/BCH");
+  const response = await fetch("https://bitpay.com/rates/BCH", {
+    signal: AbortSignal.timeout(SOURCE_REQUEST_TIMEOUT),
+  });
   const data = (await response.json()) as {
     data: { code: string; rate: number }[];
   };

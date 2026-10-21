@@ -301,4 +301,94 @@ describe("Exchange rate tests", () => {
       delete globalThis.RATE;
     }
   });
+
+  test("callers that miss the cache together share one fetch", async () => {
+    let fetches = 0;
+    let answer = (_rate: number) => {};
+    Config.GetExchangeRateFn = () => {
+      fetches++;
+      return new Promise<number>((resolve) => (answer = resolve));
+    };
+    delete globalThis.RATE;
+
+    try {
+      const quotes = Promise.all(
+        [1, 2, 3].map(() => ExchangeRate.getQuote("usd")),
+      );
+      await vi.waitFor(() => expect(fetches).toBe(1));
+      answer(400);
+      expect((await quotes).map((quote) => quote.rate)).toEqual([
+        400, 400, 400,
+      ]);
+      expect(fetches).toBe(1);
+
+      // the next miss after the shared fetch settled fetches anew
+      globalThis.RATE.usd.ttl = Date.now() - 1;
+      const next = ExchangeRate.getQuote("usd");
+      await vi.waitFor(() => expect(fetches).toBe(2));
+      answer(500);
+      expect((await next).rate).toBe(500);
+    } finally {
+      Config.GetExchangeRateFn = undefined;
+      delete globalThis.RATE;
+    }
+  });
+
+  test("a source that never answers fails after 12 s, falling back with staleOnError", async () => {
+    let hang = false;
+    Config.GetExchangeRateFn = async () =>
+      hang ? new Promise<number>(() => {}) : 400;
+    delete globalThis.RATE;
+
+    try {
+      await ExchangeRate.getQuote("usd");
+      globalThis.RATE.usd.ttl = Date.now() - 1;
+      hang = true;
+      vi.useFakeTimers();
+      const quote = ExchangeRate.getQuote("usd", { staleOnError: true });
+      const failure = ExchangeRate.getQuote("usd").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(await quote).toMatchObject({ rate: 400, stale: true });
+      expect(String(await failure)).toMatch("did not answer");
+    } finally {
+      vi.useRealTimers();
+      Config.GetExchangeRateFn = undefined;
+      delete globalThis.RATE;
+    }
+  });
+
+  test("the built-in usd source falls through to the next when the first hangs", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) => {
+        if ((input as string).includes("bitcoin.com")) {
+          // answers only by giving up when its signal aborts
+          return new Promise((_, reject) => {
+            const signal = init?.signal;
+            // without a signal of its own the request hangs, as the source does
+            if (!signal) return;
+            const giveUp = () => reject(new Error("aborted"));
+            if (signal.aborted) giveUp();
+            signal.addEventListener("abort", giveUp);
+          });
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: [{ code: "USD", rate: 450 }] })),
+        );
+      });
+    // the request's own timeout, without waiting it out
+    const timeout = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation(() => AbortSignal.abort(new Error("timed out")));
+    delete globalThis.RATE;
+
+    try {
+      expect((await ExchangeRate.getQuote("usd")).rate).toBe(450);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      fetchSpy.mockRestore();
+      timeout.mockRestore();
+      delete globalThis.RATE;
+    }
+  });
 });

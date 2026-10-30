@@ -14,7 +14,9 @@ import {
 } from "../cache/walletCache.js";
 import { DUST_UTXO_THRESHOLD } from "../constant.js";
 import StorageProvider from "../db/StorageProvider.js";
-import { NetworkType, prefixFromNetworkMap } from "../enum.js";
+import { NetworkType } from "../enum.js";
+import type { Network } from "../interface.js";
+import { knownNetworks, networkConfig } from "../network/registry.js";
 import { HexHeaderI, NFTCapability, TxI, Utxo } from "../interface.js";
 import { getNetworkProvider } from "../network/default.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
@@ -112,7 +114,7 @@ function once(cancel: CancelFn): CancelFn {
 
 function checkProviderNetwork(
   provider: ElectrumNetworkProvider,
-  network: NetworkType,
+  network: Network,
 ) {
   if ((provider.network as string) !== network) {
     throw new Error(
@@ -131,7 +133,7 @@ export class BaseWallet {
   readonly walletCache: WalletCache;
   // set by the factory that made the wallet; a wallet made with `new` takes the global one on first use
   private _provider?: ElectrumNetworkProvider;
-  readonly network: NetworkType;
+  readonly network: Network;
   protected readonly walletType: WalletTypeEnum;
   name: string = "";
   private subscriptions = new Set<WalletSubscription>();
@@ -146,12 +148,13 @@ export class BaseWallet {
   }
 
   public get networkPrefix(): CashAddressNetworkPrefix {
-    return prefixFromNetworkMap[this.network];
+    return networkConfig(this.network)
+      .addressPrefix as CashAddressNetworkPrefix;
   }
 
   //#region Accessors
   protected getNetworkProvider(
-    network: NetworkType = NetworkType.Mainnet,
+    network: Network = NetworkType.Mainnet,
   ): ElectrumNetworkProvider {
     return getNetworkProvider(network);
   }
@@ -248,7 +251,7 @@ export class BaseWallet {
    *
    * @throws {Error} if called on BaseWallet
    */
-  constructor(network = NetworkType.Mainnet) {
+  constructor(network: Network = NetworkType.Mainnet) {
     this.network = network;
     this.walletType = WalletTypeEnum.Watch;
     this.walletCache = new Map<string, { privateKey: Uint8Array }>();
@@ -264,6 +267,16 @@ export class BaseWallet {
     options: WalletFactoryOptions = {},
   ): InstanceType<T> {
     const wallet: BaseWallet = new this();
+    if (options.network !== undefined && options.network !== wallet.network) {
+      if (wallet.network !== NetworkType.Mainnet) {
+        throw new Error(
+          `a ${wallet.network} wallet class cannot make a ${options.network} wallet`,
+        );
+      }
+      networkConfig(options.network);
+      // @ts-ignore
+      wallet.network = options.network;
+    }
     if (options.provider) {
       checkProviderNetwork(options.provider, wallet.network);
     }
@@ -286,7 +299,7 @@ export class BaseWallet {
     }
     _checkContextSafety(this.network);
     this.name = name;
-    const db = getStorageProvider(prefixFromNetworkMap[this.network]);
+    const db = getStorageProvider(networkConfig(this.network).dbName);
 
     // If there is a database, force saving or error
     if (db) {
@@ -328,7 +341,7 @@ export class BaseWallet {
     }
     _checkContextSafety(this.network);
     this.name = name;
-    let db = getStorageProvider(prefixFromNetworkMap[this.network]);
+    let db = getStorageProvider(networkConfig(this.network).dbName);
 
     if (db) {
       await db.init();
@@ -360,9 +373,10 @@ export class BaseWallet {
         { kind: WalletTypeEnum.Named, reason: "missing-value" },
       );
     }
-    if (dbName && dbName !== prefixFromNetworkMap[this.network]) {
+    const networkDbName = networkConfig(this.network).dbName;
+    if (dbName && dbName !== networkDbName) {
       throw new InvalidWalletIdError(
-        `a named walletId of a ${this.network} wallet can only name the database ${prefixFromNetworkMap[this.network]}`,
+        `a named walletId of a ${this.network} wallet can only name the database ${networkDbName}`,
         { kind: WalletTypeEnum.Named, reason: "database" },
       );
     }
@@ -1722,7 +1736,7 @@ export class BaseWallet {
  * mainnet wallets on public servers if ALLOW_MAINNET_USER_WALLETS is set to false
  * @param network        the network of the wallet to save
  */
-export const _checkContextSafety = function (network: NetworkType) {
+export const _checkContextSafety = function (network: Network) {
   if (getRuntimePlatform() === "node") {
     if (process.env.ALLOW_MAINNET_USER_WALLETS === `false`) {
       if (network === NetworkType.Mainnet) {
@@ -1752,7 +1766,7 @@ export async function getNamedWalletId(
     throw Error("Named wallets must have a non-empty name");
   }
 
-  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
+  dbName = dbName ? dbName : networkConfig(NetworkType.Mainnet).dbName;
   let db = getStorageProvider(dbName);
 
   if (db) {
@@ -1786,7 +1800,7 @@ export async function namedWalletExists(
     throw Error("Named wallets must have a non-empty name");
   }
 
-  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
+  dbName = dbName ? dbName : networkConfig(NetworkType.Mainnet).dbName;
   const db = getStorageProvider(dbName);
   if (!db) {
     throw Error(
@@ -1812,8 +1826,8 @@ export async function namedWalletExists(
  *
  * @param name   user friendly wallet alias
  * @param walletId the wallet's id, as `toDbString()` returns it
- * @param dbName database to store it in, the one of the id's network ("bitcoincash", "bchtest"
- * or "bchreg") by default; another network's database is refused
+ * @param dbName database to store it in, the one of the id's network ("bitcoincash", "bchtest",
+ * "bchreg" or a registered network's) by default; another network's database is refused
  *
  * @throws {InvalidWalletIdError} if the id cannot be read, or if `dbName` is another network's
  * database
@@ -1829,9 +1843,9 @@ export async function saveNamedWallet(
   }
   // the check deleteNamedWallet makes: a row it cannot read is one it cannot delete
   walletCacheIdFromWalletId(walletId);
-  const network = walletId.split(":")[1] as NetworkType;
-  const networkDbName: string = prefixFromNetworkMap[network];
-  const networkDbNames: string[] = Object.values(prefixFromNetworkMap);
+  const network = walletId.split(":")[1];
+  const networkDbName = networkConfig(network).dbName;
+  const networkDbNames = knownNetworks().map((config) => config.dbName);
   if (dbName && dbName !== networkDbName && networkDbNames.includes(dbName)) {
     throw new InvalidWalletIdError(
       `a ${network} walletId cannot be stored in the database ${dbName}`,
@@ -1883,7 +1897,7 @@ export async function deleteNamedWallet(
     throw Error("Named wallets must have a non-empty name");
   }
 
-  dbName = dbName ? dbName : prefixFromNetworkMap[NetworkType.Mainnet];
+  dbName = dbName ? dbName : networkConfig(NetworkType.Mainnet).dbName;
   const db = getStorageProvider(dbName);
   if (!db) {
     throw Error(

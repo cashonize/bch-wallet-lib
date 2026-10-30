@@ -1,6 +1,7 @@
 import type { HexHeaderI } from "../interface.js";
 import { decodeHeader } from "../util/header.js";
 import { Limiter } from "../util/mapConcurrent.js";
+import { getTransactionHash } from "../util/transaction.js";
 import {
   DEFAULT_CONNECT_TIMEOUT,
   ElectrumTransport,
@@ -9,6 +10,7 @@ import {
   type ElectrumTransportOptions,
 } from "./ElectrumTransport.js";
 import { ElectrumConnectError, serverErrorCode } from "./errors.js";
+import type { ChainCheck } from "./registry.js";
 import type { Transport, Unsubscribe } from "./Transport.js";
 
 export interface FailoverTransportOptions extends ElectrumTransportOptions {
@@ -34,6 +36,11 @@ export interface FailoverTransportOptions extends ElectrumTransportOptions {
    * switch to another server counts as back. Not told about the first connect.
    */
   onConnectionChange?: (connected: boolean) => void;
+}
+
+/** @internal The network's chain, which createFailoverProvider passes from the registry */
+export interface FailoverTransportInternalOptions extends FailoverTransportOptions {
+  chain?: ChainCheck;
 }
 
 // electrum-cash's delay before it reconnects a lost connection
@@ -65,7 +72,7 @@ interface Entry {
  */
 export class FailoverTransport implements Transport {
   private readonly servers: ElectrumServer[];
-  private readonly options: FailoverTransportOptions;
+  private readonly options: FailoverTransportInternalOptions;
   private readonly gracePeriod: number;
   private readonly isOnline: () => boolean;
   private current?: Server;
@@ -90,7 +97,7 @@ export class FailoverTransport implements Transport {
 
   constructor(
     servers: ElectrumServer | ElectrumServer[],
-    options: FailoverTransportOptions = {},
+    options: FailoverTransportInternalOptions = {},
   ) {
     const list = Array.isArray(servers) ? servers : [servers];
     if (list.length === 0) {
@@ -317,7 +324,7 @@ export class FailoverTransport implements Transport {
     return failures;
   }
 
-  // Connects to a candidate and checks its tip; no subscription is made there yet
+  // Connects to a candidate and checks its tip and chain; no subscription is made there yet
   private async probe(
     entry: ElectrumServer,
     name: string,
@@ -344,6 +351,9 @@ export class FailoverTransport implements Transport {
         throw new Error(
           `its tip ${tip.height} is behind the ${this.highestTip} seen before`,
         );
+      }
+      if (this.options.chain) {
+        await checkChain(transport, this.options.chain, tip.height);
       }
       return { server: { name, transport }, tip };
     } catch (error) {
@@ -528,4 +538,44 @@ function serverName(server: ElectrumServer): string {
 
 function deviceOnline(): boolean {
   return typeof navigator === "undefined" || navigator.onLine !== false;
+}
+
+// A server on another chain is refused before it learns any address: one sharing the genesis
+// (chipnet and testnet4) differs at the checkpoint, so that is checked when there is one
+async function checkChain(
+  transport: ElectrumTransport,
+  chain: ChainCheck,
+  tipHeight: number,
+): Promise<void> {
+  const checkpoint = chain.checkpoint;
+  if (!checkpoint) {
+    const features = (await transport.request("server.features")) as
+      | { genesis_hash?: unknown }
+      | undefined;
+    const genesis = features?.genesis_hash;
+    if (
+      typeof genesis !== "string" ||
+      genesis.toLowerCase() !== chain.genesisHash
+    ) {
+      throw new Error("its genesis block is another chain's");
+    }
+    return;
+  }
+  if (tipHeight < checkpoint.height) {
+    throw new Error(
+      `its tip ${tipHeight} is below the checkpoint at ${checkpoint.height}`,
+    );
+  }
+  const header = await transport.request("blockchain.block.header", [
+    checkpoint.height,
+  ]);
+  // a block hash is the same double sha256 as a transaction's
+  if (
+    typeof header !== "string" ||
+    (await getTransactionHash(header)) !== checkpoint.hash
+  ) {
+    throw new Error(
+      `its block at height ${checkpoint.height} is another chain's`,
+    );
+  }
 }

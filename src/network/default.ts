@@ -10,12 +10,22 @@ import {
   FailoverTransport,
   type FailoverTransportOptions,
 } from "./FailoverTransport.js";
+import { networkConfig } from "./registry.js";
+
+// The global a network's provider is kept in: the ticker for the built-in networks, as in
+// mainnet-js
+function globalKey(network: Network): string {
+  return (
+    (networkTickerMap as Record<string, string>)[network] ??
+    `${network}Provider`
+  );
+}
 
 export function setGlobalProvider(
   network: Network,
   provider: ElectrumNetworkProvider,
 ): ElectrumNetworkProvider {
-  const accessor = networkTickerMap[network];
+  const accessor = globalKey(network);
   globalThis[accessor] = provider;
   return provider;
 }
@@ -23,12 +33,12 @@ export function setGlobalProvider(
 export function getGlobalProvider(
   network: Network,
 ): ElectrumNetworkProvider | undefined {
-  const accessor = networkTickerMap[network];
+  const accessor = globalKey(network);
   return globalThis[accessor];
 }
 
 export function removeGlobalProvider(network: Network): void {
-  const accessor = networkTickerMap[network];
+  const accessor = globalKey(network);
   if (accessor in globalThis) {
     delete globalThis[accessor];
   }
@@ -53,14 +63,16 @@ export async function createProvider(
 /**
  * A provider over an ordered list of servers that moves to the next one when the server in use is
  * lost, lags or (with `staleTipSeconds`) serves a stale tip; see FailoverTransport. With one server
- * it never contacts another. `onServerChange` tells which server is in use.
+ * it never contacts another. `onServerChange` tells which server is in use. A server not on the
+ * network's chain (its `chain` in the registry) is passed over before it learns any address.
  */
 export async function createFailoverProvider(
   network: Network,
   servers: string[],
   options?: FailoverTransportOptions,
 ): Promise<ElectrumNetworkProvider> {
-  const transport = new FailoverTransport(servers, options);
+  const { chain } = networkConfig(network);
+  const transport = new FailoverTransport(servers, { ...options, chain });
   return new ElectrumNetworkProvider(transport, network);
 }
 

@@ -21,9 +21,3 @@ export const regtestServers = [
   "ws://127.0.0.1:60003",
   "ws://host.docker.internal:60003",
 ];
-
-export const defaultServers = {
-  mainnet: mainnetServers,
-  testnet: testnetServers,
-  regtest: regtestServers,
-};

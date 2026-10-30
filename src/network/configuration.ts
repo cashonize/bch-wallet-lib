@@ -1,9 +1,9 @@
 import { Network } from "../interface.js";
 import { getRuntimePlatform } from "../util/index.js";
-import * as primary from "./constant.js";
+import { networkConfig } from "./registry.js";
 
 /**
- * Servers that override the built-in ones per network: a URL (`wss://host:port`), several URLs
+ * Servers that override the network's own (built in, or given to registerNetwork): a URL (`wss://host:port`), several URLs
  * separated by commas, or a list of URLs. A list is tried in order when connecting.
  */
 export class DefaultProvider {
@@ -28,15 +28,16 @@ export function getDefaultServers(network: Network): string[] {
     env = {};
   }
 
-  const envNames = {
-    mainnet: "ELECTRUM",
-    testnet: "ELECTRUM_TESTNET",
-    regtest: "ELECTRUM_REGTEST",
-  };
+  // ELECTRUM for mainnet, ELECTRUM_<NAME> for the others, e.g. ELECTRUM_TESTNET
+  let envName = "ELECTRUM";
+  if (network !== Network.MAINNET) {
+    envName = `ELECTRUM_${network.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+  }
 
+  const servers = networkConfig(network).servers ?? [];
   const configured = parseServers(DefaultProvider.servers[network]);
   if (configured.length > 0) return configured;
-  const fromEnv = parseServers(env[envNames[network]]);
+  const fromEnv = parseServers(env[envName]);
   if (fromEnv.length > 0) return fromEnv;
-  return primary.defaultServers[network];
+  return servers;
 }

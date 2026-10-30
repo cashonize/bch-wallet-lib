@@ -10,14 +10,10 @@ import {
   WalletCacheEntry,
   WalletCacheI,
 } from "../cache/walletCache.js";
-import {
-  NetworkType,
-  networkPrefixMap,
-  prefixFromNetworkMap,
-} from "../enum.js";
+import { NetworkType } from "../enum.js";
 import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
-import { TxI, Utxo } from "../interface.js";
+import { Network, TxI, Utxo } from "../interface.js";
 import { toCashaddr, toTokenaddr } from "../util/deriveCashaddr.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
@@ -71,7 +67,7 @@ export class WatchWallet extends BaseWallet {
 
   constructor(
     name = "",
-    network = NetworkType.Mainnet,
+    network: Network = NetworkType.Mainnet,
     walletType = WalletTypeEnum.Watch,
   ) {
     super(network);
@@ -100,7 +96,7 @@ export class WatchWallet extends BaseWallet {
       this.publicKeyHash = publicKeyHash;
 
       address = encodeCashAddress({
-        prefix: prefixFromNetworkMap[this.network],
+        prefix: this.networkPrefix,
         type: "p2pkh",
         payload: publicKeyHash,
       }).address;
@@ -117,7 +113,7 @@ export class WatchWallet extends BaseWallet {
 
       const decoded = assertSuccess(decodeCashAddress(address));
 
-      if (networkPrefixMap[decoded.prefix] !== this.network) {
+      if (decoded.prefix !== this.networkPrefix) {
         throw Error(
           `a ${decoded.prefix} address cannot be watched from a ${this.network} Wallet`,
         );

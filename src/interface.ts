@@ -6,7 +6,8 @@ export const Network = {
   TESTNET: literal("testnet"),
   REGTEST: literal("regtest"),
 };
-export type Network = (typeof Network)[keyof typeof Network];
+// A built-in network or one added with registerNetwork
+export type Network = (typeof Network)[keyof typeof Network] | (string & {});
 
 export interface Utxo {
   txid: string;

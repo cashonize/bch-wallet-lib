@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 (2026-10-30)
+
+- Networks beyond mainnet, chipnet (`testnet`) and regtest, such as testnet4, scalenet or testnet3, are added by the app with `registerNetwork({ name, addressPrefix, keyVersion, dbName, servers?, chain? })`, without a library change. Its wallets are made with the factory option `network` on the mainnet classes (`HDWallet.fromId(id, { network: "testnet4" })`), its named wallets go to its own database, and its caches, global provider and default servers (`DefaultProvider.servers[name]`, `ELECTRUM_<NAME>`) are its own. A name or database already taken is refused, so no network can share `bchtest` with chipnet. Register before loading a wallet of it and before `pruneWalletCaches`, which drops the cache records of networks it does not know. `networkConfig(name)` and `knownNetworks()` give each network's database name and address prefix. The built-in networks, their ids and databases are unchanged.
+- `createFailoverProvider` refuses a server on another chain before it learns any address: one whose block at the network's checkpoint differs (mainnet at 700000, after the BSV and eCash splits; chipnet at 227000, after it split from testnet4), or for a network without a checkpoint one whose genesis differs. Only `createFailoverProvider` checks: `createProvider` and the global provider a wallet takes without a provider do not. A custom server on another chain that connected before now fails to connect.
+- A wallet's `network` is typed as a network name rather than `NetworkType`, as it can be a registered one.
+
 ## 0.2.0 (2026-10-30)
 
 - New `createFailoverProvider(network, servers, options?)`: a provider over an ordered list of servers that moves to another one when the server in use stays lost, and with `staleTipSeconds` when its tip is stale. Subscriptions move to the new server under the same provider, so wallets and everything else holding the provider follow without `setProvider`. A request that fails because the switch closed its server is sent once more on the new one (a broadcast never is); requests that fail while the server is lost, before any switch, still reject as before. With one server it never contacts another. A bad server URL throws when the provider is made.

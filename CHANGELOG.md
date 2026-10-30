@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-10-30)
 
 - Networks beyond mainnet, chipnet (`testnet`) and regtest, such as testnet4, scalenet or testnet3, are added by the app with `registerNetwork({ name, addressPrefix, keyVersion, dbName, servers?, chain? })`, without a library change. Its wallets are made with the factory option `network` on the mainnet classes (`HDWallet.fromId(id, { network: "testnet4" })`), its named wallets go to its own database, and its caches, global provider and default servers (`DefaultProvider.servers[name]`, `ELECTRUM_<NAME>`) are its own. A name or database already taken is refused, so no network can share `bchtest` with chipnet. Register before loading a wallet of it and before `pruneWalletCaches`, which drops the cache records of networks it does not know. `networkConfig(name)` and `knownNetworks()` give each network's database name and address prefix. The built-in networks, their ids and databases are unchanged.
 - `createFailoverProvider` refuses a server on another chain before it learns any address: one whose block at the network's checkpoint differs (mainnet at 700000, after the BSV and eCash splits; chipnet at 227000, after it split from testnet4), or for a network without a checkpoint one whose genesis differs. Only `createFailoverProvider` checks: `createProvider` and the global provider a wallet takes without a provider do not. A custom server on another chain that connected before now fails to connect.

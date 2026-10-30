@@ -31,6 +31,7 @@ export { default as ElectrumNetworkProvider } from "./network/ElectrumNetworkPro
 export {
   BroadcastRejectedError,
   BroadcastTimeoutError,
+  ElectrumConnectError,
 } from "./network/errors.js";
 export { ElectrumTimeoutError } from "./network/ElectrumTransport.js";
 export type { ElectrumTransportOptions } from "./network/ElectrumTransport.js";

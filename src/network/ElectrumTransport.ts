@@ -27,9 +27,13 @@ export interface ElectrumTransportOptions {
    * so that a request that timed out is sent again on a fresh connection.
    */
   requestTimeout?: number;
+}
+
+/** @internal FailoverTransport's view of a server's connection; not part of the exported options. */
+export interface ElectrumTransportInternalOptions extends ElectrumTransportOptions {
   /**
-   * Told when the connection is lost (once per loss, not for each failed automatic reconnect) and
-   * when it is back. Not told about the first connect, nor anything after close().
+   * Told when the connection is lost and when it is back, once per change. Not told about the first
+   * connect, nor anything after close().
    */
   onConnectionChange?: (connected: boolean) => void;
 }
@@ -90,7 +94,7 @@ export class ElectrumTransport implements Transport {
 
   constructor(
     servers: ElectrumServer | ElectrumServer[],
-    options: ElectrumTransportOptions = {},
+    options: ElectrumTransportInternalOptions = {},
   ) {
     const list = Array.isArray(servers) ? servers : [servers];
     if (list.length === 0) {
@@ -347,22 +351,8 @@ export class ElectrumTransport implements Transport {
       return new ElectrumClient(CLIENT_NAME, PROTOCOL_VERSION, server);
     }
 
-    const url = new URL(server);
-    if (url.protocol !== "wss:" && url.protocol !== "ws:") {
-      throw new Error(
-        `Unsupported electrum server URL '${server}': only wss:// and ws:// are supported.`,
-      );
-    }
-    if (url.pathname !== "/" || url.search || url.hash || url.username) {
-      throw new Error(
-        `Unsupported electrum server URL '${server}': only a host and port are supported.`,
-      );
-    }
-    const encrypted = url.protocol === "wss:";
-    let port = encrypted ? 443 : 80;
-    if (url.port) port = Number(url.port);
-
-    const socket = new ElectrumWebSocket(url.hostname, {
+    const { hostname, port, encrypted } = parseServerUrl(server);
+    const socket = new ElectrumWebSocket(hostname, {
       port,
       encrypted,
       // Bounds the socket's open and version negotiation, and is how long a connection may stay
@@ -381,6 +371,29 @@ export class ElectrumTransport implements Transport {
     });
     return new ElectrumClient(CLIENT_NAME, PROTOCOL_VERSION, socket);
   }
+}
+
+/** A server URL's parts; throws for anything but a plain `ws://` or `wss://` host and port. */
+export function parseServerUrl(server: string): {
+  hostname: string;
+  port: number;
+  encrypted: boolean;
+} {
+  const url = new URL(server);
+  if (url.protocol !== "wss:" && url.protocol !== "ws:") {
+    throw new Error(
+      `Unsupported electrum server URL '${server}': only wss:// and ws:// are supported.`,
+    );
+  }
+  if (url.pathname !== "/" || url.search || url.hash || url.username) {
+    throw new Error(
+      `Unsupported electrum server URL '${server}': only a host and port are supported.`,
+    );
+  }
+  const encrypted = url.protocol === "wss:";
+  let port = encrypted ? 443 : 80;
+  if (url.port) port = Number(url.port);
+  return { hostname: url.hostname, port, encrypted };
 }
 
 function subscriptionKey(method: string, params: unknown[]): string {

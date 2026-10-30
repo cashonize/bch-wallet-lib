@@ -4,16 +4,14 @@ import { Limiter } from "../util/mapConcurrent.js";
 import {
   DEFAULT_CONNECT_TIMEOUT,
   ElectrumTransport,
+  parseServerUrl,
   type ElectrumServer,
   type ElectrumTransportOptions,
 } from "./ElectrumTransport.js";
-import { serverErrorCode } from "./errors.js";
+import { ElectrumConnectError, serverErrorCode } from "./errors.js";
 import type { Transport, Unsubscribe } from "./Transport.js";
 
-export interface FailoverTransportOptions extends Omit<
-  ElectrumTransportOptions,
-  "onConnectionChange"
-> {
+export interface FailoverTransportOptions extends ElectrumTransportOptions {
   /**
    * Milliseconds a lost connection gets to come back before the next server is tried. Default:
    * electrum-cash's 5 s reconnect delay plus the connect timeout, so that one reconnect attempt
@@ -21,14 +19,21 @@ export interface FailoverTransportOptions extends Omit<
    */
   gracePeriod?: number;
   /**
-   * A server whose tip is older than this many seconds is left for the next one, and skipped as a
-   * candidate (at startup it is still taken when no server has a fresher tip). Off by default.
+   * A server whose newest tip is older than this many seconds is left for the next one, and skipped
+   * as a candidate (at startup it is still taken when no server has a fresher tip). Checked when a
+   * tip arrives and every quarter of it (at least every grace period); a stale server is left at
+   * most once per check interval. Off by default.
    */
   staleTipSeconds?: number;
   /** Whether the device is online; default `navigator.onLine`, true where there is no navigator. */
   isOnline?: () => boolean;
   /** Told the server (as given) every time the transport settles on one: at connect and on a switch. */
   onServerChange?: (server: string) => void;
+  /**
+   * Told when the connection of the server in use is lost and when it is back, once per change; a
+   * switch to another server counts as back. Not told about the first connect.
+   */
+  onConnectionChange?: (connected: boolean) => void;
 }
 
 // electrum-cash's delay before it reconnects a lost connection
@@ -53,23 +58,10 @@ interface Entry {
 }
 
 /**
- * Electrum transport over an ordered list of servers, one ElectrumTransport at a time.
- *
- * Connects to the first server that answers with a tip; a server that is unreachable, more than one
- * block behind the highest tip seen, or (with `staleTipSeconds`) on a stale tip is passed over.
- * Once connected it stays there: a lost connection that comes back within the grace period changes
- * nothing. After that, and only while the device is online, the lost server gets one reconnect of
- * its own, and then it walks the list for the next server that passes the same checks, moves every
- * subscription there and closes the old one. The checks come before any subscription moves, so a
- * server learns the subscribed addresses only once it is the one in use, and a candidate that
- * refuses a subscription ends the walk, so one switch shows them to at most one more server. A
- * device that is offline never switches: it would hand the subscriptions to whichever server
- * answers first when the network returns.
- *
- * A server's error response never fails over. A request lost to a switch is sent once more on the
- * new server, except a broadcast, which may have gone through.
- *
- * With one server it never contacts another, and behaves like an ElectrumTransport of that server.
+ * Electrum transport over an ordered list of servers, one single-server ElectrumTransport at a
+ * time, each closed for good once left. A candidate's tip is checked before any subscription moves
+ * there, so a server learns the subscribed addresses only once it is taken. With one server it
+ * never contacts another.
  */
 export class FailoverTransport implements Transport {
   private readonly servers: ElectrumServer[];
@@ -84,9 +76,15 @@ export class FailoverTransport implements Transport {
   private graceTimer?: ReturnType<typeof setTimeout>;
   private closed = false;
   private highestTip?: number;
-  // The stale tip a switch was already tried for, so that each block of a stale server tries once
-  private staleTried?: number;
+  // The newest tip of the server in use, which staleTipSeconds is checked against
+  private lastTip?: HexHeaderI;
+  private staleTimer?: ReturnType<typeof setInterval>;
+  private nextStaleAttempt = 0;
+  // Whether the server in use was last reported connected (see onConnectionChange)
+  private reportedUp = true;
   private readonly entries = new Set<Entry>();
+  // One settle at a time per server: two at once would subscribe an entry twice there
+  private readonly settling = new Map<ElectrumTransport, Promise<void>>();
   // Candidates connected but not yet in use, closed by close()
   private readonly probing = new Set<ElectrumTransport>();
 
@@ -97,6 +95,10 @@ export class FailoverTransport implements Transport {
     const list = Array.isArray(servers) ? servers : [servers];
     if (list.length === 0) {
       throw new Error("At least one electrum server is required.");
+    }
+    // a bad URL is the caller's mistake, not an unreachable server, so it throws here
+    for (const server of list) {
+      if (typeof server === "string") parseServerUrl(server);
     }
     this.servers = list;
     this.options = options;
@@ -120,6 +122,7 @@ export class FailoverTransport implements Transport {
   async close(): Promise<void> {
     this.closed = true;
     clearTimeout(this.graceTimer);
+    clearInterval(this.staleTimer);
     const transports = new Set(this.probing);
     if (this.current) transports.add(this.current.transport);
     if (this.leaving) transports.add(this.leaving.transport);
@@ -208,11 +211,7 @@ export class FailoverTransport implements Transport {
 
   private async start(): Promise<void> {
     const failures = await this.walk();
-    if (failures) {
-      throw new Error(
-        `Could not connect to an electrum server (${failures.join("; ")}).`,
-      );
-    }
+    if (failures) throw new ElectrumConnectError(failures);
   }
 
   // Resolves to whether the transport left its server. A server lost is left only while it stays
@@ -253,10 +252,10 @@ export class FailoverTransport implements Transport {
   private async walk(from?: {
     server: Server;
     unlessBack: boolean;
-  }): Promise<string[] | undefined> {
+  }): Promise<Failure[] | undefined> {
     const leaving = from?.server;
     const isBack = () => from?.unlessBack && leaving?.transport.connected;
-    const failures: string[] = [];
+    const failures: Failure[] = [];
     // At startup a reachable server on a stale tip is taken when no server has a fresher one, so a
     // device clock that is off cannot leave the wallet without a server
     let fallback: { server: Server; tip: HexHeaderI } | undefined;
@@ -276,7 +275,7 @@ export class FailoverTransport implements Transport {
       // a device that went offline fails every server alike: walking on would hand the wallet to
       // whichever server answers first once the network is back
       if (tried > 0 && !this.isOnline()) {
-        failures.push("the device is offline");
+        failures.push({ server: undefined, reason: "the device is offline" });
         break;
       }
       tried++;
@@ -284,12 +283,12 @@ export class FailoverTransport implements Transport {
       try {
         probed = await this.probe(entry, name);
       } catch (error) {
-        failures.push(`${name}: ${(error as Error).message}`);
+        failures.push({ server: name, reason: (error as Error).message });
         continue;
       }
       if (this.closed) break;
       if (this.isStale(probed.tip)) {
-        failures.push(`${name}: its tip is stale`);
+        failures.push({ server: name, reason: "its tip is stale" });
         if (!leaving && !fallback) fallback = probed;
         else this.abandon(probed.server.transport);
         continue;
@@ -302,13 +301,16 @@ export class FailoverTransport implements Transport {
         if (fallback) this.abandon(fallback.server.transport);
         return undefined;
       }
-      failures.push(`${name}: the subscriptions could not be moved there`);
+      failures.push({
+        server: name,
+        reason: "the subscriptions could not be moved there",
+      });
       // it was shown the subscriptions already; walking on would show them to yet another operator
       // within one switch, so the next server waits for the next grace period
       break;
     }
     if (fallback && !this.closed) {
-      this.staleTried = fallback.tip.height;
+      this.nextStaleAttempt = Date.now() + this.staleInterval();
       if (await this.take(fallback.server, fallback.tip, leaving))
         return undefined;
     }
@@ -378,16 +380,35 @@ export class FailoverTransport implements Transport {
     clearTimeout(this.graceTimer);
     this.graceTimer = undefined;
     this.highestTip = Math.max(this.highestTip ?? 0, tip.height);
+    this.lastTip = tip;
+    if (this.options.staleTipSeconds !== undefined && this.servers.length > 1) {
+      this.staleTimer ??= setInterval(
+        () => this.checkStale(),
+        this.staleInterval(),
+      );
+    }
     try {
       this.options.onServerChange?.(server.name);
     } catch (error) {
       console.error(error);
     }
+    this.report(true);
     return true;
   }
 
+  private settle(target: ElectrumTransport): Promise<void> {
+    const previous = this.settling.get(target) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(() => this.settleNow(target));
+    this.settling.set(target, next);
+    const forget = () => {
+      if (this.settling.get(target) === next) this.settling.delete(target);
+    };
+    next.then(forget, forget);
+    return next;
+  }
+
   // Subscribes every entry that is not yet subscribed on the target, also those added meanwhile
-  private async settle(target: ElectrumTransport): Promise<void> {
+  private async settleNow(target: ElectrumTransport): Promise<void> {
     const limiter = new Limiter(MOVE_CONCURRENCY);
     for (;;) {
       const pending = [...this.entries].filter(
@@ -422,9 +443,9 @@ export class FailoverTransport implements Transport {
     transport: ElectrumTransport,
     connected: boolean,
   ): void {
-    if (transport !== this.current?.transport || this.servers.length < 2) {
-      return;
-    }
+    if (transport !== this.current?.transport) return;
+    this.report(connected);
+    if (this.servers.length < 2) return;
     if (connected) {
       clearTimeout(this.graceTimer);
       this.graceTimer = undefined;
@@ -453,14 +474,37 @@ export class FailoverTransport implements Transport {
     );
   }
 
+  private report(connected: boolean): void {
+    if (this.reportedUp === connected) return;
+    this.reportedUp = connected;
+    try {
+      this.options.onConnectionChange?.(connected);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   private noteTip(header: unknown): void {
     const tip = header as HexHeaderI | undefined;
     if (typeof tip?.height !== "number") return;
     this.highestTip = Math.max(this.highestTip ?? 0, tip.height);
-    if (this.isStale(tip) && tip.height !== this.staleTried) {
-      this.staleTried = tip.height;
-      void this.failover("stale");
-    }
+    this.lastTip = tip;
+    this.checkStale();
+  }
+
+  // A server that stopped following the chain sends no new tip, so the last one is also checked on
+  // a timer; a stale server is left at most once per interval, as each try walks the whole list
+  private checkStale(): void {
+    const tip = this.lastTip;
+    if (this.closed || !tip || !this.isStale(tip)) return;
+    if (Date.now() < this.nextStaleAttempt) return;
+    this.nextStaleAttempt = Date.now() + this.staleInterval();
+    void this.failover("stale");
+  }
+
+  private staleInterval(): number {
+    const seconds = this.options.staleTipSeconds ?? 0;
+    return Math.max(this.gracePeriod, (seconds * 1000) / 4);
   }
 
   private isStale(tip: HexHeaderI): boolean {
@@ -475,6 +519,8 @@ export class FailoverTransport implements Transport {
     return Date.now() / 1000 - timestamp > staleTipSeconds;
   }
 }
+
+type Failure = ElectrumConnectError["failures"][number];
 
 function serverName(server: ElectrumServer): string {
   return typeof server === "string" ? server : server.host;

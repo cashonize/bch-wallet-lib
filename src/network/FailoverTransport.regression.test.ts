@@ -2,6 +2,7 @@ import { FakeServer } from "#test/fakeElectrumServer.js";
 import { delay } from "../util/delay.js";
 import type { HexHeaderI } from "../interface.js";
 import { ElectrumTransport } from "./ElectrumTransport.js";
+import { ElectrumConnectError } from "./errors.js";
 import { FailoverTransport } from "./FailoverTransport.js";
 
 // Same harness as FailoverTransport.test.ts: each server given by URL gets a new FakeServer per
@@ -235,14 +236,16 @@ describe("a switch that is given up", () => {
     await delay(100);
 
     // a comes back (a request reconnects it at once)
+    // a connect attempt still under way when a revives gives up after its timeout, so a request
+    // can fail once before one gets through
     revive(a);
-    await transport.request("blockchain.relayfee");
-    await delay(100);
+    await vi.waitFor(() => transport.request("blockchain.relayfee"));
 
-    const subscribedOnA = a.sockets.flatMap((s) =>
-      s.calls("blockchain.address.subscribe").map((call) => call.params[0]),
-    );
-    expect(subscribedOnA).toContain(address2);
+    const subscribedOnA = () =>
+      a.sockets.flatMap((s) =>
+        s.calls("blockchain.address.subscribe").map((call) => call.params[0]),
+      );
+    await vi.waitFor(() => expect(subscribedOnA()).toContain(address2));
     a.sockets[0].notify("blockchain.address.subscribe", [address2, "paid"]);
     await vi.waitFor(() => expect(statuses.at(-1)).toEqual([address2, "paid"]));
   });
@@ -306,10 +309,219 @@ describe("ElectrumTransport's onConnectionChange", () => {
       expect(changes).toEqual([false]);
 
       revive(a);
-      await single.request("blockchain.relayfee");
+      await vi.waitFor(() => single.request("blockchain.relayfee"));
       expect(changes).toEqual([false, true]);
     } finally {
       await single.close();
     }
+  });
+});
+
+describe("concurrent settles on the server that stays", () => {
+  test("a given-up switch whose server comes back delivers each notification once, and none after unsubscribe", async () => {
+    const a = host("a.example");
+    const b = host("b.example");
+    let heldId: unknown;
+    b.customize = (fake) => {
+      fake.handlers.set("blockchain.address.subscribe", ([addr]) => {
+        if (addr === address) {
+          heldId = fake.calls("blockchain.address.subscribe").at(-1)!.id;
+          return undefined;
+        }
+        return { result: `b status of ${String(addr)}` };
+      });
+    };
+    transport = new FailoverTransport([a.url, b.url], {
+      connectTimeout: 50,
+      requestTimeout: 400,
+      gracePeriod: 150,
+    });
+    await transport.subscribe(
+      "blockchain.address.subscribe",
+      [address],
+      () => {},
+    );
+    kill(a);
+    await vi.waitFor(() => expect(heldId).toBeDefined());
+    const statuses: unknown[] = [];
+    const unsubscribe = await transport.subscribe(
+      "blockchain.address.subscribe",
+      [address2],
+      (data) => statuses.push(data),
+    );
+
+    // a is reachable again (electrum-cash's own retry is seconds away), b refuses: the switch is
+    // given up and address2 is handed back to a
+    revive(a);
+    b.sockets[0].respond(heldId, { error: { code: 1, message: "refused" } });
+    await vi.waitFor(() => expect(transport.server).toBe(a.url));
+    await vi.waitFor(() =>
+      expect(a.sockets.some((s) => s.connected)).toBe(true),
+    );
+    await delay(200);
+
+    const live = a.sockets.find((s) => s.connected)!;
+    statuses.length = 0;
+    live.notify("blockchain.address.subscribe", [address2, "paid"]);
+    await delay(50);
+    expect.soft(statuses).toEqual([[address2, "paid"]]);
+
+    await unsubscribe();
+    statuses.length = 0;
+    live.notify("blockchain.address.subscribe", [address2, "after"]);
+    await delay(50);
+    expect.soft(statuses).toEqual([]);
+  });
+});
+
+describe("a tip that stops moving", () => {
+  test(
+    "leaves a server whose tip goes stale while it is in use and sends no new block",
+    { timeout: 10_000 },
+    async () => {
+      const a = host("a.example");
+      const b = host("b.example");
+      transport = new FailoverTransport([a.url, b.url], {
+        connectTimeout: 50,
+        requestTimeout: 400,
+        gracePeriod: 150,
+        staleTipSeconds: 1,
+      });
+      // a wallet's watchBlocks / getBlockHeight: the tip is learned from the subscription only
+      await transport.subscribe("blockchain.headers.subscribe", [], () => {});
+      expect(transport.server).toBe(a.url);
+
+      // a stops following the chain: no further header; b keeps up
+      const refresh = setInterval(() => (b.tip = header(101)), 200);
+      try {
+        await vi.waitFor(() => expect(transport.server).toBe(b.url), {
+          timeout: 5_000,
+        });
+      } finally {
+        clearInterval(refresh);
+      }
+    },
+  );
+});
+
+describe("unsubscribe during a switch", () => {
+  test("an entry unsubscribed while the switch moves it is not left subscribed on the new server", async () => {
+    const a = host("a.example");
+    const b = host("b.example");
+    let heldId: unknown;
+    b.customize = (fake) => {
+      fake.handlers.set("blockchain.address.subscribe", ([addr]) => {
+        heldId = fake.calls("blockchain.address.subscribe").at(-1)!.id;
+        return addr === address ? undefined : { result: "x" };
+      });
+    };
+    transport = new FailoverTransport([a.url, b.url], {
+      connectTimeout: 50,
+      requestTimeout: 2000,
+      gracePeriod: 150,
+    });
+    const statuses: unknown[] = [];
+    const unsubscribe = await transport.subscribe(
+      "blockchain.address.subscribe",
+      [address],
+      (data) => statuses.push(data),
+    );
+    kill(a);
+    await vi.waitFor(() => expect(heldId).toBeDefined());
+    await unsubscribe();
+    b.sockets[0].respond(heldId, { result: "late" });
+    await vi.waitFor(() => expect(transport.server).toBe(b.url));
+    await delay(50);
+    statuses.length = 0;
+    b.sockets[0].notify("blockchain.address.subscribe", [address, "paid"]);
+    await delay(50);
+    expect(statuses).toEqual([]);
+  });
+});
+
+describe("FailoverTransport's onConnectionChange", () => {
+  test("reports the server in use lost and back, and a switch as back", async () => {
+    const a = host("a.example");
+    const b = host("b.example");
+    const changes: boolean[] = [];
+    transport = new FailoverTransport([a.url, b.url], {
+      connectTimeout: 50,
+      requestTimeout: 400,
+      gracePeriod: 150,
+      onConnectionChange: (connected) => changes.push(connected),
+    });
+    await transport.request("blockchain.relayfee");
+    expect(changes).toEqual([]);
+
+    kill(a);
+    await vi.waitFor(() => expect(transport.server).toBe(b.url));
+    expect(changes).toEqual([false, true]);
+  });
+
+  test("works with one server too, which never switches", async () => {
+    const a = host("a.example");
+    const changes: boolean[] = [];
+    transport = new FailoverTransport([a.url], {
+      connectTimeout: 50,
+      requestTimeout: 200,
+      onConnectionChange: (connected) => changes.push(connected),
+    });
+    await transport.request("blockchain.relayfee");
+    kill(a);
+    await expect(transport.request("blockchain.relayfee")).rejects.toThrow();
+    revive(a);
+    await vi.waitFor(() => transport.request("blockchain.relayfee"));
+    expect(changes).toEqual([false, true]);
+  });
+});
+
+describe("starting", () => {
+  test("a bad server URL throws when the transport is made, not as an unreachable server", () => {
+    expect(
+      () =>
+        new FailoverTransport(["wss://a.example:50004", "https://b.example"]),
+    ).toThrow(/only wss:\/\/ and ws:\/\//);
+  });
+
+  test("no server to start on is an ElectrumConnectError naming each server", async () => {
+    const a = host("a.example");
+    const b = host("b.example");
+    a.down = true;
+    b.down = true;
+    transport = new FailoverTransport([a.url, b.url], {
+      connectTimeout: 50,
+      requestTimeout: 200,
+    });
+    const error = await transport.connect().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ElectrumConnectError);
+    expect(
+      (error as ElectrumConnectError).failures.map((f) => f.server),
+    ).toEqual([a.url, b.url]);
+  });
+});
+
+describe("a stale server", () => {
+  test("is left at most once per check interval, not on every stale block", async () => {
+    const a = host("a.example");
+    const b = host("b.example");
+    // b is stale too, so every try to leave a walks to b and gives up
+    b.tip = header(100, now() - 3600);
+    transport = new FailoverTransport([a.url, b.url], {
+      connectTimeout: 50,
+      requestTimeout: 400,
+      gracePeriod: 2_000,
+      staleTipSeconds: 1,
+    });
+    const notify = (height: number) =>
+      a.sockets[0].notify("blockchain.headers.subscribe", [
+        header(height, now() - 3600),
+      ]);
+    await transport.subscribe("blockchain.headers.subscribe", [], () => {});
+    for (let height = 101; height <= 105; height++) {
+      notify(height);
+      await delay(50);
+    }
+    await delay(300);
+    expect(b.sockets.length).toBe(1);
   });
 });

@@ -6,6 +6,23 @@ const ALREADY_KNOWN_REASONS = [
 ];
 
 /**
+ * Thrown when a failover provider finds no server to start on: `failures` holds each server tried
+ * and why it was passed over (`server` is undefined for "the device is offline").
+ */
+export class ElectrumConnectError extends Error {
+  readonly failures: { server: string | undefined; reason: string }[];
+
+  constructor(failures: { server: string | undefined; reason: string }[]) {
+    const list = failures
+      .map(({ server, reason }) => (server ? `${server}: ${reason}` : reason))
+      .join("; ");
+    super(`Could not connect to an electrum server (${list}).`);
+    this.name = "ElectrumConnectError";
+    this.failures = failures;
+  }
+}
+
+/**
  * Thrown when the server answers a broadcast with an error. `reason` is the node's reject reason
  * (BCHN's, e.g. "txn-mempool-conflict", "Missing inputs", "dust"), `txid` the refused
  * transaction's id and `cause` the server's error. The message is the server's own. A broadcast that times out or

@@ -20,7 +20,7 @@ Not covered on a real chain yet:
 
 - HD wallets with tokens and the coin options (`utxoIds`, `excludeUtxoIds`, `ensureUtxos`, `tokenUtxoIds`), HD burns, HD wallets with hundreds of token coins past the gap limit.
 - Reconnects, provider switching and watch errors: those files always build a mem-cash provider.
-- Chain events: reorgs, a conflicting spend from another wallet on the same keys, Fulcrum stopping mid-send (the broadcast timeout), failover. `paryon_regtest` (`~/ParyonUSD/paryon_regtest`) already has reorg, partition and Fulcrum stop controls and a three-node layout; a chaos file could drive it, on its own data directory, never `~/BCH-infra/regtest`.
+- Chain events: reorgs, a conflicting spend from another wallet on the same keys, Fulcrum stopping mid-send (the broadcast timeout). Failover was run by hand against two real Fulcrums on `paryon_regtest` for 0.2.0 (stop, freeze, lagging server, single server, close mid-switch), but no suite file runs it yet. `paryon_regtest` (`~/ParyonUSD/paryon_regtest`) already has reorg, partition and Fulcrum stop controls and a three-node layout; a chaos file could drive it, on its own data directory, never `~/BCH-infra/regtest`.
 - Immature coinbases in coin selection.
 - Regtest is not in CI.
 

@@ -8,6 +8,8 @@ bch-wallet-lib is a Bitcoin Cash wallet library, continued from mainnet-js `4.0.
 
 `docs/consumer-notes.md` lists where Cashonize reimplements or works around library helpers, and the API rules that follow from it (pure functions over one utxo snapshot, caller-controlled concurrency, explicit coin choices, no side effects from reads, typed errors). Read it before adding or changing public API.
 
+`docs/electrum-failover.md` explains `createFailoverProvider`: the trust and privacy rules its switching follows and why failover lives in the transport rather than the app.
+
 `docs/testing.md` describes the test layers, what each cannot catch, and what is still to build.
 
 ## Commands
@@ -29,7 +31,7 @@ Run one file: `USE_MOCK_PROVIDER=1 pnpm exec vitest run --config test/vitest.con
 
 - `src/wallet/`: the wallet classes. `Base.ts` (`BaseWallet`: sending, token operations, history, watching), `Watch.ts` (watch-only), `Wif.ts` (single-address), `HDWallet.ts` (HD, address discovery over subscriptions, multiple derivation branches).
 - `src/transaction/`: transaction building, coin selection and fees (`Wif.ts`), and the token conservation check (`tokenConservation.ts`).
-- `src/network/`: `ElectrumNetworkProvider` (the provider wallets talk to) over a `Transport`, `ElectrumTransport` (that transport over electrum-cash), `default.ts` (global providers per network), `MockNetworkProvider` (the in-memory chain used by `pnpm test`, test infrastructure left out of the build; tests set up providers through `test/providers.ts`).
+- `src/network/`: `ElectrumNetworkProvider` (the provider wallets talk to) over a `Transport`, `ElectrumTransport` (that transport over electrum-cash, one server), `FailoverTransport` (a list of servers, one `ElectrumTransport` at a time, with the switching rules), `default.ts` (global providers per network), `MockNetworkProvider` (the in-memory chain used by `pnpm test`, test infrastructure left out of the build; tests set up providers through `test/providers.ts`).
 - `src/cache/`: the IndexedDB cache (`Config.UseIndexedDBCache`), and `walletCache` (HD address and key cache).
 - `src/db/`: `StorageProvider` (wallet persistence). `src/indexeddb/`: the browser `IndexedDBProvider`.
 - `src/history/`, `src/message/`, `src/rate/`, `src/util/`: history decoding, signed messages, exchange rates, helpers.

@@ -21,6 +21,7 @@ export { SignedMessage } from "./message/signed.js";
 export { DefaultProvider } from "./network/configuration.js";
 // network
 export {
+  createFailoverProvider,
   createProvider,
   getNetworkProvider,
   removeGlobalProvider,
@@ -30,9 +31,11 @@ export { default as ElectrumNetworkProvider } from "./network/ElectrumNetworkPro
 export {
   BroadcastRejectedError,
   BroadcastTimeoutError,
+  ElectrumConnectError,
 } from "./network/errors.js";
 export { ElectrumTimeoutError } from "./network/ElectrumTransport.js";
 export type { ElectrumTransportOptions } from "./network/ElectrumTransport.js";
+export type { FailoverTransportOptions } from "./network/FailoverTransport.js";
 export type {
   ElectrumRawTransaction,
   ElectrumRawTransactionVinWithValues,

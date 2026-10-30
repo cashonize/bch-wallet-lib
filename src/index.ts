@@ -19,6 +19,12 @@ export type {
 export { SignedMessage } from "./message/signed.js";
 // provider
 export { DefaultProvider } from "./network/configuration.js";
+export {
+  knownNetworks,
+  networkConfig,
+  registerNetwork,
+} from "./network/registry.js";
+export type { ChainCheck, NetworkConfig } from "./network/registry.js";
 // network
 export {
   createFailoverProvider,

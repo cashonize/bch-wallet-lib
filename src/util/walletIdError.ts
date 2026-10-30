@@ -1,4 +1,4 @@
-import { NetworkType } from "../enum.js";
+import { isKnownNetwork } from "../network/registry.js";
 import { WalletTypeEnum } from "../wallet/enum.js";
 import { InvalidWalletIdError } from "../wallet/errors.js";
 
@@ -20,7 +20,7 @@ export function networkPrefixError(
   network: string,
 ): InvalidWalletIdError {
   const kind = walletIdKind(walletType);
-  if (Object.values<string | undefined>(NetworkType).includes(networkGiven)) {
+  if (isKnownNetwork(networkGiven)) {
     return new InvalidWalletIdError(
       `Network prefix ${networkGiven} to a ${network} wallet`,
       { kind, reason: "network" },

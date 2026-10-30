@@ -19,7 +19,9 @@ import {
   WalletCacheI,
 } from "../cache/walletCache.js";
 import { Config } from "../config.js";
-import { NetworkType, prefixFromNetworkMap } from "../enum.js";
+import { NetworkType } from "../enum.js";
+import type { Network } from "../interface.js";
+import { networkConfig } from "../network/registry.js";
 import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
 import { TxI, Utxo } from "../interface.js";
@@ -121,12 +123,13 @@ export class HDWallet extends BaseWallet {
   private refetching?: Promise<void>;
 
   public get networkPrefix(): CashAddressNetworkPrefix {
-    return prefixFromNetworkMap[this.network];
+    return networkConfig(this.network)
+      .addressPrefix as CashAddressNetworkPrefix;
   }
 
   /// Create an uninitialized HDWallet, this method should not be called directly
   /// Instead static methods such as `newRandom` or `fromId` should be used
-  constructor(network: NetworkType = NetworkType.Mainnet) {
+  constructor(network: Network = NetworkType.Mainnet) {
     super(network);
 
     // @ts-ignore
@@ -186,7 +189,7 @@ export class HDWallet extends BaseWallet {
       this.xPriv = assertSuccess(
         encodeHdPrivateKey({
           ...node,
-          network: this.network === NetworkType.Mainnet ? "mainnet" : "testnet",
+          network: networkConfig(this.network).keyVersion,
           node: node,
         }),
       ).hdPrivateKey;
@@ -199,7 +202,7 @@ export class HDWallet extends BaseWallet {
       this.xPub = assertSuccess(
         encodeHdPublicKey({
           node: this.xPubNode,
-          network: this.network === NetworkType.Mainnet ? "mainnet" : "testnet",
+          network: networkConfig(this.network).keyVersion,
         }),
       ).hdPublicKey;
     } else if (xPriv) {
@@ -207,13 +210,10 @@ export class HDWallet extends BaseWallet {
       this.xPriv = xPriv;
 
       const decoded = assertSuccess(decodeHdPrivateKey(xPriv));
-      if (
-        decoded.network !==
-        (this.network === NetworkType.Mainnet ? "mainnet" : "testnet")
-      ) {
+      if (decoded.network !== networkConfig(this.network).keyVersion) {
         throw new Error(
           `xPriv network (${decoded.network}) does not match wallet network (${
-            this.network === NetworkType.Mainnet ? "mainnet" : "testnet"
+            networkConfig(this.network).keyVersion
           })`,
         );
       }
@@ -226,18 +226,15 @@ export class HDWallet extends BaseWallet {
       this.xPub = assertSuccess(
         encodeHdPublicKey({
           node: this.xPubNode,
-          network: this.network === NetworkType.Mainnet ? "mainnet" : "testnet",
+          network: networkConfig(this.network).keyVersion,
         }),
       ).hdPublicKey;
     } else if (xPub) {
       const decoded = assertSuccess(decodeHdPublicKey(xPub));
-      if (
-        decoded.network !==
-        (this.network === NetworkType.Mainnet ? "mainnet" : "testnet")
-      ) {
+      if (decoded.network !== networkConfig(this.network).keyVersion) {
         throw new Error(
           `xPriv network (${decoded.network}) does not match wallet network (${
-            this.network === NetworkType.Mainnet ? "mainnet" : "testnet"
+            networkConfig(this.network).keyVersion
           })`,
         );
       }

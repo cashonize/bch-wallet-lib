@@ -7,6 +7,8 @@ import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 export interface MockNetworkProviderOptions {
   /** Indexer config passed to createIndexer. */
   indexerConfig?: Partial<IndexerConfig>;
+  /** The network it serves, regtest by default; set the indexer's addressPrefix to match */
+  network?: string;
 }
 
 // Test infrastructure, left out of the build (tsconfig.build.json) so that no entry reaches
@@ -28,7 +30,7 @@ export class MockNetworkProvider extends ElectrumNetworkProvider {
       addressPrefix: "bchreg",
       ...options?.indexerConfig,
     });
-    super(asTransport(mc), Network.REGTEST);
+    super(asTransport(mc), options?.network ?? Network.REGTEST);
     this.mc = mc;
   }
 

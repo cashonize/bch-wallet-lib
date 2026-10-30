@@ -3,11 +3,13 @@ import {
   decodeBase58AddressFormat,
 } from "@bitauth/libauth";
 import { NetworkType } from "../enum.js";
+import type { Network } from "../interface.js";
+import { networkConfig } from "../network/registry.js";
 import { InvalidWifError } from "../wallet/errors.js";
 
 /**
  * Decodes a WIF without judging it: which network it is for, whether it encodes a compressed
- * key, and the 32-byte private key. Testnet WIFs are also those of chipnet and regtest.
+ * key, and the 32-byte private key. Testnet WIFs are also those of chipnet, regtest and the test networks an app registers.
  *
  * @throws {InvalidWifError} with `reason` `"malformed"` when it is not a WIF.
  */
@@ -50,12 +52,15 @@ export function decodeWif(wif: string): {
   };
 }
 
-// The private key of a WIF a wallet of `network` can use. Regtest takes WIFs of either version
-// byte, as it always did.
-export function wifPrivateKey(wif: string, network: NetworkType): Uint8Array {
+// The private key of a WIF a wallet of `network` can use: one of the network's key version.
+// Regtest takes WIFs of either version byte, as it always did.
+export function wifPrivateKey(wif: string, network: Network): Uint8Array {
   const decoded = decodeWif(wif);
 
-  if (network !== NetworkType.Regtest && decoded.network !== network) {
+  if (
+    network !== NetworkType.Regtest &&
+    (decoded.network as string) !== networkConfig(network).keyVersion
+  ) {
     throw new InvalidWifError(
       `WIF is for ${decoded.network}, expected ${network}`,
       { reason: "network", network: decoded.network },

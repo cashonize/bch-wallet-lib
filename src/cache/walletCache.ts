@@ -14,7 +14,7 @@ import {
   utf8ToBin,
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
-import { prefixFromNetworkMap } from "../enum.js";
+import { isKnownNetwork } from "../network/registry.js";
 import { TxI, Utxo } from "../interface.js";
 import { walletIdKind } from "../util/walletIdError.js";
 import { InvalidWalletIdError } from "../wallet/errors.js";
@@ -121,7 +121,7 @@ export function walletCacheIdFromWalletId(
 ): string | undefined {
   const [walletType, network, arg1, arg2] = walletId.split(":");
   const kind = walletIdKind(walletType);
-  if (!network || !(network in prefixFromNetworkMap)) {
+  if (!isKnownNetwork(network)) {
     throw new InvalidWalletIdError("Not a stored wallet id", {
       kind,
       reason: "network",

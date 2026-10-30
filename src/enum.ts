@@ -1,22 +1,8 @@
-import { CashAddressNetworkPrefix } from "@bitauth/libauth";
-
 export enum NetworkType {
   Mainnet = "mainnet",
   Testnet = "testnet",
   Regtest = "regtest",
 }
-
-export const networkPrefixMap = {
-  bitcoincash: "mainnet",
-  bchtest: "testnet",
-  bchreg: "regtest",
-};
-
-export const prefixFromNetworkMap = {
-  mainnet: CashAddressNetworkPrefix.mainnet,
-  testnet: CashAddressNetworkPrefix.testnet,
-  regtest: CashAddressNetworkPrefix.regtest,
-};
 
 const literal = <L extends string>(l: L): L => l;
 

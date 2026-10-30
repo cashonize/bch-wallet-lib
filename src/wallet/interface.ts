@@ -1,4 +1,4 @@
-import { Utxo } from "../interface.js";
+import { Network, Utxo } from "../interface.js";
 import type ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 
 export interface SendRequestOptionsI {
@@ -48,4 +48,9 @@ export interface WalletFactoryOptions {
    * or used. Without it the wallet uses the global provider. Its network must be the wallet's.
    */
   provider?: ElectrumNetworkProvider;
+  /**
+   * The network of the wallet, for a network added with registerNetwork, on the mainnet classes
+   * (`HDWallet.fromId(id, { network: "scalenet" })`); the testnet and regtest classes fix theirs.
+   */
+  network?: Network;
 }

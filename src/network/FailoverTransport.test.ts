@@ -2,7 +2,10 @@ import { FakeServer } from "#test/fakeElectrumServer.js";
 import { delay } from "../util/delay.js";
 import type { HexHeaderI } from "../interface.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
+import { getTransactionHash } from "../util/transaction.js";
+import { ElectrumConnectError } from "./errors.js";
 import { FailoverTransport } from "./FailoverTransport.js";
+import { createFailoverProvider } from "./default.js";
 
 // Each server given by URL gets a new FakeServer per connection attempt, scripted by its Host
 const sockets = vi.hoisted(() => ({
@@ -337,5 +340,127 @@ describe("FailoverTransport requests", () => {
     expect(
       b.sockets.flatMap((s) => s.calls("blockchain.transaction.broadcast")),
     ).toHaveLength(0);
+  });
+});
+
+describe("FailoverTransport chain check", () => {
+  const ours = header(50, 1_700_000_000).hex;
+  const theirs = header(50, 1_700_000_001).hex;
+  const onChain = (entry: Host, hex: string) => {
+    const create = sockets.create;
+    sockets.create = (name) => {
+      const fake = create(name) as FakeServer;
+      if (hosts.get(name) === entry) {
+        fake.handlers.set("blockchain.block.header", () => ({ result: hex }));
+        fake.handlers.set("server.features", () => ({
+          result: { genesis_hash: hex === ours ? "genesis" : "other" },
+        }));
+      }
+      return fake;
+    };
+  };
+  let create: typeof sockets.create;
+  beforeEach(() => {
+    create = sockets.create;
+  });
+  afterEach(() => {
+    sockets.create = create;
+  });
+
+  test("passes over a server whose checkpoint block is another chain's", async () => {
+    const a = host("a.example");
+    const b = host("b.example");
+    onChain(a, theirs);
+    onChain(b, ours);
+    const hash = await getTransactionHash(ours);
+    transport = new FailoverTransport([a.url, b.url], {
+      ...fast,
+      chain: { genesisHash: "genesis", checkpoint: { height: 50, hash } },
+    });
+    await transport.subscribe(
+      "blockchain.address.subscribe",
+      [address],
+      () => {},
+    );
+    expect(transport.server).toBe(b.url);
+    expect(subscribed(a)).toBe(false);
+  });
+
+  test("refuses a server below the checkpoint, and checks the genesis without one", async () => {
+    const a = host("a.example", 40);
+    onChain(a, ours);
+    transport = new FailoverTransport([a.url], {
+      ...fast,
+      chain: {
+        genesisHash: "genesis",
+        checkpoint: { height: 50, hash: "00" },
+      },
+    });
+    const error = await transport.connect().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ElectrumConnectError);
+    expect((error as ElectrumConnectError).failures[0].reason).toContain(
+      "below the checkpoint",
+    );
+    await transport.close();
+
+    const b = host("b.example");
+    const c = host("c.example");
+    onChain(b, theirs);
+    onChain(c, ours);
+    transport = new FailoverTransport([b.url, c.url], {
+      ...fast,
+      chain: { genesisHash: "genesis" },
+    });
+    await transport.connect();
+    expect(transport.server).toBe(c.url);
+  });
+
+  test("createFailoverProvider checks the network's built-in checkpoint", async () => {
+    const a = host("a.example", 330000);
+    const b = host("b.example", 330000);
+    // the block at chipnet's checkpoint on testnet4 (a) and on chipnet (b), as servers serve it
+    onChain(
+      a,
+      "00000020dd4d488b15505869869b92f040ecacbdd63354f0dbc0d4d123247501000000003add46d53f982a57269eb3028046235a27adce112b26f9142d123f98a8df0e05c1233567977e281ca18dda27",
+    );
+    onChain(
+      b,
+      "00000020e0f3e817a6e85ae3e527c90c78ab42ef3381c77e28dc515975c2de4c000000003761c8e0f5557ba9271777734629540cc34f2a6537160c713155c6b0274c457b6e373567ea28551c0cd40d2e",
+    );
+    const changes: string[] = [];
+    const provider = await createFailoverProvider("testnet", [a.url, b.url], {
+      ...fast,
+      onServerChange: (server) => changes.push(server),
+    });
+    try {
+      await provider.connect();
+      expect(changes).toEqual([b.url]);
+    } finally {
+      await provider.disconnect();
+    }
+  });
+
+  test("a switch passes over a candidate on another chain", async () => {
+    const a = host("a.example");
+    const b = host("b.example");
+    const c = host("c.example");
+    onChain(a, ours);
+    onChain(b, theirs);
+    onChain(c, ours);
+    const hash = await getTransactionHash(ours);
+    transport = new FailoverTransport([a.url, b.url, c.url], {
+      ...fast,
+      chain: { genesisHash: "genesis", checkpoint: { height: 50, hash } },
+    });
+    await transport.subscribe(
+      "blockchain.address.subscribe",
+      [address],
+      () => {},
+    );
+    kill(a);
+    await vi.waitFor(() => expect(subscribed(c)).toBe(true), {
+      timeout: 5000,
+    });
+    expect(subscribed(b)).toBe(false);
   });
 });

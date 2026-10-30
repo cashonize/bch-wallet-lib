@@ -13,6 +13,8 @@ import {
 } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { NetworkType } from "../enum.js";
+import type { Network } from "../interface.js";
+import { networkConfig } from "../network/registry.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
 import { wifPrivateKey } from "../util/decodeWif.js";
 import { WalletTypeEnum } from "./enum.js";
@@ -61,7 +63,7 @@ export class Wallet extends WatchWallet {
   declare name: string;
 
   //#region Constructors and Statics
-  constructor(name = "", network = NetworkType.Mainnet) {
+  constructor(name = "", network: Network = NetworkType.Mainnet) {
     super(name, network);
 
     this.name = name;
@@ -121,9 +123,7 @@ export class Wallet extends WatchWallet {
 
       privateKeyWif = encodePrivateKeyWif(
         privateKey,
-        this.network === NetworkType.Regtest
-          ? NetworkType.Testnet
-          : this.network,
+        networkConfig(this.network).keyVersion,
       );
     }
 

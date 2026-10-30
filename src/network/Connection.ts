@@ -1,5 +1,6 @@
 import { Network } from "../interface.js";
 import { networkTickerMap } from "./constant.js";
+import { knownNetworks } from "./registry.js";
 import {
   createProvider,
   getGlobalProvider,
@@ -42,6 +43,6 @@ async function disconnectProvider(network: Network) {
 }
 
 export async function disconnectProviders(networks?: Network[]) {
-  networks = networks ? networks : (Object.keys(networkTickerMap) as Network[]);
+  networks = networks ? networks : knownNetworks().map((config) => config.name);
   await Promise.all(networks.map((n) => disconnectProvider(n)));
 }

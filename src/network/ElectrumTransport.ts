@@ -228,9 +228,19 @@ export class ElectrumTransport implements Transport {
       client.on("notification", this.route);
       const onChange = this.onConnectionChange;
       if (onChange) {
-        // disconnect(true) in close() removes these too
-        client.on("connected", () => onChange(true));
-        client.on("disconnected", () => onChange(false));
+        // electrum-cash also emits 'disconnected' when a request's own connect fails while the
+        // server is down, so only changes are told; disconnect(true) in close() removes these too
+        let up = true;
+        client.on("connected", () => {
+          if (up) return;
+          up = true;
+          onChange(true);
+        });
+        client.on("disconnected", () => {
+          if (!up) return;
+          up = false;
+          onChange(false);
+        });
       }
       this.client = client;
       return;

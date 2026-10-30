@@ -58,11 +58,13 @@ interface Entry {
  * Connects to the first server that answers with a tip; a server that is unreachable, more than one
  * block behind the highest tip seen, or (with `staleTipSeconds`) on a stale tip is passed over.
  * Once connected it stays there: a lost connection that comes back within the grace period changes
- * nothing. After that, and only while the device is online, it walks the list for the next server
- * that passes the same checks, moves every subscription there and closes the old one. The checks
- * come before any subscription moves, so a server learns the subscribed addresses only once it is
- * the one in use. A device that is offline never switches: it would hand the subscriptions to
- * whichever server answers first when the network returns.
+ * nothing. After that, and only while the device is online, the lost server gets one reconnect of
+ * its own, and then it walks the list for the next server that passes the same checks, moves every
+ * subscription there and closes the old one. The checks come before any subscription moves, so a
+ * server learns the subscribed addresses only once it is the one in use, and a candidate that
+ * refuses a subscription ends the walk, so one switch shows them to at most one more server. A
+ * device that is offline never switches: it would hand the subscriptions to whichever server
+ * answers first when the network returns.
  *
  * A server's error response never fails over. A request lost to a switch is sent once more on the
  * new server, except a broadcast, which may have gone through.
@@ -75,6 +77,8 @@ export class FailoverTransport implements Transport {
   private readonly gracePeriod: number;
   private readonly isOnline: () => boolean;
   private current?: Server;
+  // The server a switch is leaving, until the switch ends: close() must reach it too
+  private leaving?: Server;
   private starting?: Promise<void>;
   private switching?: Promise<boolean>;
   private graceTimer?: ReturnType<typeof setTimeout>;
@@ -118,7 +122,9 @@ export class FailoverTransport implements Transport {
     clearTimeout(this.graceTimer);
     const transports = new Set(this.probing);
     if (this.current) transports.add(this.current.transport);
+    if (this.leaving) transports.add(this.leaving.transport);
     this.current = undefined;
+    this.leaving = undefined;
     this.probing.clear();
     this.entries.clear();
     await Promise.all([...transports].map((transport) => transport.close()));
@@ -224,7 +230,12 @@ export class FailoverTransport implements Transport {
   private async switchServer(reason: "lost" | "stale"): Promise<boolean> {
     const leaving = this.current;
     if (!leaving || this.closed || this.servers.length < 2) return false;
-    await this.walk({ server: leaving, unlessBack: reason === "lost" });
+    this.leaving = leaving;
+    try {
+      await this.walk({ server: leaving, unlessBack: reason === "lost" });
+    } finally {
+      if (this.leaving === leaving) this.leaving = undefined;
+    }
     if (this.closed) return false;
     if (this.current === leaving) {
       // subscriptions made on a candidate that was given up come back to the server still in use
@@ -250,7 +261,15 @@ export class FailoverTransport implements Transport {
     // device clock that is off cannot leave the wallet without a server
     let fallback: { server: Server; tip: HexHeaderI } | undefined;
     let tried = 0;
+    // A lost server gets one reconnect of its own first: electrum-cash's next retry may still be
+    // seconds away when the device comes back online, and another server answering first would
+    // then get the wallet's subscriptions while its own server is reachable again
+    if (from?.unlessBack && leaving) {
+      await leaving.transport.connect().catch(() => {});
+      if (this.closed || isBack()) return undefined;
+    }
     for (const entry of this.servers) {
+      if (this.closed) break;
       const name = serverName(entry);
       if (name === leaving?.name) continue;
       if (isBack()) return undefined;
@@ -284,6 +303,9 @@ export class FailoverTransport implements Transport {
         return undefined;
       }
       failures.push(`${name}: the subscriptions could not be moved there`);
+      // it was shown the subscriptions already; walking on would show them to yet another operator
+      // within one switch, so the next server waits for the next grace period
+      break;
     }
     if (fallback && !this.closed) {
       this.staleTried = fallback.tip.height;
@@ -406,6 +428,8 @@ export class FailoverTransport implements Transport {
     if (connected) {
       clearTimeout(this.graceTimer);
       this.graceTimer = undefined;
+      // subscriptions a given-up switch handed back while this server was down are made now
+      if (!this.switching) this.settle(transport).catch(() => {});
       return;
     }
     this.graceTimer ??= setTimeout(

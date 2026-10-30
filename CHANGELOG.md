@@ -1,9 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-30)
 
-- `createFailoverProvider(network, servers, options)`: a provider over an ordered list of servers that moves to the next one when the server in use stays lost past a grace period (default: electrum-cash's 5 s reconnect plus the connect timeout), and with `staleTipSeconds` when its tip is stale. It never switches while the device is offline (`isOnline`, default `navigator.onLine`), and skips a candidate whose tip is more than one block below the highest seen, before any subscription moves there. Subscriptions move to the new server under the same provider, so wallets need no `setProvider`. A server's error response never fails over, and a broadcast is never sent to a second server. `onServerChange` reports the server in use. With one server it never contacts another.
-- `ElectrumTransportOptions.onConnectionChange`: told when the connection is lost and when it is back.
+- New `createFailoverProvider(network, servers, options?)`: a provider over an ordered list of servers that moves to another one when the server in use stays lost, and with `staleTipSeconds` when its tip is stale. Subscriptions move to the new server under the same provider, so wallets and everything else holding the provider follow without `setProvider`, and a request lost to a switch is sent once more on the new server (a broadcast never is). With one server it never contacts another.
+  - A lost server gets a grace period (`gracePeriod`, default electrum-cash's 5 s reconnect plus the connect timeout) and then one reconnect of its own before any other server is tried, so a socket a backgrounded Safari/iOS tab lost, or a device just back online, stays on its server.
+  - It never switches while the device is offline (`isOnline`, default `navigator.onLine`), and checks again every grace period while the server stays lost.
+  - A candidate is asked for its tip before any subscription moves there, and passed over when it is more than one block below the highest tip seen: an HD wallet takes a null status for an unused address and drops its coins.
+  - A candidate that refuses a subscription ends that switch, so one switch shows the wallet's subscriptions to at most one more server; the next one is tried a grace period later.
+  - A server's error response never fails over. `onServerChange` reports the server in use, at connect and on every switch.
+  - `FailoverTransportOptions` is exported.
+- `ElectrumTransportOptions.onConnectionChange`: told when the connection is lost and when it is back, once per change (electrum-cash also reports a loss for each request that fails to connect while the server is down).
 - `createProvider` with a list is unchanged: it stays with the first server that connects.
 
 ## 0.1.5 (2026-10-21)

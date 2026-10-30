@@ -454,8 +454,8 @@ describe("FailoverTransport's onConnectionChange", () => {
     expect(changes).toEqual([]);
 
     kill(a);
-    await vi.waitFor(() => expect(transport.server).toBe(b.url));
-    expect(changes).toEqual([false, true]);
+    await vi.waitFor(() => expect(changes).toEqual([false, true]));
+    expect(transport.server).toBe(b.url);
   });
 
   test("works with one server too, which never switches", async () => {

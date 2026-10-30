@@ -202,8 +202,10 @@ describe("FailoverTransport after losing its server", () => {
     );
     kill(a);
 
-    await vi.waitFor(() => expect(transport.server).toBe(b.url));
-    expect(changes).toEqual([a.url, b.url]);
+    // server already names the candidate while subscriptions move there; the callback comes once
+    // the switch is done
+    await vi.waitFor(() => expect(changes).toEqual([a.url, b.url]));
+    expect(transport.server).toBe(b.url);
     expect(statuses.at(-1)).toEqual([
       address,
       `b.example status of ${address}`,
@@ -249,10 +251,10 @@ describe("FailoverTransport after losing its server", () => {
     await transport.subscribe("blockchain.headers.subscribe", [], () => {});
     kill(a);
 
-    await vi.waitFor(() => expect(transport.server).toBe(c.url));
+    await vi.waitFor(() => expect(subscribed(c)).toBe(true));
+    expect(transport.server).toBe(c.url);
     expect(contacted(behind)).toBe(true);
     expect(subscribed(behind)).toBe(false);
-    expect(subscribed(c)).toBe(true);
   });
 
   test("stays on its server when no other one can be taken", async () => {

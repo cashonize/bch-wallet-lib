@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `createFailoverProvider(network, servers, options)`: a provider over an ordered list of servers that moves to the next one when the server in use stays lost past a grace period (default: electrum-cash's 5 s reconnect plus the connect timeout), and with `staleTipSeconds` when its tip is stale. It never switches while the device is offline (`isOnline`, default `navigator.onLine`), and skips a candidate whose tip is more than one block below the highest seen, before any subscription moves there. Subscriptions move to the new server under the same provider, so wallets need no `setProvider`. A server's error response never fails over, and a broadcast is never sent to a second server. `onServerChange` reports the server in use. With one server it never contacts another.
+- `ElectrumTransportOptions.onConnectionChange`: told when the connection is lost and when it is back.
+- `createProvider` with a list is unchanged: it stays with the first server that connects.
+
 ## 0.1.5 (2026-10-21)
 
 - `toHex(bytes)` is exported: the same lowercase hex as libauth's `binToHex`, as one flat string, for hex an app keeps in bulk.

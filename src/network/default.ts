@@ -6,6 +6,10 @@ import {
   ElectrumTransport,
   type ElectrumTransportOptions,
 } from "./ElectrumTransport.js";
+import {
+  FailoverTransport,
+  type FailoverTransportOptions,
+} from "./FailoverTransport.js";
 
 export function setGlobalProvider(
   network: Network,
@@ -43,6 +47,20 @@ export async function createProvider(
   let urls = getDefaultServers(network);
   if (servers !== undefined) urls = parseServers(servers);
   const transport = new ElectrumTransport(urls, options);
+  return new ElectrumNetworkProvider(transport, network);
+}
+
+/**
+ * A provider over an ordered list of servers that moves to the next one when the server in use is
+ * lost, lags or (with `staleTipSeconds`) serves a stale tip; see FailoverTransport. With one server
+ * it never contacts another. `onServerChange` tells which server is in use.
+ */
+export async function createFailoverProvider(
+  network: Network,
+  servers: string[],
+  options?: FailoverTransportOptions,
+): Promise<ElectrumNetworkProvider> {
+  const transport = new FailoverTransport(servers, options);
   return new ElectrumNetworkProvider(transport, network);
 }
 

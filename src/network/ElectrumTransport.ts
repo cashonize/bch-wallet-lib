@@ -27,6 +27,11 @@ export interface ElectrumTransportOptions {
    * so that a request that timed out is sent again on a fresh connection.
    */
   requestTimeout?: number;
+  /**
+   * Told when the connection is lost (once per loss, not for each failed automatic reconnect) and
+   * when it is back. Not told about the first connect, nor anything after close().
+   */
+  onConnectionChange?: (connected: boolean) => void;
 }
 
 /** A connect or request that got no answer within its timeout. */
@@ -43,7 +48,7 @@ type Client = ElectrumClient<ElectrumClientEvents>;
 // other version than the one asked for, so asking for 1.6 would shut out servers that stop at 1.5
 const PROTOCOL_VERSION = "1.5";
 const CLIENT_NAME = "@cashonize/bch-wallet-lib";
-const DEFAULT_CONNECT_TIMEOUT = 10_000;
+export const DEFAULT_CONNECT_TIMEOUT = 10_000;
 const DEFAULT_REQUEST_TIMEOUT = 30_000;
 
 // A broadcast that timed out may still have reached the node, and sending it again would then
@@ -64,7 +69,8 @@ interface Subscription {
  *
  * With several servers, connect() tries them in the given order and the transport stays with the
  * first one that connects: electrum-cash reconnects to that server after a failure and restores its
- * subscriptions there. Only after close() does a connect() go through the list again.
+ * subscriptions there. A closed transport refuses to connect again; moving to another server is
+ * FailoverTransport's job.
  *
  * A request that times out or loses its connection is sent once more (a broadcast is not), and
  * a late answer to the first attempt is taken as well; an error response from the server is not
@@ -74,6 +80,7 @@ export class ElectrumTransport implements Transport {
   private readonly servers: { name: string; client: Client }[];
   private readonly connectTimeout: number;
   private readonly requestTimeout: number;
+  private readonly onConnectionChange?: (connected: boolean) => void;
   private client?: Client;
   private connecting?: Promise<void>;
   // Bumped by close(), so that work still under way does not connect again afterwards
@@ -91,10 +98,16 @@ export class ElectrumTransport implements Transport {
     }
     this.connectTimeout = options.connectTimeout ?? DEFAULT_CONNECT_TIMEOUT;
     this.requestTimeout = options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT;
+    this.onConnectionChange = options.onConnectionChange;
     this.servers = list.map((server) => ({
       name: typeof server === "string" ? server : server.host,
       client: this.createClient(server),
     }));
+  }
+
+  /** Whether the connection is up right now. */
+  get connected(): boolean {
+    return this.client?.status === ConnectionStatus.CONNECTED;
   }
 
   async connect(): Promise<void> {
@@ -213,6 +226,12 @@ export class ElectrumTransport implements Transport {
         throw new Error("The electrum transport was closed while connecting.");
       }
       client.on("notification", this.route);
+      const onChange = this.onConnectionChange;
+      if (onChange) {
+        // disconnect(true) in close() removes these too
+        client.on("connected", () => onChange(true));
+        client.on("disconnected", () => onChange(false));
+      }
       this.client = client;
       return;
     }

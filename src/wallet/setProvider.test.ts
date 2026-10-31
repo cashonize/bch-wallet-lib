@@ -7,6 +7,7 @@ import {
 } from "../network/default.js";
 import { MockNetworkProvider } from "../network/MockNetworkProvider.js";
 import { delay } from "../util/delay.js";
+import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWallet } from "./Wif.js";
 
@@ -41,7 +42,7 @@ describe("setProvider", () => {
   test("moves a single-address wallet's watches to the new provider", async () => {
     const wallet = await RegTestWallet.newRandom();
     const balances: bigint[] = [];
-    await wallet.watchBalance((balance) => balances.push(balance));
+    await wallet.watchUtxos(({ utxos }) => balances.push(sumUtxoValue(utxos)));
     const headers: number[] = [];
     await wallet.watchBlocks((header) => headers.push(header.height));
     const before = oldProvider.subscriptions;
@@ -109,7 +110,7 @@ describe("setProvider", () => {
   test("stays on the old provider when the new one cannot connect", async () => {
     const wallet = await RegTestWallet.newRandom();
     const balances: bigint[] = [];
-    await wallet.watchBalance((balance) => balances.push(balance));
+    await wallet.watchUtxos(({ utxos }) => balances.push(sumUtxoValue(utxos)));
     const before = oldProvider.subscriptions;
 
     const dead = await createProvider(Network.REGTEST, "ws://127.0.0.1:1", {

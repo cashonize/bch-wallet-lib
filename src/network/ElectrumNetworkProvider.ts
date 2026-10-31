@@ -12,12 +12,7 @@ import { toError } from "../util/toError.js";
 import { getTransactionHash } from "../util/transaction.js";
 import { runCallback, waitOnWatch } from "../util/watch.js";
 import { CancelFn } from "../wallet/interface.js";
-import {
-  ElectrumRawTransaction,
-  ElectrumRawTransactionVinWithValues,
-  ElectrumRawTransactionWithInputValues,
-  ElectrumUtxo,
-} from "./interface.js";
+import { ElectrumUtxo } from "./interface.js";
 import {
   BroadcastRejectedError,
   BroadcastTimeoutError,
@@ -37,16 +32,10 @@ export interface ConcurrencyOptions {
 // Fulcrum reports a transaction it accepted within a second or two
 const BROADCAST_STATUS_TIMEOUT = 30_000;
 
-/** Internal type for cached verbose transactions. fetchHeight is stripped before returning. */
-type CachedRawTransaction = ElectrumRawTransaction & { fetchHeight: number };
-
 /** The connection to one Electrum server (Fulcrum) that wallets read the chain from and broadcast to. */
 export default class ElectrumNetworkProvider {
   private readonly transport: Transport;
   private subscriptionCount: number = 0;
-  private currentHeight: number = 0;
-  // Set before the subscribe is awaited, so that concurrent first calls share one subscription
-  private headerSubscription?: Promise<CancelFn>;
 
   private _cache: CacheProvider | undefined;
 
@@ -184,6 +173,14 @@ export default class ElectrumNetworkProvider {
     return results;
   }
 
+  /** The height of the server's chain tip, asked fresh on every call; follow it with watchBlocks. */
+  async getBlockHeight(): Promise<number> {
+    const tip = await this.performRequest<{ height: number }>(
+      "blockchain.headers.get_tip",
+    );
+    return tip.height;
+  }
+
   /**
    * Batch retrieve block headers by their heights.
    * @param heights Array of block heights.
@@ -248,32 +245,6 @@ export default class ElectrumNetworkProvider {
     return results;
   }
 
-  /** The current block height, kept up to date by a header subscription opened on the first call. */
-  async getBlockHeight(): Promise<number> {
-    if (!this.headerSubscription) {
-      const subscribing = this.subscribeToHeaders((header: HexHeaderI) => {
-        if (header.height > this.currentHeight) {
-          this.currentHeight = header.height;
-        }
-      });
-      this.headerSubscription = subscribing;
-      // A failed subscribe is tried again by the next call
-      subscribing.catch(() => {
-        if (this.headerSubscription === subscribing) {
-          this.headerSubscription = undefined;
-        }
-      });
-    }
-    await this.headerSubscription;
-
-    if (!this.currentHeight) {
-      throw new Error(
-        "Check failed for eventual inconsistency in subscription implementations.",
-      );
-    }
-    return this.currentHeight;
-  }
-
   /**
    * The raw transaction hex of a transaction ID.
    * @throws {Error} If the transaction does not exist
@@ -286,22 +257,19 @@ export default class ElectrumNetworkProvider {
       if (cached) return cached;
     }
 
-    const hex = await this.fetchTransaction<string>(txHash, false);
+    const hex = await this.fetchTransaction(txHash);
     if (cache) {
       await this.cacheWrite((cache) => cache.setItem(key, hex));
     }
     return hex;
   }
 
-  private async fetchTransaction<T extends string | { hex: string }>(
-    txHash: string,
-    verbose: boolean,
-  ): Promise<T> {
-    let transaction: T;
+  private async fetchTransaction(txHash: string): Promise<string> {
+    let hex: string;
     try {
-      transaction = await this.performRequest<T>("blockchain.transaction.get", [
+      hex = await this.performRequest<string>("blockchain.transaction.get", [
         txHash,
-        verbose,
+        false,
       ]);
     } catch (error: any) {
       if (
@@ -314,89 +282,8 @@ export default class ElectrumNetworkProvider {
         );
       else throw error;
     }
-    let hex: string;
-    if (typeof transaction === "string") hex = transaction;
-    else hex = transaction.hex;
     await checkTransactionHash(txHash, hex);
-    return transaction;
-  }
-
-  private async enrichWithInputValues(
-    transaction: ElectrumRawTransaction,
-  ): Promise<ElectrumRawTransactionWithInputValues> {
-    const hashes = [...new Set(transaction.vin.map((val) => val.txid))];
-    const transactions = await mapConcurrent(
-      hashes,
-      DEFAULT_CONCURRENCY,
-      (hash) => this.getRawTransactionObject(hash, false),
-    );
-    const transactionMap = new Map<string, ElectrumRawTransaction>();
-    transactions.forEach((val) => transactionMap.set(val.hash, val));
-
-    const enrichedVin: ElectrumRawTransactionVinWithValues[] =
-      transaction.vin.map((input) => {
-        const output = transactionMap
-          .get(input.txid)!
-          .vout.find((val) => val.n === input.vout)!;
-        return { ...input, ...output };
-      });
-
-    return { ...transaction, vin: enrichedVin };
-  }
-
-  /**
-   * The decoded transaction of a transaction ID.
-   * @param loadInputValues When true, each vin is enriched with value, address and tokenData from the parent output.
-   * @throws {Error} If the transaction does not exist
-   */
-  async getRawTransactionObject(
-    txHash: string,
-    loadInputValues: true,
-  ): Promise<ElectrumRawTransactionWithInputValues>;
-  async getRawTransactionObject(
-    txHash: string,
-    loadInputValues?: false,
-  ): Promise<ElectrumRawTransaction>;
-  async getRawTransactionObject(
-    txHash: string,
-    loadInputValues: boolean = false,
-  ): Promise<ElectrumRawTransaction | ElectrumRawTransactionWithInputValues> {
-    const key = `tx-${this.network}-${txHash}`;
-    let cachedTx: CachedRawTransaction | undefined;
-    const cache = await this.openedCache();
-    if (cache) {
-      const cached = await cache.getItem(key);
-      if (cached) {
-        cachedTx = JSON.parse(cached) as CachedRawTransaction;
-        if (cachedTx.confirmations > 0) {
-          const currentHeight = await this.getBlockHeight();
-          cachedTx.confirmations += currentHeight - cachedTx.fetchHeight;
-        } else {
-          // an unconfirmed entry cannot tell whether it has confirmed since, so it is fetched again
-          cachedTx = undefined;
-        }
-      }
-    }
-
-    if (!cachedTx) {
-      cachedTx = await this.fetchTransaction<CachedRawTransaction>(
-        txHash,
-        true,
-      );
-      cachedTx.confirmations ??= 0;
-      cachedTx.fetchHeight = await this.getBlockHeight();
-      if (cache) {
-        await this.cacheWrite((cache) =>
-          cache.setItem(key, JSON.stringify(cachedTx)),
-        );
-      }
-    }
-
-    const { fetchHeight: _, ...transaction } = cachedTx;
-    if (loadInputValues) {
-      return this.enrichWithInputValues(transaction);
-    }
-    return transaction;
+    return hex;
   }
 
   /**
@@ -643,15 +530,10 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Close the connection and the provider's own header subscription, for good: a request made on
-   * the provider afterwards rejects rather than connecting again. A new provider connects anew.
+   * Close the connection for good: a request made on the provider afterwards rejects rather than
+   * connecting again. A new provider connects anew.
    */
   async disconnect(): Promise<boolean> {
-    const header = this.headerSubscription;
-    this.headerSubscription = undefined;
-    this.currentHeight = 0;
-    const cancel = await header?.catch(() => undefined);
-    await cancel?.();
     await this.transport.close();
     return true;
   }
@@ -660,8 +542,7 @@ export default class ElectrumNetworkProvider {
 // A server's error response to a broadcast is a refusal; a timeout or a lost connection is not, as
 // the transaction may still have reached the node
 // A server's transaction is cached by the txid it was asked for, where it would outlast a switch to
-// another server, so it must be the transaction of that txid. The server's decoded fields of a
-// verbose transaction are not checked against its hex.
+// another server, so it must be the transaction of that txid
 async function checkTransactionHash(txHash: string, hex: string) {
   const hash = await getTransactionHash(hex);
   if (hash !== txHash.toLowerCase()) {

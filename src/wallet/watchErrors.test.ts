@@ -4,6 +4,7 @@ import { Network } from "../interface.js";
 import { removeGlobalProvider, setGlobalProvider } from "../network/default.js";
 import { MockNetworkProvider } from "../network/MockNetworkProvider.js";
 import { delay } from "../util/delay.js";
+import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWallet } from "./Wif.js";
@@ -52,8 +53,8 @@ describe("a watch callback that fails", () => {
   test("goes to console.error, once per failure, and the watch goes on", async () => {
     const wallet = await RegTestWallet.newRandom();
     const balances: bigint[] = [];
-    await wallet.watchBalance(async (balance) => {
-      balances.push(balance);
+    await wallet.watchUtxos(async ({ utxos }) => {
+      balances.push(sumUtxoValue(utxos));
       throw boom;
     });
 
@@ -61,15 +62,15 @@ describe("a watch callback that fails", () => {
     await delay(100);
     await fund(wallet.cashaddr, 2_000n);
     await delay(100);
-    expect(balances).toEqual([1_000n, 3_000n]);
-    expect(consoleError.mock.calls).toEqual([[boom], [boom]]);
+    expect(balances).toEqual([0n, 1_000n, 3_000n]);
+    expect(consoleError.mock.calls).toEqual([[boom], [boom], [boom]]);
     await wallet.stop();
   });
 
-  test("goes to console.error from a balance and a status watch", async () => {
+  test("goes to console.error from a coin and a status watch", async () => {
     const wallet = await RegTestWallet.newRandom();
-    await wallet.watchBalance(() => {
-      throw boom;
+    await wallet.watchUtxos(({ added }) => {
+      if (added.length) throw boom;
     });
     await wallet["watchStatus"](async () => {
       throw boom;
@@ -112,36 +113,13 @@ describe("a watch callback that fails", () => {
 
   test("goes to console.error from an HD wallet's watch", async () => {
     const wallet = await RegTestHDWallet.newRandom();
-    await wallet.watchBalance(async () => {
-      throw boom;
+    await wallet.watchUtxos(async ({ added }) => {
+      if (added.length) throw boom;
     });
 
     await fund(wallet.getDepositAddress(0), 1_000n);
     await delay(300);
     expect(consoleError.mock.calls).toEqual([[boom]]);
-    await wallet.stop();
-  });
-
-  test("goes to console.error for each new transaction", async () => {
-    await provider.seedAlice();
-    const wallet = await RegTestWallet.newRandom();
-    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    await wallet["watchTransactionHashes"](() => {
-      throw boom;
-    });
-    await wallet["watchTransactions"](async () => {
-      throw boom;
-    });
-
-    await alice.send([
-      { cashaddr: wallet.cashaddr, value: 1_000n },
-      { cashaddr: wallet.cashaddr, value: 1_000n },
-    ]);
-    await alice.send({ cashaddr: wallet.cashaddr, value: 1_000n });
-    await delay(300);
-    // each watch reports each of the two transactions once
-    expect(consoleError.mock.calls).toEqual([[boom], [boom], [boom], [boom]]);
-    await alice.stop();
     await wallet.stop();
   });
 
@@ -184,10 +162,10 @@ describe("a read that a watch makes and that fails", () => {
   test("goes to console.error", async () => {
     const wallet = await RegTestHDWallet.newRandom();
     const balances: bigint[] = [];
-    await wallet.watchBalance((balance) => balances.push(balance));
+    await wallet.watchUtxos(({ utxos }) => balances.push(sumUtxoValue(utxos)));
 
     await failGapExtension(wallet);
-    expect(balances).toEqual([]);
+    expect(balances).toEqual([0n]);
     expect(consoleError).toHaveBeenCalledTimes(1);
     expect(consoleError.mock.calls[0][0].message).toBe("subscription refused");
     refuseAddress = false;

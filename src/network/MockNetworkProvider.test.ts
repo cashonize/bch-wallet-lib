@@ -114,14 +114,12 @@ describe("MockNetworkProvider", () => {
     expect(history.length).toBe(2);
   });
 
-  test("should get block height and header", async () => {
+  test("should get the tip height and its header at a set block height", async () => {
     const provider = new MockNetworkProvider();
     await provider.connect();
     await provider.setBlockHeight(300);
 
-    const height = await provider.getBlockHeight();
-    expect(height).toBe(300);
-
+    expect(await provider.getBlockHeight()).toBe(300);
     const headers = await provider.getHeaders([300]);
     expect(headers.get(300)?.height).toBe(300);
   });

@@ -65,14 +65,13 @@ describe("Rpc tests", () => {
     }
   });
 
-  test("Watch wallet balance", async () => {
+  test("Watch wallet coins", async () => {
     const aliceWallet = await RegTestWallet.fromId(aliceWif);
     const bobWallet = await RegTestWallet.newRandom();
 
     let result = false;
-    const cancel = await aliceWallet.watchBalance((balance) => {
-      expect(balance).toBeGreaterThan(0);
-      result = true;
+    const cancel = await aliceWallet.watchUtxos(({ removed }) => {
+      if (removed.length) result = true;
     });
     // Trigger a real status change on Alice's address
     await aliceWallet.send([{ cashaddr: bobWallet.cashaddr!, value: 1000n }]);

@@ -61,16 +61,15 @@ Internal: `Wallet.tokenaddr` (`getTokenDepositAddress()` returns it), `HDWallet.
 
 ### Reading and watching
 
-| Member                                      | Who needs it                                                           |
-| ------------------------------------------- | ---------------------------------------------------------------------- |
-| `getUtxos()`                                | The one snapshot everything is computed from: `store.ts` and the tools |
-| `getBalance()`                              | **No consumer**: Cashonize sums its utxos; `watchBalance` runs on it   |
-| `getHistory({ count, concurrency })`        | `store.ts` `updateWalletHistory`, `identitiesStore.ts`                 |
-| `getRawHistory(fromHeight?)`                | The txids of the history: `store.ts`, `transactionIndex.ts`            |
-| `watchBalance(callback)`                    | `store.ts`, balance and CashConnect pushes                             |
-| `watchTokenTransactions(callback)`          | `store.ts` token notifications                                         |
-| `watchBlocks(callback, skipCurrentHeight?)` | `store.ts` tip and stale-server check                                  |
-| `CancelFn`                                  | `store.ts` holds the watches' cancels                                  |
+| Member                                      | Who needs it                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `getUtxos()`                                | The one snapshot everything is computed from: `store.ts` and the tools                                      |
+| `getBalance()`                              | **No consumer**: Cashonize sums its utxos                                                                   |
+| `getHistory({ count, concurrency })`        | `store.ts` `updateWalletHistory`, `identitiesStore.ts`                                                      |
+| `getRawHistory(fromHeight?)`                | The txids of the history: `store.ts`, `transactionIndex.ts`                                                 |
+| `watchUtxos(callback)`                      | Planned: replaces `store.ts`'s `watchBalance` and `watchTokenTransactions` and the CashConnect balance push |
+| `watchBlocks(callback, skipCurrentHeight?)` | `store.ts` tip and stale-server check                                                                       |
+| `CancelFn`                                  | `store.ts` holds the watches' cancels                                                                       |
 
 ### Spending
 
@@ -118,33 +117,30 @@ Every error the library throws is an exported class (AGENTS.md "Conventions"), s
 
 ### Network
 
-| Export or member                                                               | Who needs it                                                                                                                                                                    |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createProvider(network, servers?, options?)`                                  | `store.ts` `validateElectrumServer`                                                                                                                                             |
-| `ElectrumTransportOptions` (`connectTimeout`, `requestTimeout`)                | `store.ts` passes `connectTimeout`, through `FailoverTransportOptions` to `createFailoverProvider`                                                                              |
-| `createFailoverProvider(network, servers, options?)`                           | `store.ts`: the server modes; `FailoverTransportOptions` adds `gracePeriod`, `staleTipSeconds`, `isOnline`, `onServerChange`, `onConnectionChange`                              |
-| `registerNetwork(config)`, `NetworkConfig`, `ChainCheck`                       | `networks.ts` registers testnet4                                                                                                                                                |
-| `networkConfig(name)`, `knownNetworks()`                                       | Database names and key versions per network: `networks.ts`, `walletUtils.ts`, `wizardconnectStore.ts`                                                                           |
-| `ElectrumConnectError` (`failures`)                                            | Thrown when no server could be reached; no Cashonize use                                                                                                                        |
-| `DefaultProvider.servers`                                                      | `store.ts` keeps the fallback global provider off the built-in servers                                                                                                          |
-| `getNetworkProvider(network?)`                                                 | The import's derivation-path scan and the tied-wallet scan: `walletUtils.ts`, `tiedWallets.ts`                                                                                  |
-| `setGlobalProvider`                                                            | `store.ts` installs the chosen provider as the network's global one; Cashonize tests install a mock                                                                             |
-| `removeGlobalProvider`                                                         | Cashonize tests reset the global provider                                                                                                                                       |
-| `ElectrumNetworkProvider`                                                      | The provider type: `store.ts`, the `defi/` lookups, `electrumAuthchain.ts`, `authchainIdentity.ts`                                                                              |
-| `new ElectrumNetworkProvider(transport, network?)`                             | Tests over mem-cash (`scripts/check-dist-errors.mjs`); `Transport` itself is not exported                                                                                       |
-| `network`                                                                      | `setProvider` refuses another network's provider                                                                                                                                |
-| `getUtxos(cashaddr)`                                                           | Contract and authchain lookups: `cauldronPools.ts`, `badgersStake.ts`, `hodlContracts.ts`, `tapswapListings.ts`, `electrumAdapter.ts`, `electrumAuthchain.ts`; `tiedWallets.ts` |
-| `getHistory(cashaddr, fromHeight?)`                                            | `electrumAuthchain.ts`, `walletUtils.ts` and `tiedWallets.ts` scans; `fromHeight` is for the wallets' incremental refresh                                                       |
-| `getRawTransaction(txid)`                                                      | NFT parsing extensions: `electrumAdapter.ts`, `paryonusd.ts`; `cashconnectStore.ts`                                                                                             |
-| `getRawTransactionObject(txid, loadInputValues?)`                              | `store.ts` token notifications, `cashconnectStore.ts`                                                                                                                           |
-| `getRawTransactions(txids, options?)`, `getHeaders(heights, options?)`         | `electrumAuthchain.ts`, `transactionIndex.ts`; `options.concurrency` bounds the fan-out                                                                                         |
-| `getBlockHeight()`                                                             | **No consumer**: confirmations of cached transactions inside the provider; Cashonize tests mock it                                                                              |
-| `sendRawTransaction(txHex)`                                                    | **No consumer**: `BaseWallet.submitTransaction` calls it; a broadcast without a wallet                                                                                          |
-| `watchAddressStatus(cashaddr, cb)`                                             | **No consumer**: the wallets' status watches call it; watching an address no wallet holds                                                                                       |
-| `watchBlocks(cb, skipCurrentHeight?)`                                          | `wallet.watchBlocks` calls it                                                                                                                                                   |
-| `disconnect()`                                                                 | Closing a provider the caller replaced (`setProvider`'s contract): `store.ts`                                                                                                   |
-| `ElectrumRawTransaction`                                                       | `interfaces.ts` types outputs with it                                                                                                                                           |
-| `ElectrumRawTransactionWithInputValues`, `ElectrumRawTransactionVinWithValues` | The result of `getRawTransactionObject(txid, true)`: `store.ts`                                                                                                                 |
+| Export or member                                                       | Who needs it                                                                                                                                                                    |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createProvider(network, servers?, options?)`                          | `store.ts` `validateElectrumServer`                                                                                                                                             |
+| `ElectrumTransportOptions` (`connectTimeout`, `requestTimeout`)        | `store.ts` passes `connectTimeout`, through `FailoverTransportOptions` to `createFailoverProvider`                                                                              |
+| `createFailoverProvider(network, servers, options?)`                   | `store.ts`: the server modes; `FailoverTransportOptions` adds `gracePeriod`, `staleTipSeconds`, `isOnline`, `onServerChange`, `onConnectionChange`                              |
+| `registerNetwork(config)`, `NetworkConfig`, `ChainCheck`               | `networks.ts` registers testnet4                                                                                                                                                |
+| `networkConfig(name)`, `knownNetworks()`                               | Database names and key versions per network: `networks.ts`, `walletUtils.ts`, `wizardconnectStore.ts`                                                                           |
+| `ElectrumConnectError` (`failures`)                                    | Thrown when no server could be reached; no Cashonize use                                                                                                                        |
+| `DefaultProvider.servers`                                              | `store.ts` keeps the fallback global provider off the built-in servers                                                                                                          |
+| `getNetworkProvider(network?)`                                         | The import's derivation-path scan and the tied-wallet scan: `walletUtils.ts`, `tiedWallets.ts`                                                                                  |
+| `setGlobalProvider`                                                    | `store.ts` installs the chosen provider as the network's global one; Cashonize tests install a mock                                                                             |
+| `removeGlobalProvider`                                                 | Cashonize tests reset the global provider                                                                                                                                       |
+| `ElectrumNetworkProvider`                                              | The provider type: `store.ts`, the `defi/` lookups, `electrumAuthchain.ts`, `authchainIdentity.ts`                                                                              |
+| `new ElectrumNetworkProvider(transport, network?)`                     | Tests over mem-cash (`scripts/check-dist-errors.mjs`); `Transport` itself is not exported                                                                                       |
+| `network`                                                              | `setProvider` refuses another network's provider                                                                                                                                |
+| `getUtxos(cashaddr)`                                                   | Contract and authchain lookups: `cauldronPools.ts`, `badgersStake.ts`, `hodlContracts.ts`, `tapswapListings.ts`, `electrumAdapter.ts`, `electrumAuthchain.ts`; `tiedWallets.ts` |
+| `getHistory(cashaddr, fromHeight?)`                                    | `electrumAuthchain.ts`, `walletUtils.ts` and `tiedWallets.ts` scans; `fromHeight` is for the wallets' incremental refresh                                                       |
+| `getRawTransaction(txid)`                                              | NFT parsing extensions: `electrumAdapter.ts`, `paryonusd.ts`; `cashconnectStore.ts`                                                                                             |
+| `getRawTransactions(txids, options?)`, `getHeaders(heights, options?)` | `electrumAuthchain.ts`, `transactionIndex.ts`; `options.concurrency` bounds the fan-out                                                                                         |
+| `getBlockHeight()`                                                     | **No consumer**: one `blockchain.headers.get_tip` request; Cashonize follows the tip with `watchBlocks`                                                                         |
+| `sendRawTransaction(txHex)`                                            | **No consumer**: `BaseWallet.submitTransaction` calls it; a broadcast without a wallet                                                                                          |
+| `watchAddressStatus(cashaddr, cb)`                                     | **No consumer**: the wallets' status watches call it; watching an address no wallet holds                                                                                       |
+| `watchBlocks(cb, skipCurrentHeight?)`                                  | `wallet.watchBlocks` calls it                                                                                                                                                   |
+| `disconnect()`                                                         | Closing a provider the caller replaced (`setProvider`'s contract): `store.ts`                                                                                                   |
 
 Internal: the provider's `connect`, `getRelayFee` (read through the relay fee cache), `subscribeToAddress`, `subscribeToTransaction` and `subscriptions`, and `ConcurrencyOptions.limiter`. The regtest `mine` is a test helper (`test/mine.ts`), not a provider member.
 

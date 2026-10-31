@@ -13,7 +13,7 @@ import {
 } from "@bitauth/libauth";
 import { stringify } from "../cache/walletCache.js";
 import { Config } from "../config.js";
-import { NFTCapability } from "../interface.js";
+import { NFTCapability, Utxo } from "../interface.js";
 import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { getTokenBalance, getTokenUtxos } from "#test/balances.js";
@@ -22,7 +22,6 @@ import { toTokenaddr } from "../util/deriveCashaddr.js";
 import { getNextUnusedIndex, getNextUnusedIndices } from "../util/hd.js";
 import { GAP_SIZE, HDWallet, RegTestHDWallet } from "./HDWallet.js";
 import { InvalidRequestError } from "./errors.js";
-import { CancelFn } from "./interface.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWatchWallet } from "./Watch.js";
 import { RegTestWallet, Wallet } from "./Wif.js";
@@ -956,24 +955,12 @@ describe("HDWallet", () => {
     expect((hdWallet as any).walletWatchCallbacks.length).toBe(0);
   });
 
-  it("watchWalletBalance sets up callback correctly", async () => {
+  it("watchUtxos sets up callback correctly", async () => {
     const hdWallet = await RegTestHDWallet.newRandom();
 
-    const cancel = await hdWallet.watchBalance(() => {});
+    const cancel = await hdWallet.watchUtxos(() => {});
 
-    // Verify callback was registered via watchWallet
-    expect((hdWallet as any).walletWatchCallbacks.length).toBe(1);
-
-    await cancel();
-    expect((hdWallet as any).walletWatchCallbacks.length).toBe(0);
-  });
-
-  it("watchWalletTransactions sets up callback correctly", async () => {
-    const hdWallet = await RegTestHDWallet.newRandom();
-
-    const cancel = await hdWallet["watchTransactions"](() => {});
-
-    // Verify callback was registered via watchWallet
+    // Verify callback was registered via watchStatus
     expect((hdWallet as any).walletWatchCallbacks.length).toBe(1);
 
     await cancel();
@@ -1436,139 +1423,50 @@ describe("HDWallet", () => {
     Config.EnforceCashTokenReceiptAddresses = previousValue;
   });
 
-  it("watchTransactionHashes reports new transactions on HD wallet", async () => {
+  it("watchUtxos takes the coins at setup as its baseline and reports each new coin once", async () => {
     const fundingWallet = await RegTestWallet.fromId(
       "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
     );
     const hdWallet = await RegTestHDWallet.newRandom();
 
-    // Fund the HD wallet at deposit address 0
-    await fundingWallet.send({
-      cashaddr: hdWallet.getDepositAddress(0),
-      value: 100000n,
-    });
-    await mine({ cashaddr: hdWallet.getDepositAddress(0), blocks: 1 });
-    await delay(2000);
-
-    // Set up watchTransactionHashes, collect reported tx hashes
-    const reportedHashes: string[] = [];
-    let cancelWatch: CancelFn;
-    cancelWatch = await hdWallet["watchTransactionHashes"]((txHash) => {
-      reportedHashes.push(txHash);
-    });
-
-    await delay(2000);
-
-    // Send a new transaction to the HD wallet
-    const sendResponse = await fundingWallet.send({
-      cashaddr: hdWallet.getDepositAddress(),
-      value: 50000n,
-    });
-    await mine({ cashaddr: hdWallet.getDepositAddress(0), blocks: 1 });
-    await delay(2000);
-
-    await cancelWatch();
-
-    // The new transaction's txId should appear in collected hashes
-    expect(reportedHashes).toContain(sendResponse.txId);
-  });
-
-  it("watchTransactionHashes does not re-report old transactions", async () => {
-    const fundingWallet = await RegTestWallet.fromId(
-      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
-    );
-    const hdWallet = await RegTestHDWallet.newRandom();
-
-    // Start watching before any transactions so the first funding triggers a callback
-    const reportedHashes: string[] = [];
-    let cancelWatch: CancelFn;
-    cancelWatch = await hdWallet["watchTransactionHashes"]((txHash) => {
-      reportedHashes.push(txHash);
-    });
-
-    // Fund the HD wallet at deposit address 0
-    const fundResponse = await fundingWallet.send({
-      cashaddr: hdWallet.getDepositAddress(0),
-      value: 100000n,
-    });
-    await mine({ cashaddr: hdWallet.getDepositAddress(0), blocks: 1 });
-    await delay(2000);
-
-    // Record how many hashes reported so far (the initial set)
-    const initialCount = reportedHashes.length;
-    expect(reportedHashes).toContain(fundResponse.txId);
-    const initialHashes = [...reportedHashes];
-
-    // Send a second transaction to the HD wallet
-    const sendResponse2 = await fundingWallet.send({
-      cashaddr: hdWallet.getDepositAddress(),
-      value: 50000n,
-    });
-    await mine({ cashaddr: hdWallet.getDepositAddress(0), blocks: 1 });
-    await delay(2000);
-
-    await cancelWatch();
-
-    // Hashes reported after the initial set
-    const laterHashes = reportedHashes.slice(initialCount);
-
-    // The second tx hash was reported
-    expect(laterHashes).toContain(sendResponse2.txId);
-
-    // None of the initial tx hashes were reported again after the first callback
-    for (const hash of initialHashes) {
-      expect(laterHashes).not.toContain(hash);
-    }
-  });
-
-  it("watchTransactionHashes reports only transactions that are new after the watch started (mainnet-js#257)", async () => {
-    const fundingWallet = await RegTestWallet.fromId(
-      "wif:regtest:cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6",
-    );
-    const hdWallet = await RegTestHDWallet.newRandom();
-
-    // Fund deposit address 0
-    await fundingWallet.send({
+    // coins at deposit addresses 0 and 1 before the watch
+    const fund0 = await fundingWallet.send({
       cashaddr: hdWallet.getDepositAddress(0),
       value: 100000n,
     });
     await mine({ cashaddr: fundingWallet.cashaddr!, blocks: 1 });
     await delay(1000);
-
-    // Fund deposit address 1
-    await fundingWallet.send({
+    const fund1 = await fundingWallet.send({
       cashaddr: hdWallet.getDepositAddress(1),
       value: 100000n,
     });
     await mine({ cashaddr: fundingWallet.cashaddr!, blocks: 1 });
     await delay(1000);
-
-    // depositIndex should be 2
     expect(hdWallet.indices.get(0)!).toBe(2);
-    expect((await hdWallet.getRawHistory()).length).toBe(2);
 
-    // Set up watchTransactionHashes, collect all reported hashes
-    const reportedHashes: string[] = [];
-    let cancelWatch: CancelFn;
-    cancelWatch = await hdWallet["watchTransactionHashes"]((txHash) => {
-      reportedHashes.push(txHash);
+    const changes: { utxos: Utxo[]; added: Utxo[]; removed: Utxo[] }[] = [];
+    const cancelWatch = await hdWallet.watchUtxos((change) => {
+      changes.push(change);
     });
+    await delay(1000);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].utxos.map((utxo) => utxo.txid).sort()).toEqual(
+      [fund0.txId, fund1.txId].sort(),
+    );
+    expect(changes[0].added).toEqual([]);
 
-    await delay(2000);
-    expect(reportedHashes).toEqual([]);
-
-    // Send a new transaction to the wallet's next deposit address
-    const fund2Response = await fundingWallet.send({
+    const fund2 = await fundingWallet.send({
       cashaddr: hdWallet.getDepositAddress(),
       value: 50000n,
     });
+    // its confirmation does not report it again
     await mine({ cashaddr: fundingWallet.cashaddr!, blocks: 1 });
     await delay(2000);
-
     await cancelWatch();
 
-    // The history at setup is not replayed when the first new transaction arrives
-    expect(reportedHashes).toEqual([fund2Response.txId]);
+    const added = changes.flatMap((change) => change.added);
+    expect(added.map((utxo) => utxo.txid)).toEqual([fund2.txId]);
+    expect(changes.flatMap((change) => change.removed)).toEqual([]);
   });
 
   it("gap is maintained when addresses near the edge are used", async () => {

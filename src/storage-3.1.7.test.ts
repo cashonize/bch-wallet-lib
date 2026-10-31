@@ -393,21 +393,11 @@ describe("data written by mainnet-js 3.1.7", () => {
         expect(raw.get(txid)).toBe(transactions[txid]);
         expect(await provider.getRawTransaction(txid)).toBe(transactions[txid]);
       }
-      const verbose = await provider.getRawTransactionObject(
-        cached.verboseTransaction,
-      );
-      expect(verbose.hex).toBe(transactions[cached.verboseTransaction]);
-      expect(verbose).not.toHaveProperty("fetchHeight");
       const headers = await provider.getHeaders(cached.verboseHeaders);
       for (const height of cached.verboseHeaders) {
         expect(headers.get(height)?.height).toBe(height);
       }
-      // only the tip subscription, which the verbose transaction's confirmations need
-      expect(
-        transport.requests.filter(
-          (req) => req.method !== "blockchain.headers.subscribe",
-        ),
-      ).toEqual([]);
+      expect(transport.requests).toEqual([]);
     }
   });
 

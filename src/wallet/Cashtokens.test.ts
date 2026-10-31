@@ -9,6 +9,7 @@ import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
+import { getTransaction } from "#test/transaction.js";
 import {
   getNftTokenBalance,
   getTokenBalance,
@@ -537,11 +538,11 @@ describe(`Test cashtokens`, () => {
       "burn",
     );
 
-    const rawTx = await alice.provider!.getRawTransactionObject(response.txId!);
+    const { outputs } = await getTransaction(alice.provider, response.txId!);
     // the OP_RETURN and the BCH change, the burned coin's sats included
-    expect(rawTx!.vout.length).toEqual(2);
-    expect(rawTx!.vout[0].scriptPubKey.type).toEqual("nulldata");
-    expect(rawTx!.vout[0].scriptPubKey.hex).toContain(
+    expect(outputs.length).toEqual(2);
+    expect(outputs[0].lockingBytecode[0]).toEqual(0x6a);
+    expect(binToHex(outputs[0].lockingBytecode)).toContain(
       binToHex(utf8ToBin("burn")),
     );
     expect(await getTokenBalance(alice, category)).toBe(0n);
@@ -580,10 +581,10 @@ describe(`Test cashtokens`, () => {
       "burn",
     );
 
-    const rawTx = await alice.provider!.getRawTransactionObject(response.txId!);
-    expect(rawTx!.vout.length).toEqual(3);
-    expect(rawTx!.vout[0].scriptPubKey.type).toEqual("nulldata");
-    expect(rawTx!.vout[0].scriptPubKey.hex).toContain(
+    const { outputs } = await getTransaction(alice.provider, response.txId!);
+    expect(outputs.length).toEqual(3);
+    expect(outputs[0].lockingBytecode[0]).toEqual(0x6a);
+    expect(binToHex(outputs[0].lockingBytecode)).toContain(
       binToHex(utf8ToBin("burn")),
     );
     expect(await getTokenBalance(alice, category)).toBe(3n);
@@ -713,10 +714,10 @@ describe(`Test cashtokens`, () => {
     expect(tokenUtxos.length).toBe(1);
     expect(tokenUtxos[0].satoshis).toBe(5000n);
 
-    // set up before the send, since only transactions new after setup are reported
     let bobTxId = ".";
-    const txCancel = await bob.watchTokenTransactions((tx) => {
-      bobTxId = tx.txid;
+    const txCancel = await bob.watchUtxos(({ added }) => {
+      const tokenCoin = added.find((utxo) => utxo.token?.category === category);
+      if (tokenCoin) bobTxId = tokenCoin.txid;
     });
 
     const sending: Promise<SendResponse> = delay(0).then(() =>

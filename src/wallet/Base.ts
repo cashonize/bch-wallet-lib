@@ -22,7 +22,6 @@ import { HexHeaderI, NFTCapability, TxI, Utxo } from "../interface.js";
 import { getNetworkProvider } from "../network/default.js";
 import ElectrumNetworkProvider from "../network/ElectrumNetworkProvider.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
-import { ElectrumRawTransaction } from "../network/interface.js";
 import {
   amountNotMetError,
   buildEncodedTransaction,
@@ -36,7 +35,7 @@ import {
 } from "../transaction/Wif.js";
 import type { TokenBurnAllowance } from "../transaction/tokenConservation.js";
 import { asSendRequestObject } from "../util/asSendRequestObject.js";
-import { checkUtxos, toOutpoint } from "../util/checkUtxos.js";
+import { checkUtxos, diffUtxos, toOutpoint } from "../util/checkUtxos.js";
 import { deriveLockscript } from "../util/deriveLockscript.js";
 import { Limiter } from "../util/mapConcurrent.js";
 import { sumUtxoValue, toTokenaddr } from "../util/index.js";
@@ -508,8 +507,7 @@ export class BaseWallet {
   }
 
   /**
-   * Watch wallet for any activity (status changes)
-   * This is the foundation for watchWalletBalance and watchWalletTransactions
+   * Watch wallet for any activity (status changes), the foundation of watchUtxos
    * @param callback - Called when  the wallet has a status change; its errors go to console.error
    * @returns Cancel function to stop watching
    */
@@ -536,95 +534,52 @@ export class BaseWallet {
     } = {},
   ): Promise<void> {}
 
-  // sets up a callback to be called upon wallet's balance change
-  // can be cancelled by calling the function returned from this one
-  // a failed balance read goes to console.error, as the callback's own errors do
-  public async watchBalance(
-    callback: (balance: bigint) => unknown,
-  ): Promise<CancelFn> {
-    return this.watchStatus(async () => {
-      const balance = await this.getBalance();
-      await callback(balance);
-    });
-  }
-
   /**
-   * Watch wallet for new transactions. Transactions already in the history
-   * when the watch starts are not reported; each new one is reported once.
-   * @param callback - Called with new transaction hashes when they appear; its errors, and a
-   * failed history read, go to console.error
+   * Watch the wallet's coins. Calls back once with the current coins, then once per settled status
+   * change (for an HD wallet after its discovery and debounce), with the coins added and removed
+   * since the last call, by outpoint: a coin that confirms is in neither. A repeated status, as after
+   * a reconnect, calls back with both empty.
+   * @param callback - Its errors, and a failed read after the first, go to console.error
    * @returns Cancel function to stop watching
+   * @throws If the first read of the coins fails
    */
-  protected async watchTransactionHashes(
-    callback: (txHash: string) => unknown,
+  public async watchUtxos(
+    callback: (change: {
+      utxos: Utxo[];
+      added: Utxo[];
+      removed: Utxo[];
+    }) => unknown,
   ): Promise<CancelFn> {
-    // Seeded before subscribing so the history at setup is not reported as new
-    const existing = await this.getRawHistory();
-    const seenTxHashes = new Set<string>();
-    let topHeight = 0;
-    for (const tx of existing) {
-      seenTxHashes.add(tx.tx_hash);
-      if (tx.height > topHeight) {
-        topHeight = tx.height;
-      }
+    // the first read to resolve is the baseline, whether the status watch's or the one below; the
+    // diffs are made against the last read resolved, never against what a consumer saw
+    let previous: Utxo[] | undefined;
+    let cancelled = false;
+    const report = (utxos: Utxo[]) => {
+      // a read still out when the watch is cancelled
+      if (cancelled) return;
+      let change = { utxos, added: [] as Utxo[], removed: [] as Utxo[] };
+      if (previous) change = { utxos, ...diffUtxos(previous, utxos) };
+      previous = utxos;
+      runCallback(() => callback(change));
+    };
+    // the watch is made before the first read, so a change in between is not missed
+    const cancelStatus = await this.watchStatus(async () => {
+      const utxos = await this.getUtxos();
+      report(utxos);
+    });
+    const cancel = () => {
+      cancelled = true;
+      return cancelStatus();
+    };
+    let utxos: Utxo[];
+    try {
+      utxos = await this.getUtxos();
+    } catch (error) {
+      await cancel();
+      throw error;
     }
-
-    return this.watchStatus(async () => {
-      const history = (await this.getRawHistory(topHeight)).sort((a, b) =>
-        a.height <= 0 || b.height <= 0 ? -1 : b.height - a.height,
-      );
-
-      const newTxHashes: string[] = [];
-
-      for (const tx of history) {
-        if (tx.height > topHeight) {
-          topHeight = tx.height;
-        }
-
-        if (!seenTxHashes.has(tx.tx_hash)) {
-          seenTxHashes.add(tx.tx_hash);
-          newTxHashes.push(tx.tx_hash);
-        }
-      }
-
-      // each on its own, so that one failing does not keep the others from being reported
-      for (const txHash of newTxHashes) {
-        runCallback(() => callback(txHash));
-      }
-    });
-  }
-
-  /**
-   * Watch wallet for new transactions
-   * @param callback - Called with each new transaction; its errors, and a failed read of the
-   * transaction or the history, go to console.error
-   * @returns Cancel function to stop watching
-   */
-  protected async watchTransactions(
-    callback: (transaction: ElectrumRawTransaction) => unknown,
-  ): Promise<CancelFn> {
-    return this.watchTransactionHashes(async (txHash: string) => {
-      const tx = await this.provider.getRawTransactionObject(txHash);
-      await callback(tx);
-    });
-  }
-
-  /**
-   * Watch wallet for new transactions with token outputs
-   * @param callback - Called with each new transaction that has a token output; its errors, and a
-   * failed read of the transaction or the history, go to console.error
-   * @returns Cancel function to stop watching
-   */
-  public async watchTokenTransactions(
-    callback: (tx: ElectrumRawTransaction) => unknown,
-  ): Promise<CancelFn> {
-    return this.watchTransactions(
-      async (transaction: ElectrumRawTransaction) => {
-        if (transaction.vout.some((val) => val.tokenData)) {
-          await callback(transaction);
-        }
-      },
-    );
+    report(utxos);
+    return cancel;
   }
 
   /**

@@ -42,11 +42,6 @@ export {
 export { ElectrumTimeoutError } from "./network/ElectrumTransport.js";
 export type { ElectrumTransportOptions } from "./network/ElectrumTransport.js";
 export type { FailoverTransportOptions } from "./network/FailoverTransport.js";
-export type {
-  ElectrumRawTransaction,
-  ElectrumRawTransactionVinWithValues,
-  ElectrumRawTransactionWithInputValues,
-} from "./network/interface.js";
 // xpub utilities
 export { getAddrsByXpubKey } from "./util/getAddrsByXpubKey.js";
 export { getXPubKey } from "./util/getXPubKey.js";

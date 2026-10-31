@@ -172,14 +172,12 @@ describe("Wallet should function in the browser", () => {
     const bob = await RegTestWallet.newRandom();
 
     let bobBalanceWatchResult = false;
-    const bobBalanceWatchCancel = await bob.watchBalance(
-      async (balance: bigint) => {
-        if (!balance) return;
-        expect(balance).toBeGreaterThanOrEqual(100000n);
-        await bobBalanceWatchCancel();
-        bobBalanceWatchResult = true;
-      },
-    );
+    const bobBalanceWatchCancel = await bob.watchUtxos(async ({ added }) => {
+      if (!added.length) return;
+      expect(added.map((utxo) => utxo.satoshis)).toEqual([100000n]);
+      await bobBalanceWatchCancel();
+      bobBalanceWatchResult = true;
+    });
 
     await alice.send({
       cashaddr: bob.getDepositAddress(),

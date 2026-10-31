@@ -924,6 +924,8 @@ export class BaseWallet {
    * send Send some amount to an address
    * this function processes the send requests, encodes the transaction, sends it to the network.
    * A BCH output below its dust limit is refused with InvalidRequestError before anything is built.
+   * A send only every usable coin can fund spends them all, any change at or below dust going to
+   * the miners.
    * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async send(
@@ -1256,24 +1258,36 @@ export class BaseWallet {
         ...ensureUtxos,
         ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
       ];
-      // A send of every usable coin, as of the amount getMaxAmountToSend gives, fits without
-      // change where the estimate, which prices a change output, does not; change at or below
-      // dust is not built, as below
-      let leftover = -1n;
-      let feeWithoutChange = 0n;
-      if (sumUtxoValue(usable) > spendAmount) {
-        feeWithoutChange = await getFeeAmount({
+      // The estimate prices each input over, so a send every usable coin can fund may fail it,
+      // as of the amount getMaxAmountToSend gives; such a send spends them all at the precise
+      // fee, with a change output when its change is above dust and else, as below, without
+      const usableValue = sumUtxoValue(usable);
+      const preciseFee = (withoutChange: boolean) =>
+        getFeeAmount({
           utxos: usable,
           sendRequests,
           sourceAddress: this.getDepositAddress(),
           relayFeePerByteInSatoshi,
-          discardChange: true,
+          discardChange: withoutChange,
           walletCache: this.walletCache,
           tokenChange,
         });
-        leftover = sumUtxoValue(usable) - spendAmount - feeWithoutChange;
+      let fallback: Awaited<ReturnType<typeof settle>> | undefined;
+      if (usableValue > spendAmount && !discardChange) {
+        const fee = await preciseFee(false);
+        if (usableValue - spendAmount - fee > DUST_UTXO_THRESHOLD) {
+          fallback = { selectedUtxos: usable, fee };
+        }
       }
-      if (leftover < 0n || leftover > DUST_UTXO_THRESHOLD) {
+      // the whole leftover is the fee, so that no change output is built on top of a fee priced
+      // without one
+      if (!fallback && usableValue > spendAmount) {
+        const fee = await preciseFee(true);
+        if (usableValue - spendAmount >= fee) {
+          fallback = { selectedUtxos: usable, fee: usableValue - spendAmount };
+        }
+      }
+      if (!fallback) {
         // The last round's estimate leaves out the fee of the coins the selection could not
         // reach; what is needed is told from the fee of spending every coin it could use.
         const usableFee = await estimateFee(usable);
@@ -1281,7 +1295,7 @@ export class BaseWallet {
         if (shortfall.required > required) required = shortfall.required;
         throw amountNotMetError(required, shortfall.available);
       }
-      settled = { selectedUtxos: usable, fee: feeWithoutChange };
+      settled = fallback;
     }
     // Change at or below dust is not built and goes to the miners. Selecting for change above
     // dust is kept when it pays the miners less, the extra inputs' fees included.

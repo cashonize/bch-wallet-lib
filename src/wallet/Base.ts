@@ -39,11 +39,7 @@ import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { checkUtxos, toOutpoint } from "../util/checkUtxos.js";
 import { deriveLockscript } from "../util/deriveLockscript.js";
 import { Limiter } from "../util/mapConcurrent.js";
-import {
-  getRuntimePlatform,
-  sumUtxoValue,
-  toTokenaddr,
-} from "../util/index.js";
+import { sumUtxoValue, toTokenaddr } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { tokenOutput } from "../util/tokenOutput.js";
 import { walletIdKind } from "../util/walletIdError.js";
@@ -307,7 +303,6 @@ export class BaseWallet {
     if (!name?.length) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this.network);
     this.name = name;
     const db = getStorageProvider(networkConfig(this.network).dbName);
 
@@ -349,7 +344,6 @@ export class BaseWallet {
     if (name.length === 0) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this.network);
     this.name = name;
     let db = getStorageProvider(networkConfig(this.network).dbName);
 
@@ -1812,23 +1806,6 @@ export class BaseWallet {
 }
 
 /**
- * _checkContextSafety (internal) if running in nodejs, will disable saving
- * mainnet wallets on public servers if ALLOW_MAINNET_USER_WALLETS is set to false
- * @param network        the network of the wallet to save
- */
-export const _checkContextSafety = function (network: Network) {
-  if (getRuntimePlatform() === "node") {
-    if (process.env.ALLOW_MAINNET_USER_WALLETS === `false`) {
-      if (network === NetworkType.Mainnet) {
-        throw Error(
-          `Refusing to save wallet in an open public database, remove ALLOW_MAINNET_USER_WALLETS="false", if this service is secure and private`,
-        );
-      }
-    }
-  }
-};
-
-/**
  * getNamedWalletId - get the full wallet id from the database
  *
  * @param name   user friendly wallet alias
@@ -1932,7 +1909,6 @@ export async function saveNamedWallet(
       { kind: walletIdKind(walletId.split(":")[0]), reason: "network" },
     );
   }
-  _checkContextSafety(network);
 
   const db = getStorageProvider(dbName || networkDbName);
   if (!db) {

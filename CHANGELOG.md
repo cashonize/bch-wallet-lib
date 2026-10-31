@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 (2026-10-31)
+
+- `watchUtxos(callback, { onError })`: a failed read of the coins after the first is handed to `onError`, so an app can tell the user its view of the wallet may be out of date; the last coins reported stand until the next status change reads again. Without `onError` it goes to console.error, as before.
+
 ## 0.3.0 (2026-10-31)
 
 - Breaking, to the API:

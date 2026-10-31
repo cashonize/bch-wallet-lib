@@ -38,8 +38,9 @@ test("a history keeps its hex strings flat", async () => {
   const perOutput = (withHistory - process.memoryUsage().heapUsed) / outputs;
 
   // each output keeps its locking bytecode as hex: about 1.2 KB per output built two characters at
-  // a time, as libauth's binToHex does, about 190 B flat; the lower bound fails a measurement that
+  // a time, as libauth's binToHex does, about 190 B flat; the upper bound leaves room for the heap
+  // measurement's noise (runs reach about 400 B), the lower bound fails a measurement that
   // measured nothing
-  expect(perOutput).toBeLessThan(400);
+  expect(perOutput).toBeLessThan(600);
   expect(perOutput).toBeGreaterThan(50);
 });

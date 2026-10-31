@@ -13,7 +13,8 @@
     "noImplicitAny": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "strictPropertyInitialization": false,
+    "strictPropertyInitialization": true,
+    "noImplicitOverride": true,
     "useDefineForClassFields": false,
 
     "lib": ["es2022", "dom", "webworker"],

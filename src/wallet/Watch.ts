@@ -84,7 +84,7 @@ export class WatchWallet extends BaseWallet {
 
   /// Initialize the watch-only wallet given the options - public key or address variations
   /// This internal method is called by watchOnly and by Wallet's initialize
-  protected async initialize({
+  protected override async initialize({
     name = "",
     publicKeyCompressed,
     publicKeyHash,
@@ -379,7 +379,7 @@ export class WatchWallet extends BaseWallet {
    *
    * @returns The deposit address as a string
    */
-  public getDepositAddress(): string {
+  public override getDepositAddress(): string {
     return this.cashaddr;
   }
 
@@ -392,7 +392,7 @@ export class WatchWallet extends BaseWallet {
    *
    * @returns The change address as a string
    */
-  public getChangeAddress(): string {
+  public override getChangeAddress(): string {
     return this.cashaddr;
   }
 
@@ -401,7 +401,7 @@ export class WatchWallet extends BaseWallet {
    *
    * @returns The cashtoken aware deposit address as a string
    */
-  public getTokenDepositAddress(): string {
+  public override getTokenDepositAddress(): string {
     return this.tokenaddr;
   }
 
@@ -409,7 +409,7 @@ export class WatchWallet extends BaseWallet {
    * utxos Get unspent outputs for the wallet
    *
    */
-  public async getUtxos(): Promise<Utxo[]> {
+  public override async getUtxos(): Promise<Utxo[]> {
     await this.watched();
     await this.updatePromise;
 
@@ -417,14 +417,14 @@ export class WatchWallet extends BaseWallet {
   }
 
   // Gets balance by summing value in all utxos in sats, those of token utxos included
-  public async getBalance(): Promise<bigint> {
+  public override async getBalance(): Promise<bigint> {
     await this.watched();
     await this.updatePromise;
     return sumUtxoValue(this.utxos);
   }
 
   // gets transaction history of this wallet
-  public async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
+  public override async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
     await this.watched();
     await this.updatePromise;
 
@@ -471,7 +471,7 @@ export class WatchWallet extends BaseWallet {
     });
   }
 
-  protected fromId(walletId: string): Promise<this> {
+  protected override fromId(walletId: string): Promise<this> {
     const [walletType, networkGiven, arg1, arg2]: string[] =
       walletId.split(":");
 

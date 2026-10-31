@@ -76,7 +76,7 @@ export class Wallet extends WatchWallet {
   /// If mnemonic or private key provided, the wallet will be able to sign transactions
   /// Otherwise, the wallet will be watch-only
   /// This internal method is called by the various static constructors
-  protected async initialize({
+  protected override async initialize({
     name = "",
     mnemonic,
     derivationPath,
@@ -208,7 +208,7 @@ export class Wallet extends WatchWallet {
   //#endregion Constructors
 
   //#region Protected implementations
-  protected fromId = async (walletId: string): Promise<this> => {
+  protected override fromId = async (walletId: string): Promise<this> => {
     const [walletType, networkGiven, arg1, arg2]: string[] =
       walletId.split(":");
 
@@ -330,7 +330,7 @@ export class Wallet extends WatchWallet {
    *
    * @throws {Error} if called on BaseWallet
    */
-  public toDbString() {
+  public override toDbString() {
     if (this.walletType == WalletTypeEnum.Seed) {
       return `${this.walletType}:${this.network}:${this.mnemonic}:${this.derivationPath}`;
     } else if (this.walletType == WalletTypeEnum.PrivateKey) {
@@ -354,7 +354,7 @@ export class Wallet extends WatchWallet {
    *
    * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
-  public async sendMax(
+  public override async sendMax(
     cashaddr: string,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
@@ -371,7 +371,7 @@ export class Wallet extends WatchWallet {
    * @param  {boolean} discardChange=false
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
-  protected async encodeTransaction(
+  protected override async encodeTransaction(
     requests:
       | SendRequest
       | TokenSendRequest

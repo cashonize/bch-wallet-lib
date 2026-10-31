@@ -126,7 +126,7 @@ export class HDWallet extends BaseWallet {
   private failedFetches = new Map<string, () => Promise<void>>();
   private refetching?: Promise<void>;
 
-  public get networkPrefix(): CashAddressNetworkPrefix {
+  public override get networkPrefix(): CashAddressNetworkPrefix {
     return networkConfig(this.network)
       .addressPrefix as CashAddressNetworkPrefix;
   }
@@ -145,7 +145,7 @@ export class HDWallet extends BaseWallet {
   /// If mnemonic or xPriv provided, the wallet will be able to sign transactions
   /// If xPub provided, the wallet will be watch-only
   /// This internal method is called by the various static constructors
-  protected async initialize({
+  protected override async initialize({
     name = "",
     branches,
     indices,
@@ -767,7 +767,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /** utxos Get unspent outputs of every tracked branch. */
-  public async getUtxos(): Promise<Utxo[]> {
+  public override async getUtxos(): Promise<Utxo[]> {
     await this.discovered();
 
     return this.collectUtxosFromBranches();
@@ -780,7 +780,7 @@ export class HDWallet extends BaseWallet {
   }
 
   // Gets balance by summing value in all utxos in sats, those of token utxos included
-  public async getBalance(): Promise<bigint> {
+  public override async getBalance(): Promise<bigint> {
     await this.discovered();
 
     return sumUtxoValue(this.collectUtxosFromBranches());
@@ -818,13 +818,13 @@ export class HDWallet extends BaseWallet {
 
   /// Get next unused deposit address (branch 0), or the address at the
   /// specified index. Convenience alias for `getAddressByBranch(0, index)`.
-  public getDepositAddress(index: number = -1): string {
+  public override getDepositAddress(index: number = -1): string {
     return this.getAddressByBranch(DEPOSIT_BRANCH, index);
   }
 
   /// Get next unused token deposit address (branch 0), or the token address
   /// at the specified index.
-  public getTokenDepositAddress(index: number = -1): string {
+  public override getTokenDepositAddress(index: number = -1): string {
     return this.getTokenAddressByBranch(DEPOSIT_BRANCH, index);
   }
 
@@ -837,7 +837,7 @@ export class HDWallet extends BaseWallet {
 
   /// Get next unused change address (branch 1), or the address at the
   /// specified index.
-  public getChangeAddress(index: number = -1): string {
+  public override getChangeAddress(index: number = -1): string {
     return this.getAddressByBranch(CHANGE_BRANCH, index);
   }
 
@@ -849,7 +849,7 @@ export class HDWallet extends BaseWallet {
     );
   }
 
-  public hasAddress(address: string): boolean {
+  public override hasAddress(address: string): boolean {
     return this.walletCache.get(address) !== undefined;
   }
 
@@ -907,7 +907,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /// override the base class fromId method implementation
-  protected async fromId(walletId: string): Promise<this> {
+  protected override async fromId(walletId: string): Promise<this> {
     const [walletType, networkGiven, arg1, arg2, arg3, arg4] =
       walletId.split(":");
 
@@ -972,7 +972,7 @@ export class HDWallet extends BaseWallet {
    *
    * @throws {Error} if called on BaseWallet
    */
-  public toDbString() {
+  public override toDbString() {
     if (this.walletType == WalletTypeEnum.Hd) {
       // Serialize indices for branches 0 and 1 only -- the persisted format
       // pre-dates arbitrary-branch tracking. Non-default branches are not
@@ -1046,7 +1046,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /** The wallet's transaction history, over every tracked branch. */
-  public async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
+  public override async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
     await this.discovered();
 
     const historyArrays: TxI[][] = [];

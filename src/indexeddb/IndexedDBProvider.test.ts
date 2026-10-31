@@ -199,10 +199,10 @@ describe("namedWalletExists", () => {
     const failure = new Error("store unreadable");
     const close = vi.fn();
     class FailingProvider extends IndexedDBProvider {
-      async walletExists(): Promise<boolean> {
+      override async walletExists(): Promise<boolean> {
         throw failure;
       }
-      async close() {
+      override async close() {
         close();
         return super.close();
       }

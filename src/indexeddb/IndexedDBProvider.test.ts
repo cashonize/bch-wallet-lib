@@ -6,7 +6,6 @@ import {
   HDWallet,
   InvalidWalletIdError,
   saveNamedWallet,
-  TestNetWallet,
   Wallet,
 } from "../index.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
@@ -65,7 +64,7 @@ test("Store and retrieve a Testnet wallet", async () => {
   await db.init();
   // passing a name to newRandom should save the wallet,
   // but we want to save it manually in this case
-  let w1 = await TestNetWallet.newRandom();
+  let w1 = await Wallet.newRandom("", { network: "testnet" });
   w1.name = "dave";
   await db.addWallet(w1.name, w1.toDbString());
   let w2 = await db.getWallet("dave");

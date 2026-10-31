@@ -6,7 +6,6 @@ import {
   namedWalletExists,
   saveNamedWallet,
   SignedMessage,
-  TestNetWallet,
   Wallet,
 } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
@@ -25,13 +24,15 @@ describe("Wallet should function in the browser", () => {
   });
 
   test("Should load module", async () => {
-    expect(typeof TestNetWallet).toEqual("function");
+    expect(typeof Wallet).toEqual("function");
   });
 
   test("Should throw Error on regtest wif to Testnet", async () => {
     expect.assertions(1);
     try {
-      await TestNetWallet.fromId(`wif:regtest:${process.env.PRIVATE_WIF}`);
+      await Wallet.fromId(`wif:regtest:${process.env.PRIVATE_WIF}`, {
+        network: "testnet",
+      });
     } catch (e: any) {
       expect(e.message).toContain("Network prefix regtest to a testnet wallet");
     }
@@ -40,14 +41,16 @@ describe("Wallet should function in the browser", () => {
   test("Should throw Error on regtest hd to regtest wif", async () => {
     expect.assertions(1);
     try {
-      await TestNetWallet.fromId(`hd:testnet:${process.env.PRIVATE_WIF}`);
+      await Wallet.fromId(`hd:testnet:${process.env.PRIVATE_WIF}`, {
+        network: "testnet",
+      });
     } catch (e: any) {
       expect(e.message).toContain("Unknown wallet type 'hd'");
     }
   });
 
   test("Should create a random testnet wallet", async () => {
-    const w = await TestNetWallet.newRandom();
+    const w = await Wallet.newRandom("", { network: "testnet" });
     const result = w.getDepositAddress();
     expect(result.slice(0, 9)).toBe("bchtest:q");
   });
@@ -69,15 +72,18 @@ describe("Wallet should function in the browser", () => {
   );
 
   test("Should return deposit address from testnet wallet", async () => {
-    const alice = await TestNetWallet.fromWIF(process.env.PRIVATE_WIF!);
+    const alice = await Wallet.fromWIF(process.env.PRIVATE_WIF!, {
+      network: "testnet",
+    });
     const result = alice.getDepositAddress();
     expect(result.slice(0, 9)).toBe("bchtest:q");
   });
 
   test("Should return watch testnet balance", async () => {
     if (process.env.ALICE_TESTNET_ADDRESS) {
-      const alice = await TestNetWallet.fromId(
+      const alice = await Wallet.fromId(
         `watch:testnet:${process.env.ALICE_TESTNET_ADDRESS}`,
+        { network: "testnet" },
       );
       const result = await alice.getBalance();
       expect(result).toBeGreaterThan(0n);
@@ -86,22 +92,23 @@ describe("Wallet should function in the browser", () => {
 
   test("Should return watch named balance", async () => {
     if (process.env.ALICE_TESTNET_ADDRESS) {
-      const alice = await TestNetWallet.named("alice");
+      const alice = await Wallet.named("alice", { network: "testnet" });
       const result = await alice.getBalance();
       expect(result).toBe(0n);
     }
   });
 
   test("Should retrieve a named wallet", async () => {
-    const alice = await TestNetWallet.named("alice");
-    const alice2 = await TestNetWallet.named("alice");
+    const alice = await Wallet.named("alice", { network: "testnet" });
+    const alice2 = await Wallet.named("alice", { network: "testnet" });
     expect(alice.cashaddr).toBe(alice2.cashaddr);
   });
 
   test("Should return testnet balance in usd", async () => {
     if (process.env.ALICE_TESTNET_ADDRESS) {
-      const alice = await TestNetWallet.fromId(
+      const alice = await Wallet.fromId(
         `watch:testnet:${process.env.ALICE_TESTNET_ADDRESS}`,
+        { network: "testnet" },
       );
       const result = await alice.getBalance();
       expect(result).toBeGreaterThan(0);

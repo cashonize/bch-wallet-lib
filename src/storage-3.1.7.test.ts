@@ -23,8 +23,8 @@ import { removeGlobalProvider, setGlobalProvider } from "./network/default.js";
 import ElectrumNetworkProvider from "./network/ElectrumNetworkProvider.js";
 import { Transport } from "./network/Transport.js";
 import { BaseWallet } from "./wallet/Base.js";
-import { HDWallet, TestNetHDWallet } from "./wallet/HDWallet.js";
-import { TestNetWallet, Wallet } from "./wallet/Wif.js";
+import { HDWallet } from "./wallet/HDWallet.js";
+import { Wallet } from "./wallet/Wif.js";
 
 // What mainnet-js 3.1.7 left in a Cashonize user's browser (see
 // test/fixtures/storage-3.1.7/README.md)
@@ -152,7 +152,7 @@ class FixtureTransport implements Transport {
 
 const classes = {
   bitcoincash: { single: Wallet, hd: HDWallet },
-  bchtest: { single: TestNetWallet, hd: TestNetHDWallet },
+  bchtest: { single: Wallet, hd: HDWallet },
 };
 const networks = {
   bitcoincash: Network.MAINNET,
@@ -203,7 +203,9 @@ describe("data written by mainnet-js 3.1.7", () => {
 
     for (const { dbName, name, expected } of walletRows) {
       const WalletClass = classes[dbName][expected.kind as "single" | "hd"];
-      const wallet = await WalletClass.named(name);
+      const wallet = await WalletClass.named(name, {
+        network: networks[dbName],
+      });
       // both wallet kinds keep their first watch in a protected watchPromise
       await (wallet as unknown as { watchPromise?: Promise<unknown> })
         .watchPromise;

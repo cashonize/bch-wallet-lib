@@ -13,15 +13,13 @@ Entry points (`package.json` `exports`): `@cashonize/bch-wallet-lib` and `@casho
 | Export or member                                   | Who needs it                                                                                                                        |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `Wallet`                                           | Single-address wallets: `interfaces.ts` (`WalletType`), `walletUtils.ts`, `utils.ts`, `sweepPrivateKey.vue`                         |
-| `TestNetWallet`                                    | Only a member of the `WalletType` union in `interfaces.ts`: test-network wallets are made as `Wallet` with `{ network }`            |
 | `HDWallet`                                         | HD wallets: `interfaces.ts`, `walletUtils.ts`, `store.ts`, `addressRows.ts`; `instanceof HDWallet` tells the kind                   |
-| `TestNetHDWallet`                                  | `interfaces.ts`, `addressRows.ts` and an `instanceof` in `store.ts`, each redundant next to `HDWallet`                              |
 | `BaseWallet`                                       | `store.ts` sets `BaseWallet.StorageProvider`; Cashonize tests type wallets with it                                                  |
 | `static fromId(walletId, options?)` (both classes) | Loads a stored id: `utils.ts` `loadWalletFromId`                                                                                    |
 | `Wallet.fromWIF(wif, options?)`                    | The sweep's temporary wallet: `sweepPrivateKey.vue`                                                                                 |
 | `static newRandom(name?, options?)` (both classes) | **No consumer**: Cashonize creates wallets with `named`; the only way to make a random wallet that is not stored                    |
 | `static named(name, options?)`                     | Creates the wallet of a new name: `walletUtils.ts` create flows                                                                     |
-| `WalletFactoryOptions` (`network`)                 | Test-network wallets: `utils.ts`, `walletUtils.ts`, `sweepPrivateKey.vue`                                                           |
+| `WalletFactoryOptions` (`network`)                 | Test-network wallets, the only way to make one (chipnet is `"testnet"`): `utils.ts`, `walletUtils.ts`, `sweepPrivateKey.vue`        |
 | `WalletFactoryOptions` (`provider`)                | **No consumer**: the wallet starts on that provider and no global one is made; Cashonize uses `setGlobalProvider` and `setProvider` |
 | `toDbString()`                                     | **No consumer** in Cashonize's source; the id `saveNamedWallet` stores and the library writes its rows with                         |
 

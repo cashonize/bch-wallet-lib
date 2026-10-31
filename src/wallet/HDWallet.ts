@@ -1085,15 +1085,6 @@ export class HDWallet extends BaseWallet {
 }
 
 /**
- * Class to manage a testnet wallet.
- */
-export class TestNetHDWallet extends HDWallet {
-  constructor() {
-    super(NetworkType.Testnet);
-  }
-}
-
-/**
  * Class to manage a regtest wallet.
  */
 export class RegTestHDWallet extends HDWallet {

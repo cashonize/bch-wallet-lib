@@ -20,12 +20,7 @@ import { getTokenBalance, getTokenUtxos } from "#test/balances.js";
 import { delay } from "../util/delay.js";
 import { toTokenaddr } from "../util/deriveCashaddr.js";
 import { getNextUnusedIndex, getNextUnusedIndices } from "../util/hd.js";
-import {
-  GAP_SIZE,
-  HDWallet,
-  RegTestHDWallet,
-  TestNetHDWallet,
-} from "./HDWallet.js";
+import { GAP_SIZE, HDWallet, RegTestHDWallet } from "./HDWallet.js";
 import { InvalidRequestError } from "./errors.js";
 import { CancelFn } from "./interface.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
@@ -327,20 +322,24 @@ describe("HDWallet", () => {
     expect(xPubRestored.xPub).toBe(expectedXpub);
     expect(xPubRestored.toDbString()).toBe(xPubWallet.toDbString());
 
-    const testnetSeed = await TestNetHDWallet.fromId(`hd:testnet:${mnemonic}`);
+    const testnetSeed = await HDWallet.fromId(`hd:testnet:${mnemonic}`, {
+      network: "testnet",
+    });
     const tPriv = testnetSeed["xPriv"];
     expect(tPriv.startsWith("tprv")).toBe(true);
-    const tPrivWallet = await TestNetHDWallet.fromId(`hd:testnet:${tPriv}`);
-    const tPrivRestored = await TestNetHDWallet.fromId(
-      tPrivWallet.toDbString(),
-    );
+    const tPrivWallet = await HDWallet.fromId(`hd:testnet:${tPriv}`, {
+      network: "testnet",
+    });
+    const tPrivRestored = await HDWallet.fromId(tPrivWallet.toDbString(), {
+      network: "testnet",
+    });
     expect(tPrivRestored.toDbString()).toBe(`hd:testnet:${tPriv}:0:0`);
     expect(tPrivRestored.getDepositAddress(0)).toBe(
       testnetSeed.getDepositAddress(0),
     );
     // an xprv id is not one of a testnet wallet's
     await expect(
-      TestNetHDWallet.fromId(`hd:testnet:${expectedXprv}:0:0`),
+      HDWallet.fromId(`hd:testnet:${expectedXprv}:0:0`, { network: "testnet" }),
     ).rejects.toThrow("does not match wallet network");
   });
 

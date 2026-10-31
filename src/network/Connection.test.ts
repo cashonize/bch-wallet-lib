@@ -1,4 +1,4 @@
-import { RegTestWallet, TestNetWallet, Wallet } from "../wallet/Wif.js";
+import { RegTestWallet, Wallet } from "../wallet/Wif.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { createProvider } from "./default.js";
 import { liveTests } from "#test/live.js";
@@ -25,7 +25,7 @@ test.skipIf(!liveTests)("Should connect to mainnet", async () => {
 test.skipIf(!liveTests)(
   "Should use global provider when creating testnet wallet",
   async () => {
-    let wallet = await TestNetWallet.newRandom();
+    let wallet = await Wallet.newRandom("", { network: "testnet" });
     expect(wallet.provider == globalThis.tBCH).toBeTruthy();
     expect(await wallet.getBalance()).toBe(0n);
 

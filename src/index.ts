@@ -84,7 +84,6 @@ export {
   DEPOSIT_BRANCH,
   GAP_SIZE,
   HDWallet,
-  TestNetHDWallet,
 } from "./wallet/HDWallet.js";
 export type {
   CancelFn,
@@ -103,4 +102,4 @@ export type {
   SendRequestType,
   SendResponse,
 } from "./wallet/model.js";
-export { TestNetWallet, Wallet } from "./wallet/Wif.js";
+export { Wallet } from "./wallet/Wif.js";

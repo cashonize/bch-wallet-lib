@@ -6,7 +6,7 @@ import {
 } from "@bitauth/libauth";
 import fs from "fs";
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { RegTestWallet, TestNetWallet, Wallet } from "../wallet/Wif.js";
+import { RegTestWallet, Wallet } from "../wallet/Wif.js";
 import { hash_message, SignedMessage } from "./signed.js";
 
 beforeAll(async () => {
@@ -64,8 +64,9 @@ describe("Test message Signing and Verification", () => {
   // INGajEdcctxl+WR/icZJ5mNenqcxfhqhAkBkAauBxfZFdeKaU/FaL7fxgVyTul6Qxz1Oesn8avN/F+AaFIcMP74=
 
   test("Test testnet signature from electron cash", async () => {
-    let w = await TestNetWallet.fromId(
+    let w = await Wallet.fromId(
       "wif:testnet:cTHMu3b13uh4i4GANQKm1XeziZhph18fwZgdaVftxh4FSuqj2AGM",
+      { network: "testnet" },
     );
     expect(w.cashaddr!).toBe(
       "bchtest:qqf25s9nm4uq982t94vq75v78n4j0e4r4vdf9j48wn",

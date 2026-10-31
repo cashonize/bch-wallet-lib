@@ -1,3 +1,4 @@
+import { binToHex } from "@bitauth/libauth";
 import { Config } from "../config.js";
 import { EXCHANGE_RATE_TTL } from "../constant.js";
 import ExchangeRateProvider from "../db/ExchangeRateProvider.js";
@@ -99,7 +100,7 @@ function platformCache(): RateCache {
 // Config.GetExchangeRateFn changes in this process, every cached rate counts
 // (the persisted ones were written by an earlier run, whose source is unknown);
 // after a change, only rates fetched from the current source in this process.
-const processId = Math.random().toString(36).slice(2);
+const processId = binToHex(crypto.getRandomValues(new Uint8Array(8)));
 const UNSEEN = Symbol("unseen");
 let rateSource: typeof Config.GetExchangeRateFn | typeof UNSEEN = UNSEEN;
 let rateSourceChanges = 0;

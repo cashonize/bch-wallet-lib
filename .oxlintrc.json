@@ -32,6 +32,27 @@
     "unicorn/prefer-string-starts-ends-with": "warn",
     "typescript/no-misused-promises": "error",
     "typescript/only-throw-error": "error",
-    "typescript/prefer-promise-reject-errors": "error"
-  }
+    "typescript/prefer-promise-reject-errors": "error",
+    // a wallet library: no code built from strings, no promise left unhandled, no guessable randomness
+    "no-eval": "error",
+    "no-new-func": "error",
+    "typescript/no-implied-eval": "error",
+    "typescript/no-floating-promises": "error",
+    "no-restricted-properties": [
+      "error",
+      {
+        "object": "Math",
+        "property": "random",
+        "message": "Use crypto.getRandomValues: Math.random is not a secure source."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.browser.ts", "test/**"],
+      "rules": {
+        "no-restricted-properties": "off"
+      }
+    }
+  ]
 }

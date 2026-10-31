@@ -50,7 +50,7 @@ Stryker on `src/wallet/Base.ts` (coin pool, selection, change), `src/transaction
 
 ### 7. Adversarial server (to build)
 
-Electrum data is not verified, so the server is untrusted input. A mem-cash wrapper that lies: wrong coin values, invented or dropped token data, coins of other addresses, malformed or out-of-order responses. Sighash covers input values and token data, so the result must be a refused signature or a typed error, never a valid transaction paying out different amounts than shown. Also covers the out-of-order status responses left open in the send fix.
+Electrum data is not verified, so the server is untrusted input. A mem-cash wrapper that lies: wrong coin values, invented or dropped token data, coins of other addresses, malformed or out-of-order responses. The wallet signs every input of a library send, and each signature covers its own coin's value and token data, so the result must be a refused signature or a typed error, never a valid transaction paying out different amounts than shown. Also covers the out-of-order status responses left open in the send fix.
 
 ## Outside the library
 

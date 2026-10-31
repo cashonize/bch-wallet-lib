@@ -539,7 +539,10 @@ export class BaseWallet {
    * change (for an HD wallet after its discovery and debounce), with the coins added and removed
    * since the last call, by outpoint: a coin that confirms is in neither. A repeated status, as after
    * a reconnect, calls back with both empty.
-   * @param callback - Its errors, and a failed read after the first, go to console.error
+   * @param callback - Its errors go to console.error
+   * @param options.onError - Called with a failed read after the first, which leaves the last coins
+   * reported standing until the next status change reads again; without it the error goes to
+   * console.error
    * @returns Cancel function to stop watching
    * @throws If the first read of the coins fails
    */
@@ -549,6 +552,7 @@ export class BaseWallet {
       added: Utxo[];
       removed: Utxo[];
     }) => unknown,
+    options: { onError?: (error: unknown) => unknown } = {},
   ): Promise<CancelFn> {
     // the first read to resolve is the baseline, whether the status watch's or the one below; the
     // diffs are made against the last read resolved, never against what a consumer saw
@@ -564,7 +568,15 @@ export class BaseWallet {
     };
     // the watch is made before the first read, so a change in between is not missed
     const cancelStatus = await this.watchStatus(async () => {
-      const utxos = await this.getUtxos();
+      let utxos: Utxo[];
+      try {
+        utxos = await this.getUtxos();
+      } catch (error) {
+        if (cancelled) return;
+        if (!options.onError) throw error;
+        runCallback(() => options.onError!(error));
+        return;
+      }
       report(utxos);
     });
     const cancel = () => {

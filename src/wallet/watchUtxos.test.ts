@@ -76,6 +76,29 @@ test("a single-address wallet reports its coins, then each coin added or removed
   await wallet.stop();
 });
 
+test("a failed read after the first goes to onError, and the next status change reads again", async () => {
+  const wallet = await RegTestWallet.newRandom();
+  const changes: UtxoChange[] = [];
+  const errors: unknown[] = [];
+  await wallet.watchUtxos((change) => changes.push(change), {
+    onError: (error) => errors.push(error),
+  });
+  await changesUntil(changes, 1);
+
+  const failure = new Error("server refused the read");
+  vi.spyOn(wallet, "getUtxos").mockRejectedValueOnce(failure);
+  await fund(wallet.cashaddr, 5_000n);
+  await vi.waitFor(() => expect(errors).toEqual([failure]));
+  expect(changes).toHaveLength(1);
+
+  const second = await fund(wallet.cashaddr, 7_000n);
+  const change = await changesUntil(changes, 2);
+  expect(outpoints(change.utxos)).toHaveLength(2);
+  expect(change.added.map(toOutpoint)).toContain(toOutpoint(second));
+
+  await wallet.stop();
+});
+
 test("an HD wallet folds the status changes of one debounce into one change", async () => {
   const wallet = await RegTestHDWallet.newRandom();
   await wallet["watchPromise"];

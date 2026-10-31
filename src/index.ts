@@ -1,6 +1,7 @@
 // config
 export { Config } from "./config.js";
 export type { WalletDbEntryI } from "./db/interface.js";
+export type { default as StorageProvider } from "./db/StorageProvider.js";
 // cache
 export { pruneWalletCaches } from "./cache/walletCache.js";
 // Enum

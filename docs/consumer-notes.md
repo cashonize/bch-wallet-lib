@@ -137,7 +137,6 @@ Done in round 2 and moved to section 4: reserved coins out of every spend (`excl
 - Coins picked for mutable-NFT requests now come after those of the other NFT requests in the inputs, before the fungible token coins; `ensureUtxos` still go first.
 - A `tokenBurn` of more fungible tokens than the matching coins carry now throws `InsufficientFundsError` (`asset: "token"`), where it burned them all. `tokenItemFT.vue` checks the amount against the spendable balance first; if that balance counts fungible tokens on NFT coins, which a burn without an NFT does not spend, the error reaches the user.
 - A `tokenBurn` request with amount 0 and no NFT now throws `InvalidRequestError`. `tokenItemFT.vue` only checks that the typed amount is not empty, so `0` reaches the library; check for a positive amount there.
-- mainnet-js 3.1.7 can't open an `hd:<xprv>` row, so a wallet stored that way can't be rolled back. Cashonize stores its HD wallets by mnemonic only (`walletUtils.ts`, `hd:<network>:<mnemonic>:<path>:0:0`), so a rollback keeps them; keep it that way while a rollback to 3.1.7 is possible.
 - `ExchangeRate.get(currency, true)` is gone: `store.ts` reads `(await ExchangeRate.getQuote(currency)).rate`, or passes `{ staleOnError: true }` and replaces `currentExchangeRate`'s fallback (section 4).
 - The `NetworkProvider` type is gone: `test/bchWalletLib.test.ts` casts its mock provider to `ElectrumNetworkProvider` instead (lines 15 and 40).
 - The free `getHistory` requires `utxos`; the test that calls it already passes `utxos: []`. Its `unit`, `start`, `fromHeight` and `toHeight` options are gone, which Cashonize never passed.
@@ -164,7 +163,7 @@ Round 3 cut these with no Cashonize use. Each may come back when a consumer need
 
 - **Encrypted storage** (`EncryptedStorageProvider`, the `encrypted-storage` entry; `1b87512`, source at `git show 1b87512^:src/db/EncryptedStorageProvider.ts`). Cashonize wants wallet encryption over time. Redesign it rather than revert it:
   - it encrypted only the wallet-id rows, while an HD wallet's `walletCache-…` record holds its derived private keys as well;
-  - encrypted rows break the storage freeze, as mainnet-js 3.1.7 cannot read them after a rollback, so adopting it needs an explicit opt-in and a migration story across both databases (`bitcoincash` and `bchtest`);
+  - encrypted rows change the frozen storage format (AGENTS.md), so adopting it needs an explicit opt-in and a migration story across both databases (`bitcoincash` and `bchtest`);
   - the `StorageProvider` interface has changed since (`getInfo`, `storeName` and `WalletDbEntryI.id` are gone);
   - 600k PBKDF2 iterations in pure JS need a performance check on mobile (Capacitor) before they gate opening a wallet.
 - **The unsigned build path** (`buildUnsigned`, `UnsignedSendResponse`, `signUnsignedTransaction`; `333912e`). A watch-only or hardware-wallet feature would need it: build the transaction with its source outputs, sign elsewhere, broadcast. It signed every input with one P2PKH key, overwriting whatever unlock an input had, so it needs redoing (per-input keys, leaving inputs that are not the wallet's alone) rather than restoring.

@@ -26,8 +26,8 @@ import { BaseWallet } from "./wallet/Base.js";
 import { HDWallet, TestNetHDWallet } from "./wallet/HDWallet.js";
 import { TestNetWallet, Wallet } from "./wallet/Wif.js";
 
-// What mainnet-js 3.1.7 left in a Cashonize user's browser, written by
-// test/fixtures/storage-3.1.7/generate.mjs (see its README)
+// What mainnet-js 3.1.7 left in a Cashonize user's browser (see
+// test/fixtures/storage-3.1.7/README.md)
 const fixture = JSON.parse(
   readFileSync(
     path.resolve(

@@ -17,6 +17,8 @@ import { InvalidRequestError } from "./errors.js";
 // CashTokens limits: fungible amounts are 64-bit signed, commitments up to 128 bytes (May 2026)
 const MAX_FUNGIBLE_AMOUNT = 2n ** 63n - 1n;
 const MAX_COMMITMENT_BYTES = 128;
+// 21 million BCH, the most an output can hold
+const MAX_SATOSHIS = 2_100_000_000_000_000n;
 
 const shown = (value: unknown) =>
   typeof value === "string" ||
@@ -43,11 +45,18 @@ export function toTokenCategory(category: unknown): string {
 
 /**
  * The NFT with its commitment lowercased, a copy, so that a commitment in either case names the
- * wallet's coin; throws when the commitment is not even-length hex of at most 128 bytes.
+ * wallet's coin. Throws when an NFT names a capability but no commitment (an NFT without one has
+ * the empty commitment, ""), or when the commitment is not even-length hex of at most 128 bytes.
  */
 export function toTokenNft<T extends RequestNft>(
   nft: T | undefined,
 ): T | undefined {
+  if (nft?.capability !== undefined && nft.commitment === undefined) {
+    throw new InvalidRequestError(
+      'NFT commitment missing: pass "" for an NFT without one',
+      { field: "nft.commitment", value: undefined },
+    );
+  }
   if (nft?.commitment === undefined) return nft;
   const commitment: unknown = nft.commitment;
   // libauth's hexToBin reads an odd-length or non-hex string as other bytes ("abc" as ab0c)
@@ -89,6 +98,31 @@ export function toTokenAmount(amount: unknown): bigint {
   return result;
 }
 
+/** An output's satoshi value as a bigint; throws when it is not an integer from 1 to 21e14. */
+export function toSatoshiValue(value: unknown): bigint {
+  let result: bigint | undefined;
+  if (typeof value === "bigint") {
+    result = value;
+  } else if (typeof value === "number" && Number.isSafeInteger(value)) {
+    result = BigInt(value);
+  } else if (typeof value === "string" && /^-?[0-9]+$/.test(value)) {
+    result = BigInt(value);
+  }
+  if (result === undefined || result <= 0n || result > MAX_SATOSHIS) {
+    throw new InvalidRequestError(
+      `Invalid satoshi value: ${shown(value)}, expected an integer from 1 to ${MAX_SATOSHIS}`,
+      { field: "value", value },
+    );
+  }
+  return result;
+}
+
+// a token output's value, where none or 0 means the default (util/tokenOutput.ts)
+const toTokenOutputValue = (value: unknown): bigint | undefined =>
+  value === undefined || value === null || value === 0 || value === 0n
+    ? undefined
+    : toSatoshiValue(value);
+
 const hasNft = (nft: RequestNft | undefined) =>
   nft?.capability !== undefined || nft?.commitment !== undefined;
 
@@ -110,6 +144,7 @@ export function checkGenesisRequest(request: TokenGenesisRequest): void {
   const amount = toTokenAmount(request.amount);
   toTokenNft(request.nft);
   checkTokenOutput(amount, request.nft);
+  toTokenOutputValue(request.value);
 }
 
 /** Validates a mint request's token data, before the operation reads any coin. */
@@ -117,6 +152,7 @@ export function checkMintRequest(request: TokenMintRequest): void {
   toTokenCategory(request.category);
   toTokenNft(request.nft);
   checkTokenOutput(0n, request.nft);
+  toTokenOutputValue(request.value);
 }
 
 /** Validates a burn request's token data, before the operation reads any coin. */
@@ -144,7 +180,7 @@ export class SendRequest {
 
   constructor({ cashaddr, value }: { cashaddr: string; value: bigint }) {
     this.cashaddr = cashaddr;
-    this.value = BigInt(value);
+    this.value = toSatoshiValue(value);
   }
 }
 
@@ -239,7 +275,7 @@ export class TokenSendRequest {
     checkTokenaddr(cashaddr, Config.EnforceCashTokenReceiptAddresses);
 
     this.cashaddr = cashaddr;
-    this.value = value;
+    this.value = toTokenOutputValue(value);
   }
 }
 

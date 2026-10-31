@@ -25,6 +25,10 @@ import { networkConfig } from "../network/registry.js";
 import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
 import { TxI, Utxo } from "../interface.js";
+import {
+  fetchAddressState,
+  highestConfirmedHeight,
+} from "../util/addressHistory.js";
 import { checkForEmptySeed } from "../util/checkForEmptySeed.js";
 import {
   arrayRange,
@@ -517,20 +521,24 @@ export class HDWallet extends BaseWallet {
                 const fromHeight = lastConfirmedHeight;
                 const currentHistory = historyArray[index] || [];
 
-                let utxos: Utxo[];
-                let newHistory: TxI[];
+                let fetched: Awaited<ReturnType<typeof fetchAddressState>>;
                 try {
-                  [utxos, newHistory] = await this.discoveryLimiter.run(() =>
-                    Promise.all([
-                      this.provider.getUtxos(addr).then((utxos) =>
-                        utxos.map((utxo) => {
-                          utxo.address = addr;
-                          return utxo;
-                        }),
+                  fetched = await fetchAddressState(
+                    (from) =>
+                      this.discoveryLimiter.run(() =>
+                        Promise.all([
+                          this.provider.getUtxos(addr).then((utxos) =>
+                            utxos.map((utxo) => {
+                              utxo.address = addr;
+                              return utxo;
+                            }),
+                          ),
+                          this.provider.getHistory(addr, from),
+                        ]),
                       ),
-                      // Fetch only from last confirmed height to reduce server load
-                      this.provider.getHistory(addr, fromHeight),
-                    ]),
+                    status,
+                    currentHistory,
+                    fromHeight,
                   );
                 } catch (error) {
                   // the newer fetch decides
@@ -547,38 +555,25 @@ export class HDWallet extends BaseWallet {
                 // a newer notification's fetch has the address's state
                 if (attempt !== fetches) return false;
 
-                // Merge: keep confirmed items from current history, add new items
-                const confirmedFromHistory = currentHistory.filter(
-                  (tx) => tx.height > 0 && tx.height < fromHeight,
-                );
-                const seen = new Set(
-                  confirmedFromHistory.map((tx) => tx.tx_hash),
-                );
-                const merged = [...confirmedFromHistory];
-                for (const tx of newHistory) {
-                  if (!seen.has(tx.tx_hash)) {
-                    seen.add(tx.tx_hash);
-                    merged.push(tx);
-                  }
-                }
-
-                // Update lastConfirmedHeight in closure
-                lastConfirmedHeight = merged.reduce(
-                  (max, tx) => (tx.height > 0 ? Math.max(max, tx.height) : max),
-                  fromHeight,
-                );
-
+                const { utxos, history, matches } = fetched;
+                lastConfirmedHeight = highestConfirmedHeight(history);
                 utxosArray[index] = utxos;
-                historyArray[index] = merged;
+                historyArray[index] = history;
+                // a history that does not match the status keeps the previous one, so that the
+                // next notification fetches again; a previous null, which would mark the address
+                // unused and hand it out again, becomes "", a used status no server announces
+                if (matches) statuses[index] = status;
+                else if (statuses[index] === null) statuses[index] = "";
                 this.walletCache.setStatusAndUtxos(
                   addr,
-                  status,
+                  statuses[index],
                   utxos,
-                  merged,
+                  history,
                   lastConfirmedHeight,
                 );
+              } else {
+                statuses[index] = status;
               }
-              statuses[index] = status;
 
               if (extension) await extension;
               if (status !== null) await extendGap();

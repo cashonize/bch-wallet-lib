@@ -4,18 +4,19 @@ import type { Utxo } from "../interface.js";
 import { TokenSendRequest } from "../wallet/model.js";
 import {
   buildP2pkhNonHdTransaction,
+  getSuitableUtxos,
   placeholderPrivateKeyBin,
   prepareInputs,
 } from "./Wif.js";
 
 const category = "11".repeat(32);
+const p2pkh = encodeCashAddress({
+  prefix: "bchreg",
+  type: "p2pkh",
+  payload: new Uint8Array(20),
+}).address;
 describe("errors are Error objects", () => {
   const walletCache = { get: () => undefined } as unknown as WalletCache;
-  const p2pkh = encodeCashAddress({
-    prefix: "bchreg",
-    type: "p2pkh",
-    payload: new Uint8Array(20),
-  }).address;
   const utxo: Utxo = {
     txid: "22".repeat(32),
     vout: 1,
@@ -47,5 +48,20 @@ describe("errors are Error objects", () => {
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/token/i);
+  });
+});
+
+describe("getSuitableUtxos", () => {
+  const coin = (vout: number, satoshis: bigint): Utxo => ({
+    txid: "33".repeat(32),
+    vout,
+    satoshis,
+    address: p2pkh,
+  });
+
+  test("the top-up stops once the coins cover the amount exactly", async () => {
+    const coins = [coin(0, 500n), coin(1, 500n), coin(2, 500n)];
+    const selected = await getSuitableUtxos(coins, 1000n, []);
+    expect(selected.map((u) => u.vout)).toEqual([0, 1]);
   });
 });

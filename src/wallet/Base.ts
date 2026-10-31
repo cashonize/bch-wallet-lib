@@ -3,6 +3,7 @@ import {
   cashAddressToLockingBytecode,
   CashAddressNetworkPrefix,
   decodeTransaction,
+  encodeCashAddress,
   getDustThreshold,
   lockingBytecodeToCashAddress,
   sha256,
@@ -27,6 +28,7 @@ import {
   buildEncodedTransaction,
   getFeeAmount,
   getFeeAmountSimple,
+  getFeeAmountWithoutChange,
   getSuitableUtxos,
   getTokenChangeRequests,
   placeholderPrivateKeyBin,
@@ -81,6 +83,14 @@ const MOVE_CONCURRENCY = 50;
 
 export const placeholderCashAddr =
   "bitcoincash:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqfnhks603";
+
+// A P2SH32 address, the largest standard output, so that a max sized with it pays enough for any
+// destination
+const placeholderP2sh32Addr = encodeCashAddress({
+  prefix: "bitcoincash",
+  type: "p2sh",
+  payload: new Uint8Array(32),
+}).address;
 
 // A token coin a sweep spends for its satoshis comes back as it was, holding its dust limit only
 function sweptTokenReturn(coin: Utxo, cashaddr: string): TokenSendRequest {
@@ -834,9 +844,9 @@ export class BaseWallet {
     }
     const utxos = pool.filter((utxo) => !utxo.token);
 
-    // the one output of a sendMax, sized as a P2PKH output
+    // the one output of a sendMax
     const sendRequests = [
-      new SendRequest({ cashaddr: placeholderCashAddr, value: 100n }),
+      new SendRequest({ cashaddr: placeholderP2sh32Addr, value: 100n }),
     ];
 
     const fundingUtxos = await getSuitableUtxos(utxos, undefined, sendRequests);
@@ -850,10 +860,9 @@ export class BaseWallet {
     if (options?.sweepTokenSatoshis) {
       const placeholderTokenAddr = toTokenaddr(placeholderCashAddr);
       const estimate = (coins: Utxo[], requests: TokenSendRequest[]) =>
-        getFeeAmountSimple({
+        getFeeAmountWithoutChange({
           utxos: coins,
           sendRequests: requests,
-          sourceAddress: placeholderCashAddr,
           relayFeePerByteInSatoshi,
         });
       const overhead = await estimate([], []);
@@ -871,10 +880,9 @@ export class BaseWallet {
       }
     }
 
-    const fee = await getFeeAmountSimple({
+    const fee = await getFeeAmountWithoutChange({
       utxos: [...fundingUtxos, ...tokenUtxos],
       sendRequests: [...sendRequests, ...tokenReturns],
-      sourceAddress: placeholderCashAddr,
       relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
     });
     const spendableAmount =
@@ -900,7 +908,9 @@ export class BaseWallet {
   /**
    * The amount a `sendMax` with these options sends: the BCH coins of the pool minus the fee of
    * spending them all to one output, plus with `sweepTokenSatoshis` what the token coins worth
-   * sweeping hold above their dust limit.
+   * sweeping hold above their dust limit. The fee is that of the largest standard output, a
+   * P2SH32 one, so the max is enough for any destination and leaves 10 bytes' fee over for a
+   * P2PKH one; a `send` of it spends every coin and leaves that to the miners.
    */
   public async getMaxAmountToSend(
     options?: SendRequestOptionsI,
@@ -912,7 +922,10 @@ export class BaseWallet {
 
   /**
    * send Send some amount to an address
-   * this function processes the send requests, encodes the transaction, sends it to the network
+   * this function processes the send requests, encodes the transaction, sends it to the network.
+   * A BCH output below its dust limit is refused with InvalidRequestError before anything is built.
+   * A send only every usable coin can fund spends them all, any change at or below dust going to
+   * the miners.
    * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async send(
@@ -923,8 +936,24 @@ export class BaseWallet {
       | Array<SendRequest | TokenSendRequest | OpReturnData>,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
+    const sendRequests = asSendRequestObject(requests);
+    // an output below its dust limit is refused by the network, so not built at all
+    for (const request of sendRequests) {
+      if (!(request instanceof SendRequest)) continue;
+      const dustLimit = getDustThreshold({
+        lockingBytecode: deriveLockscript(request.cashaddr),
+        valueSatoshis: request.value,
+      });
+      if (request.value < dustLimit) {
+        throw new InvalidRequestError(
+          `A value of ${request.value} satoshis is below its output's dust limit of ${dustLimit}`,
+          { field: "value", value: request.value },
+        );
+      }
+    }
     const { encodedTransaction, categories } = await this.encodeTransaction(
-      requests,
+      sendRequests,
       undefined,
       options,
     );
@@ -1164,13 +1193,20 @@ export class BaseWallet {
     // plain sends over-select (mainnet-js#253).
     const relayFeePerByteInSatoshi = await getRelayFeeCache(this.provider);
     const ensureUtxos = options?.ensureUtxos || [];
+    // a send without change, a max send, is estimated as its max was
     const estimateFee = (inputs: Utxo[]) =>
-      getFeeAmountSimple({
-        utxos: inputs,
-        sendRequests: allOutputs,
-        sourceAddress: this.getDepositAddress(),
-        relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
-      });
+      discardChange
+        ? getFeeAmountWithoutChange({
+            utxos: inputs,
+            sendRequests: allOutputs,
+            relayFeePerByteInSatoshi,
+          })
+        : getFeeAmountSimple({
+            utxos: inputs,
+            sendRequests: allOutputs,
+            sourceAddress: this.getDepositAddress(),
+            relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
+          });
     // Each round selects for the last round's estimate plus `margin` until the selected coins
     // cover their own fee, the precise one included; the estimate only grows.
     const settle = async (margin: bigint, feeEstimate: bigint) => {
@@ -1195,6 +1231,7 @@ export class BaseWallet {
             sendRequests: sendRequests,
             sourceAddress: this.getDepositAddress(),
             relayFeePerByteInSatoshi: relayFeePerByteInSatoshi,
+            discardChange,
             walletCache: this.walletCache,
             tokenChange,
           });
@@ -1216,17 +1253,49 @@ export class BaseWallet {
       const shortfall: { required: bigint; available: bigint } | undefined =
         e instanceof InsufficientFundsError ? e["data"] : undefined;
       if (!shortfall) throw e;
-      // The last round's estimate leaves out the fee of the coins the selection could not reach;
-      // what is needed is told from the fee of spending every coin it could use.
       const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
       const usable = [
         ...ensureUtxos,
         ...utxos.filter((val) => !val.token && !pinnedIds.has(toUtxoId(val))),
       ];
-      const usableFee = await estimateFee(usable);
-      let required = spendAmount + usableFee;
-      if (shortfall.required > required) required = shortfall.required;
-      throw amountNotMetError(required, shortfall.available);
+      // The estimate prices each input over, so a send every usable coin can fund may fail it,
+      // as of the amount getMaxAmountToSend gives; such a send spends them all at the precise
+      // fee, with a change output when its change is above dust and else, as below, without
+      const usableValue = sumUtxoValue(usable);
+      const preciseFee = (withoutChange: boolean) =>
+        getFeeAmount({
+          utxos: usable,
+          sendRequests,
+          sourceAddress: this.getDepositAddress(),
+          relayFeePerByteInSatoshi,
+          discardChange: withoutChange,
+          walletCache: this.walletCache,
+          tokenChange,
+        });
+      let fallback: Awaited<ReturnType<typeof settle>> | undefined;
+      if (usableValue > spendAmount && !discardChange) {
+        const fee = await preciseFee(false);
+        if (usableValue - spendAmount - fee > DUST_UTXO_THRESHOLD) {
+          fallback = { selectedUtxos: usable, fee };
+        }
+      }
+      // the whole leftover is the fee, so that no change output is built on top of a fee priced
+      // without one
+      if (!fallback && usableValue > spendAmount) {
+        const fee = await preciseFee(true);
+        if (usableValue - spendAmount >= fee) {
+          fallback = { selectedUtxos: usable, fee: usableValue - spendAmount };
+        }
+      }
+      if (!fallback) {
+        // The last round's estimate leaves out the fee of the coins the selection could not
+        // reach; what is needed is told from the fee of spending every coin it could use.
+        const usableFee = await estimateFee(usable);
+        let required = spendAmount + usableFee;
+        if (shortfall.required > required) required = shortfall.required;
+        throw amountNotMetError(required, shortfall.available);
+      }
+      settled = fallback;
     }
     // Change at or below dust is not built and goes to the miners. Selecting for change above
     // dust is kept when it pays the miners less, the extra inputs' fees included.
@@ -1420,7 +1489,8 @@ export class BaseWallet {
    *   @param  {object?} nft NFT capability and commitment
    *   @param  {string?} cashaddr destination address; defaults to wallet's token deposit address
    *   @param  {bigint?} value satoshi value to send alongside tokens; defaults to 1000
-   * @param  {SendRequestType | SendRequestType[]} sendRequests single or an array of extra send requests (OP_RETURN, value transfer, etc.) to include in genesis transaction
+   * @param  {SendRequestType | SendRequestType[]} sendRequests single or an array of extra send requests (OP_RETURN, value transfer, etc.) to include in genesis transaction;
+   *   a token output among them can only carry a category the genesis creates, others are refused with InvalidRequestError
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
   public async tokenGenesis(
@@ -1436,9 +1506,9 @@ export class BaseWallet {
       throw new Error("tokenGenesis requires at least one request");
     }
     genesisRequests.forEach(checkGenesisRequest);
-    if (!Array.isArray(sendRequests)) {
-      sendRequests = [sendRequests];
-    }
+    const extraRequests = asSendRequestObject(
+      sendRequests as Parameters<typeof asSendRequestObject>[0],
+    );
 
     const { pool: utxos } = await this.getSpendPool(options);
 
@@ -1451,6 +1521,19 @@ export class BaseWallet {
     }
 
     const pinnedInputs = genesisInputs.slice(0, genesisRequests.length);
+    // a genesis selects no token coins, so an extra output can only carry a new category
+    const newCategories = pinnedInputs.map((val) => val.txid.toLowerCase());
+    for (const request of extraRequests) {
+      if (
+        request instanceof TokenSendRequest &&
+        !newCategories.includes(request.category)
+      ) {
+        throw new InvalidRequestError(
+          `A token genesis can only send the categories it creates, not ${request.category}`,
+          { field: "sendRequests", value: request.category },
+        );
+      }
+    }
     const depositAddresses = this.getTokenDepositAddresses(
       genesisRequests.filter((request) => !request.cashaddr).length,
     );
@@ -1465,9 +1548,6 @@ export class BaseWallet {
         }),
     );
 
-    const extraRequests = sendRequests as Array<
-      SendRequest | TokenSendRequest | OpReturnData
-    >;
     return this.sendTokenOperation(
       [...genesisSendRequests, ...extraRequests],
       {

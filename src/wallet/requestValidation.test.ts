@@ -3,6 +3,7 @@ import { getTokenUtxos } from "#test/balances.js";
 import { NFTCapability } from "../interface.js";
 import { InvalidRequestError } from "./errors.js";
 import {
+  SendRequest,
   TokenBurnRequest,
   TokenGenesisRequest,
   TokenMintRequest,
@@ -34,6 +35,43 @@ function invalid(build: () => unknown, field: string, value: unknown) {
 }
 
 describe("request constructors", () => {
+  test("a satoshi value must be an integer from 1 to 21e14", async () => {
+    const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
+    for (const bad of [0n, -1n, 1.5, 2_100_000_000_000_001n]) {
+      invalid(
+        () => new SendRequest({ cashaddr, value: bad as bigint }),
+        "value",
+        bad,
+      );
+    }
+    invalid(
+      () =>
+        new TokenSendRequest({ cashaddr, category, amount: 1n, value: -1n }),
+      "value",
+      -1n,
+    );
+    invalid(
+      () => new TokenGenesisRequest({ amount: 1n, value: 1.5 as any }),
+      "value",
+      1.5,
+    );
+    invalid(
+      () =>
+        new TokenMintRequest({
+          category,
+          nft: { capability: none, commitment: "" },
+          value: 2_100_000_000_000_001n,
+        }),
+      "value",
+      2_100_000_000_000_001n,
+    );
+    expect(new SendRequest({ cashaddr, value: 546 as any }).value).toBe(546n);
+    // a token output without a value, or of 0, holds the default
+    expect(
+      new TokenSendRequest({ cashaddr, category, amount: 1n, value: 0n }).value,
+    ).toBeUndefined();
+  });
+
   test("a category must be 64 hex characters", async () => {
     const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
     for (const bad of ["", "11".repeat(31), "11".repeat(33), "zz".repeat(32)]) {
@@ -117,6 +155,24 @@ describe("request constructors", () => {
       );
       expect(new TokenMintRequest({ category, nft }).nft).toBe(nft);
     }
+  });
+
+  test("an NFT request without a commitment is refused rather than guessed", async () => {
+    const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
+    const nft = { capability: none } as any;
+    invalid(
+      () => new TokenSendRequest({ cashaddr, category, nft }),
+      "nft.commitment",
+      undefined,
+    );
+    // without a capability it stays a fungible-only request
+    const fungible = new TokenSendRequest({
+      cashaddr,
+      category,
+      amount: 5n,
+      nft: {} as any,
+    });
+    expect(fungible.nft?.commitment).toBeUndefined();
   });
 
   test("a fungible amount must be from 0 to 2^63-1", async () => {
@@ -402,5 +458,42 @@ describe("token operations validate plain request objects before reading any coi
     const [utxo] = await getTokenUtxos(bob, category);
     expect(utxo.token?.amount).toBe(500n);
     expect(utxo.token?.nft?.commitment).toBe(nft.commitment);
+  });
+});
+
+describe("the extra outputs of a token genesis", () => {
+  test("refuse a category other than the new one, and send the new one", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    const carol = await RegTestWallet.newRandom();
+    // bob's one coin, at vout 0, is the one the genesis spends
+    const { txId } = await alice.send({
+      cashaddr: bob.cashaddr,
+      value: 10_000n,
+    });
+    const submit = vi.spyOn(bob, "submitTransaction");
+
+    const error = await bob
+      .tokenGenesis({ amount: 100n }, [
+        new TokenSendRequest({
+          cashaddr: carol.tokenaddr,
+          category,
+          amount: 1n,
+        }),
+      ])
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidRequestError);
+    expect((error as InvalidRequestError).field).toBe("sendRequests");
+    expect(submit).not.toHaveBeenCalled();
+
+    await bob.tokenGenesis({ amount: 100n }, [
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr,
+        category: txId.toUpperCase(),
+        amount: 5n,
+      }),
+    ]);
+    const [utxo] = await getTokenUtxos(carol, txId);
+    expect(utxo.token?.amount).toBe(5n);
   });
 });

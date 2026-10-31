@@ -10,12 +10,15 @@ import { NetworkType } from "../enum.js";
 import { DUST_UTXO_THRESHOLD as DUST } from "../constant.js";
 import { mine } from "#test/mine.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
-import { BroadcastRejectedError } from "../network/errors.js";
 import { ElectrumRawTransaction } from "../network/interface.js";
 import { decodeWif } from "../util/decodeWif.js";
 import { delay } from "../util/delay.js";
 import { convert } from "../util/index.js";
-import { InvalidWalletIdError, InvalidWifError } from "./errors.js";
+import {
+  InvalidRequestError,
+  InvalidWalletIdError,
+  InvalidWifError,
+} from "./errors.js";
 import { CancelFn } from "./interface.js";
 import {
   OpReturnData,
@@ -1013,31 +1016,21 @@ describe(`Wallet extrema behavior regression testing`, () => {
     await charlieWallet["waitForUpdate"]();
     expect(await charlieWallet.getBalance()).toBe(DUST);
   });
-  test(`Should throw error with dust amounts (${
-    DUST - 1n
-  }), 'min relay fee not met (code 66)' regression`, async () => {
-    expect.assertions(3);
-    try {
-      const aliceWif = `wif:regtest:${process.env.PRIVATE_WIF!}`;
-      const aliceWallet = await RegTestWallet.fromId(aliceWif);
-      const bobWallet = await RegTestWallet.newRandom();
-      const charlieWallet = await RegTestWallet.newRandom();
+  test(`a send of ${DUST - 1n} sats, below the dust limit, is refused before it is built`, async () => {
+    const aliceWallet = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bobWallet = await RegTestWallet.newRandom();
+    const submit = vi.spyOn(aliceWallet, "submitTransaction");
 
-      await aliceWallet.send([
+    // before, the network refused it at broadcast as "dust (code 64)"
+    const error = await aliceWallet
+      .send([
         { cashaddr: bobWallet.cashaddr!, value: DUST },
         { cashaddr: bobWallet.cashaddr!, value: DUST - 1n },
-      ]);
-
-      await bobWallet.send([
-        { cashaddr: charlieWallet.cashaddr!, value: DUST },
-      ]);
-    } catch (e: any) {
-      expect(e.message).toBe(
-        `the transaction was rejected by network rules.\n\ndust (code 64)\n`,
-      );
-      expect(e).toBeInstanceOf(BroadcastRejectedError);
-      expect(e).toMatchObject({ reason: "dust" });
-    }
+      ])
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidRequestError);
+    expect(error).toMatchObject({ field: "value", value: DUST - 1n });
+    expect(submit).not.toHaveBeenCalled();
   });
 
   test("Send op_return data", async () => {

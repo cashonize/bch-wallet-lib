@@ -1,4 +1,4 @@
-import { encodeTransactionOutput, getDustThreshold } from "@bitauth/libauth";
+import { getDustThreshold } from "@bitauth/libauth";
 import { NFTCapability } from "../interface.js";
 import { TokenSendRequest } from "../wallet/model.js";
 import { tokenOutput } from "./tokenOutput.js";
@@ -11,18 +11,6 @@ const longNft = {
 };
 
 describe("tokenOutput", () => {
-  test("gives an NFT without a commitment empty commitment bytes", () => {
-    // an untyped caller can leave out the commitment
-    const request = new TokenSendRequest({
-      cashaddr,
-      category,
-      nft: { capability: "none" } as any,
-    });
-    const output = tokenOutput(request);
-    expect(output.token!.nft!.commitment).toEqual(Uint8Array.of());
-    expect(() => encodeTransactionOutput(output)).not.toThrow();
-  });
-
   test("without a value, a fungible output holds 1000 sats", () => {
     const output = tokenOutput(
       new TokenSendRequest({ cashaddr, category, amount: 100n }),

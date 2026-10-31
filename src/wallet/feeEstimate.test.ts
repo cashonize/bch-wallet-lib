@@ -7,6 +7,7 @@ import {
 import { Config } from "../config.js";
 import { NFTCapability, Utxo } from "../interface.js";
 import { getRelayFeeCache } from "../network/getRelayFeeCache.js";
+import { deriveLockscript } from "../util/deriveLockscript.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { getTokenUtxos } from "#test/balances.js";
 import {
@@ -389,5 +390,99 @@ describe("sendMax and the dust limit", () => {
     const { paid } = await feeCheck(bob, response.transaction, coins);
     expect(paid).toBe(fee);
     expect(await bob.getBalance()).toBe(0n);
+  });
+});
+
+describe("the fee of a max send", () => {
+  const p2sh32 = encodeCashAddress({
+    prefix: "bchreg",
+    type: "p2sh",
+    payload: new Uint8Array(32).fill(1),
+  }).address;
+
+  // the max is sized for a P2SH32 output, 10 bytes above a P2PKH one; the estimate it replaced
+  // priced each input 7 bytes over and added a change output, 389 sats over at 50 coins
+  test.each([
+    { to: "P2PKH", over: 10 },
+    { to: "P2SH32", over: 0 },
+  ])(
+    "pays the fee of its size to a $to address, at most $over bytes over",
+    async ({ to, over }) => {
+      const { alice, bob, coins } = await fund(50, 1000n);
+      const response = await bob.sendMax(
+        to === "P2SH32" ? p2sh32 : alice.cashaddr!,
+      );
+      const { paid, expected } = await feeCheck(
+        bob,
+        response.transaction,
+        coins,
+      );
+      expect(paid - expected).toBeGreaterThanOrEqual(0n);
+      expect(paid - expected).toBeLessThanOrEqual(BigInt(over));
+      expect(await bob.getBalance()).toBe(0n);
+    },
+  );
+
+  // 560 under it leaves 570 sats, above dust, but a change output's 34 bytes would take it below;
+  // at 200 coins the estimate refuses both
+  test("a send of it or just under it spends every coin, its change below dust left to the miners", async () => {
+    const { alice, bob, coins } = await fund(200, 1000n);
+    const max = await bob.getMaxAmountToSend();
+    for (const under of [0n, 100n, 560n]) {
+      const response = await bob.send(
+        { cashaddr: alice.cashaddr!, value: max - under },
+        { broadcast: false },
+      );
+      expect(inputOutpoints(response.transaction)).toEqual(outpointsOf(coins));
+      expect(outputValues(response.transaction)).toEqual([max - under]);
+      const { paid, expected } = await feeCheck(
+        bob,
+        response.transaction,
+        coins,
+      );
+      expect(paid).toBeGreaterThanOrEqual(expected);
+    }
+  });
+
+  // the estimate prices 200 inputs 1406 bytes over, so it refuses a send of every coin whose
+  // change is above dust; before, such a send failed although every coin funded it
+  test("a send every coin funds with change above dust spends them all, with change", async () => {
+    const { alice, bob, coins } = await fund(200, 1000n);
+    const value = (await bob.getMaxAmountToSend()) - 1000n;
+    const response = await bob.send(
+      { cashaddr: alice.cashaddr!, value },
+      { broadcast: false },
+    );
+    expect(inputOutpoints(response.transaction)).toEqual(outpointsOf(coins));
+    const { paid, expected } = await feeCheck(bob, response.transaction, coins);
+    expect(paid).toBe(expected);
+    expect(outputValues(response.transaction)).toEqual([
+      value,
+      200000n - value - expected,
+    ]);
+    const change = decode(response.transaction).outputs[1];
+    expect(binToHex(change.lockingBytecode)).toBe(
+      binToHex(deriveLockscript(bob.getChangeAddress())),
+    );
+  });
+
+  test("a send every coin funds settles on the coins left after excludeUtxoIds", async () => {
+    const { alice, bob, coins } = await fund(200, 1000n);
+    const options = { excludeUtxoIds: [coins[0]], broadcast: false };
+    const max = await bob.getMaxAmountToSend(options);
+    // with change and without
+    for (const [under, outputCount] of [
+      [1000n, 2],
+      [100n, 1],
+    ] as const) {
+      const response = await bob.send(
+        { cashaddr: alice.cashaddr!, value: max - under },
+        options,
+      );
+      expect(inputOutpoints(response.transaction)).toEqual(
+        outpointsOf(coins.slice(1)),
+      );
+      expect(outputValues(response.transaction).length).toBe(outputCount);
+    }
   });
 });

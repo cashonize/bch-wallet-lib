@@ -1,4 +1,15 @@
-import { binToHex } from "@bitauth/libauth";
+import {
+  assertSuccess,
+  binToHex,
+  decodeHdPublicKey,
+  deriveHdPath,
+  deriveHdPathRelative,
+  deriveHdPrivateNodeFromSeed,
+  deriveSeedFromBip39Mnemonic,
+  encodeCashAddress,
+  hash160,
+  secp256k1,
+} from "@bitauth/libauth";
 import { mkdtempSync, readFileSync } from "fs";
 import { LocalStorage } from "node-localstorage";
 import { tmpdir } from "os";
@@ -283,6 +294,17 @@ describe("data written by mainnet-js 3.1.7", () => {
       expect(wallet.indices.get(1)).toBe(expected.changeIndex);
       expect(wallet.getDepositAddress()).toBe(expected.nextDepositAddress);
       expect(wallet.getChangeAddress()).toBe(expected.nextChangeAddress);
+      // the library takes the cached entries as stored, so each is also derived here with libauth
+      // alone: from the seed where the wallet has one, else from its xpub
+      const prefix = dbName === "bitcoincash" ? "bitcoincash" : "bchtest";
+      const account = expected.mnemonic
+        ? deriveHdPath(
+            deriveHdPrivateNodeFromSeed(
+              deriveSeedFromBip39Mnemonic(expected.mnemonic),
+            ),
+            expected.derivation,
+          )
+        : assertSuccess(decodeHdPublicKey(expected.xPub)).node;
       for (const [branch, list] of [
         [0, expected.deposit],
         [1, expected.change],
@@ -293,6 +315,22 @@ describe("data written by mainnet-js 3.1.7", () => {
           expect(entry.tokenAddress).toBe(want.tokenAddress);
           expect(hex(entry.privateKey)).toBe(want.privateKey);
           expect(wallet.hasAddress(want.address)).toBe(true);
+
+          const node = deriveHdPathRelative(account, `${branch}/${index}`);
+          const publicKeyHash = hash160(
+            "publicKey" in node
+              ? node.publicKey
+              : assertSuccess(
+                  secp256k1.derivePublicKeyCompressed(node.privateKey),
+                ),
+          );
+          expect(entry.address).toBe(
+            encodeCashAddress({ prefix, type: "p2pkh", payload: publicKeyHash })
+              .address,
+          );
+          expect(hex(entry.privateKey)).toBe(
+            "privateKey" in node ? binToHex(node.privateKey) : null,
+          );
         });
       }
     },

@@ -4,7 +4,8 @@
     "rootDir": "src",
     "outDir": "dist",
     "sourceMap": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "stripInternal": true
   },
   "include": ["src/**/*.ts"],
   "exclude": [

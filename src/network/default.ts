@@ -14,6 +14,11 @@ import { networkConfig } from "./registry.js";
 
 // The global a network's provider is kept in: the ticker for the built-in networks, as in
 // mainnet-js
+const globalProviders = globalThis as unknown as Record<
+  string,
+  ElectrumNetworkProvider | undefined
+>;
+
 function globalKey(network: Network): string {
   return (
     (networkTickerMap as Record<string, string>)[network] ??
@@ -26,7 +31,7 @@ export function setGlobalProvider(
   provider: ElectrumNetworkProvider,
 ): ElectrumNetworkProvider {
   const accessor = globalKey(network);
-  globalThis[accessor] = provider;
+  globalProviders[accessor] = provider;
   return provider;
 }
 
@@ -34,13 +39,13 @@ export function getGlobalProvider(
   network: Network,
 ): ElectrumNetworkProvider | undefined {
   const accessor = globalKey(network);
-  return globalThis[accessor];
+  return globalProviders[accessor];
 }
 
 export function removeGlobalProvider(network: Network): void {
   const accessor = globalKey(network);
-  if (accessor in globalThis) {
-    delete globalThis[accessor];
+  if (accessor in globalProviders) {
+    delete globalProviders[accessor];
   }
 }
 

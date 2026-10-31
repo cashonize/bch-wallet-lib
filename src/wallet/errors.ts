@@ -4,20 +4,36 @@ import type { NFTCapability } from "../interface.js";
 /**
  * Thrown when the wallet's coins (or the `utxoIds` given) cannot cover a send: too little BCH,
  * or no token coins, or too few, for a category. Tell it apart with `instanceof` rather than by
- * its message; `asset` says which of the two ran short, `category` which token.
+ * its message; `asset` says which of the two ran short, `category` which token. `required` and
+ * `available` give the shortfall where it is known, in satoshis for `bch` and in fungible
+ * tokens of `category` for `token`.
  */
 export class InsufficientFundsError extends Error {
   readonly asset: "bch" | "token";
   readonly category?: string;
+  readonly required?: bigint;
+  readonly available?: bigint;
 
   constructor(
     message: string,
-    { asset, category }: { asset: "bch" | "token"; category?: string },
+    {
+      asset,
+      category,
+      required,
+      available,
+    }: {
+      asset: "bch" | "token";
+      category?: string;
+      required?: bigint;
+      available?: bigint;
+    },
   ) {
     super(message);
     this.name = "InsufficientFundsError";
     this.asset = asset;
     this.category = category;
+    this.required = required;
+    this.available = available;
   }
 }
 
@@ -31,7 +47,8 @@ export class InsufficientFundsError extends Error {
  * transaction is built, for a send option that cannot be honored, with `field` naming the
  * option: an `excludeUtxoIds` entry that is not a `txid:vout` outpoint, or a token coin in
  * `ensureUtxos` of a max send (`value` the offending `txid:vout`). A token genesis's extra token
- * output of a category it does not create is refused with `field` `sendRequests`.
+ * output of a category it does not create is refused with `field` `sendRequests`. Also thrown by
+ * an HD wallet set up with a `branches` list lacking the deposit (0) or change (1) branch.
  */
 export class InvalidRequestError extends Error {
   readonly field: string;
@@ -110,7 +127,8 @@ export class TokenBurnError extends Error {
 /**
  * Thrown when a walletId cannot be read: its network part is missing or not the wallet's
  * network (`reason` `"network"`; for `saveNamedWallet`, not the network of the database), its type part is unknown or not one this class loads
- * (`"kind"`), its key, address or name is missing (`"missing-value"`), or a `named:` id names
+ * (`"kind"`), its key, address or name is missing, or for `saveNamedWallet` a mnemonic's
+ * derivation path (`"missing-value"`), or a `named:` id names
  * another database than the network's (`"database"`). `kind` is the id's type part (`"wif"`,
  * `"seed"`, `"hd"`, `"watch"`, `"privkey"` or `"named"`) when it is one of those, and undefined
  * otherwise: no other part of the id is ever quoted, as it may be the key.

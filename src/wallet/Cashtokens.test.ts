@@ -24,7 +24,7 @@ import {
   TokenSendRequest,
 } from "./model.js";
 import { InsufficientFundsError } from "./errors.js";
-import { RegTestWallet, TestNetWallet } from "./Wif.js";
+import { RegTestWallet, Wallet } from "./Wif.js";
 import { liveTests } from "#test/live.js";
 
 const inputOutpoints = (transactionHex: string) => {
@@ -71,8 +71,9 @@ afterAll(async () => {
 
 describe(`Test cashtokens`, () => {
   test.skipIf(!liveTests)("Test chipnet request", async () => {
-    const wallet = await TestNetWallet.fromId(
+    const wallet = await Wallet.fromId(
       `watch:testnet:bchtest:pzszr88euuuy87uarx9krcuh5psy4zzghsm2033xk4`,
+      { network: "testnet" },
     );
     const utxos = await getTokenUtxos(wallet);
     expect(utxos[0].token?.category).toBeDefined();
@@ -1301,7 +1302,7 @@ describe(`Test cashtokens`, () => {
 
     const previousValue = Config.EnforceCashTokenReceiptAddresses;
 
-    const wrap = (addr) => {
+    const wrap = (addr: string) => {
       return new Promise((resolve) => {
         resolve(new TokenSendRequest({ cashaddr: addr, category, amount: 1n }));
       });

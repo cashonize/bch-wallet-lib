@@ -1,4 +1,3 @@
-import { binToBase64, utf8ToBin } from "@bitauth/libauth";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { CacheProvider } from "../cache/interface.js";
 import { Config } from "../config.js";
@@ -409,7 +408,7 @@ export default class ElectrumNetworkProvider {
    * reached the node all the same, so the server is asked for the transaction in that case too, as
    * it is when the subscription for the report cannot be made.
    * @param txHex The raw transaction hex to be broadcast.
-   * @param options.statusTimeout @internal Milliseconds to wait for the report, for the tests.
+   * @param options.statusTimeout Milliseconds to wait for the report; for the tests only.
    * @throws {BroadcastRejectedError} If the server refused the transaction, with the node's reject reason.
    * @throws {BroadcastTimeoutError} If the broadcast's outcome is unknown and the server does not hold the transaction.
    * @returns The transaction ID (hash) corresponding to the broadcast transaction.
@@ -513,7 +512,7 @@ export default class ElectrumNetworkProvider {
 
   /**
    * The confirmed and unconfirmed history of an address, in the server's order.
-   * @param fromHeight @internal Only the transactions from this height on, and the unconfirmed ones; the wallets' incremental refresh.
+   * @param fromHeight Only the transactions from this height on, and the unconfirmed ones; for the wallets' incremental refresh.
    */
   async getHistory(cashaddr: string, fromHeight: number = 0): Promise<TxI[]> {
     return this.performRequest<TxI[]>("blockchain.address.get_history", [
@@ -523,7 +522,7 @@ export default class ElectrumNetworkProvider {
     ]);
   }
 
-  /** The server's minimum relay fee, in BCH per kB. */
+  /** @internal The server's minimum relay fee, in BCH per kB; read through getRelayFeeCache. */
   async getRelayFee(): Promise<number> {
     return this.performRequest<number>("blockchain.relayfee");
   }
@@ -574,8 +573,9 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Subscribe to an address's status: the callback gets `[cashaddr, status]`, first for the current
-   * status and then for every change.
+   * @internal Subscribe to an address's status: the callback gets `[cashaddr, status]`, first for
+   * the current status and then for every change. The wallets' watches and watchAddressStatus
+   * call it.
    */
   async subscribeToAddress(
     cashaddr: string,
@@ -589,8 +589,9 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Subscribe to a transaction's confirmation status: the callback gets `[txHash, confirmations]`,
-   * with null confirmations while the server does not know the transaction.
+   * @internal Subscribe to a transaction's confirmation status: the callback gets
+   * `[txHash, confirmations]`, with null confirmations while the server does not know the
+   * transaction. sendRawTransaction waits on it.
    */
   async subscribeToTransaction(
     txHash: string,
@@ -601,46 +602,6 @@ export default class ElectrumNetworkProvider {
       [txHash],
       callback,
     );
-  }
-
-  /**
-   * @internal Regtest only. Fulcrum's daemon.passthrough takes named params, which electrum-cash
-   * cannot send, so this calls generatetoaddress on the node's own RPC, with the RPC_* settings of
-   * the regtest.
-   */
-  async mine(cashaddr: string, blocks: number): Promise<string[]> {
-    const env = typeof process === "undefined" ? {} : process.env;
-    const credentials = utf8ToBin(`${env.RPC_USER}:${env.RPC_PASS}`);
-    const init = {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${binToBase64(credentials)}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        jsonrpc: "1.0",
-        id: "mine",
-        method: "generatetoaddress",
-        params: [blocks, cashaddr],
-      }),
-    };
-
-    let unreachable: unknown;
-    for (const host of ["127.0.0.1", "host.docker.internal"]) {
-      let response: Response;
-      try {
-        response = await fetch(`http://${host}:${env.RPC_PORT}/`, init);
-      } catch (error) {
-        unreachable = error;
-        continue;
-      }
-      const { result, error } = await response.json();
-      if (error) throw new Error(`generatetoaddress failed: ${error.message}`);
-      return result;
-    }
-    throw new Error("The regtest node's RPC is not reachable.", {
-      cause: unreachable,
-    });
   }
 
   protected async performRequest<T = unknown>(
@@ -672,7 +633,10 @@ export default class ElectrumNetworkProvider {
     };
   }
 
-  /** Connect to the server; resolves when connected, rejects when no connection can be made. */
+  /**
+   * @internal Connect to the server; resolves when connected, rejects when no connection can be
+   * made. Every request connects first.
+   */
   async connect(): Promise<void> {
     await this.cache?.init();
     await this.transport.connect();

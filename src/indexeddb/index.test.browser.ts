@@ -1,4 +1,4 @@
-import { BaseWallet, TestNetWallet, Wallet } from "../index.js";
+import { BaseWallet, Wallet } from "../index.js";
 import { IndexedDBProvider } from "./index.js";
 
 describe("WalletDatabase should handle indexeddb", () => {
@@ -7,8 +7,10 @@ describe("WalletDatabase should handle indexeddb", () => {
   });
 
   test("Should store and recall a testnet wallet", async () => {
-    let w1 = await TestNetWallet.newRandom("Testnet Wallet 1");
-    let w1Again = await TestNetWallet.named("Testnet Wallet 1");
+    let w1 = await Wallet.newRandom("Testnet Wallet 1", { network: "testnet" });
+    let w1Again = await Wallet.named("Testnet Wallet 1", {
+      network: "testnet",
+    });
     expect(w1.name).toBe("Testnet Wallet 1");
     expect(w1.cashaddr!.slice(0, 9)).toBe("bchtest:q");
     expect(w1.privateKeyWif!.startsWith("c")).toBeTruthy();

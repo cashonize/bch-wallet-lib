@@ -127,18 +127,8 @@ describe("the provider factory option", () => {
         await RegTestWallet.named(name, options),
         await RegTestWallet.newRandom(`${name}-random`, options),
         await RegTestWallet.fromId(`named:regtest:${name}`, options),
-        await RegTestWallet.replaceNamed(
-          `${name}-replaced`,
-          `wif:regtest:${WIF}`,
-          options,
-        ),
         await RegTestHDWallet.named(`${name}-hd`, options),
         await RegTestHDWallet.newRandom(`${name}-hd-random`, options),
-        await RegTestHDWallet.replaceNamed(
-          `${name}-hd-replaced`,
-          `hd:regtest:${MNEMONIC}`,
-          options,
-        ),
       );
     } finally {
       BaseWallet.StorageProvider = prevStorage;

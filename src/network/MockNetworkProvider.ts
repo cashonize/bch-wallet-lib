@@ -18,8 +18,7 @@ export interface MockNetworkProviderOptions {
  * An ElectrumNetworkProvider on an in-memory chain, @paryonusd/mem-cash.
  *
  * Inherits all Electrum protocol handling from ElectrumNetworkProvider.
- * Only adds test helpers (addUtxo, mine, setBlockHeight, reset) and
- * overrides mine() to use test.mine instead of the regtest node's RPC.
+ * Only adds test helpers (addUtxo, mine, setBlockHeight, reset).
  */
 export class MockNetworkProvider extends ElectrumNetworkProvider {
   /** The backing Indexer instance (extends Node). */
@@ -59,7 +58,7 @@ export class MockNetworkProvider extends ElectrumNetworkProvider {
     await this.mc.request("test.add_utxo", [address, utxo]);
   }
 
-  override async mine(cashaddr: string, blocks: number): Promise<string[]> {
+  async mine(cashaddr: string, blocks: number): Promise<string[]> {
     await this.connect();
     const result = (await this.mc.request("test.mine", [cashaddr, blocks])) as {
       height: number;

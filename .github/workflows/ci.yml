@@ -26,6 +26,8 @@ jobs:
       - run: pnpm build
       - run: pnpm check:dist-imports
       - run: pnpm check:dist-errors
+      # stripInternal leaves a name dangling when it strips a type a public declaration uses
+      - run: pnpm check:dist-types
 
   browser:
     runs-on: ubuntu-latest

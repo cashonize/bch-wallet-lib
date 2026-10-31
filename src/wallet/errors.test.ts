@@ -78,6 +78,8 @@ describe("insufficient funds are an InsufficientFundsError", () => {
     expect(error.message).toBe("Not enough token amount to send");
     expect(error.asset).toBe("token");
     expect(error.category).toBe(ftCategory);
+    expect(error.required).toBe(101n);
+    expect(error.available).toBe(100n);
   });
 
   test("no coin of the NFT to send", async () => {
@@ -115,6 +117,19 @@ describe("insufficient funds are an InsufficientFundsError", () => {
     const error = await shortfall(alice.tokenBurn({ category, amount: 1n }));
     expect(error.message).toMatch(/^You do not have suitable token UTXOs/);
     expect(error.category).toBe(category);
+  });
+
+  test("too few fungible tokens to burn", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const genesis = await alice.tokenGenesis({ amount: 100n });
+    const ftCategory = genesis.categories![0];
+
+    const error = await shortfall(
+      alice.tokenBurn({ category: ftCategory, amount: 101n }),
+    );
+    expect(error.asset).toBe("token");
+    expect(error.required).toBe(101n);
+    expect(error.available).toBe(100n);
   });
 });
 

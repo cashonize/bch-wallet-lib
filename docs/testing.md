@@ -26,7 +26,7 @@ Not covered on a real chain yet:
 
 ### 3. Storage compatibility (`src/storage-3.1.7.test.ts`, `test/fixtures/storage-3.1.7/`)
 
-A fixture written by real mainnet-js 3.1.7 (`generate.mjs`) must load unchanged, and `rollback.mjs` checks that 3.1.7 still reads what the library writes. Missing: `rollback.mjs` in CI, more fixtures (many wallets, both databases, odd names, partial HD caches), and real browser profiles copied from installs (web, Electron, Android) upgraded and rolled back by hand.
+A fixture written by real mainnet-js 3.1.7 must load unchanged. Missing: more fixtures (many wallets, both databases, odd names, partial HD caches), and real browser profiles copied from installs (web, Electron, Android) upgraded by hand.
 
 ### 4. Property-based fuzzing of the spend path (to build, first)
 
@@ -42,7 +42,7 @@ A request that cannot be met must fail with a typed error, never a plain `Error`
 
 ### 5. Differential testing against 3.1.7 (to build)
 
-The same wallet state and request through mainnet-js 3.1.7 and the library. For BCH-only sends the outputs must be equivalent; for token sends every difference must be one of the known fixes (mainnet-js#246, #247, #253). Any other difference is a regression of the rewrite. 3.1.7 is in Cashonize's `node_modules`; the HD consecutive-send check already ran it against the local regtest this way.
+The same wallet state and request through mainnet-js 3.1.7 and the library. For BCH-only sends the outputs must be equivalent; for token sends every difference must be one of the known fixes (mainnet-js#246, #247, #253). Any other difference is a regression of the rewrite. 3.1.7 installs from npm into a scratch directory (Cashonize no longer carries it); an HD consecutive-send check already ran it against the local regtest.
 
 ### 6. Mutation testing (occasionally)
 
@@ -56,9 +56,9 @@ Electrum data is not verified, so the server is untrusted input. A mem-cash wrap
 
 - **Cashonize unit tests** run the store's spend paths on a real library wallet (`test/store.reservedSpends.test.ts`), so reservations are checked against the real coin selection.
 - **Cashonize e2e** (Playwright) covers the dApp connections only. Sends and token operations in the browser need a regtest network in the app (cashonize#368), or run on chipnet.
-- **Chipnet, manual, last**: genesis with a reserve, FT and NFT sends, a mutable NFT whose coin moved, burns, reservations and pledges, an identity update, sendMax with tokens present, transfer all on an HD wallet, a WalletConnect, CashConnect and WizardConnect sign, an existing install upgraded and rolled back.
+- **Chipnet, manual, last**: genesis with a reserve, FT and NFT sends, a mutable NFT whose coin moved, burns, reservations and pledges, an identity update, sendMax with tokens present, transfer all on an HD wallet, a WalletConnect, CashConnect and WizardConnect sign, an existing install upgraded.
 - **Human review** of the send, token, cache and transport code before Cashonize ships on the library. No layer above replaces it.
 
 ## CI
 
-`check` and `browser` jobs. Missing: the Docker regtest job and `rollback.mjs`.
+`check` and `browser` jobs. Missing: the Docker regtest job.

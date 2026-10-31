@@ -1,5 +1,10 @@
 import { WalletDbEntryI } from "./interface.js";
 
+/**
+ * The wallet storage `BaseWallet.StorageProvider` takes: a class constructed with a database
+ * name, as `IndexedDBProvider` is. A provider `implements` it; its constructor throws, so it
+ * cannot be extended.
+ */
 export default abstract class StorageProvider {
   public constructor(..._args: any[]) {
     throw new Error("StorageProvider is abstract and cannot be instantiated");

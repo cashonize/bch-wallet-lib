@@ -9,9 +9,9 @@ import {
   networkConfig,
   registerNetwork,
   saveNamedWallet,
-  TestNetWallet,
   Wallet,
 } from "../index.js";
+import { RegTestWallet } from "../wallet/Wif.js";
 import { getDefaultServers } from "./configuration.js";
 import {
   getGlobalProvider,
@@ -127,8 +127,8 @@ test("a registered network's id loads with the network option only", async () =>
     ),
   ).rejects.toThrow("cannot be watched");
   await expect(
-    TestNetWallet.fromId(`watch:testnet4:${address}`, options),
-  ).rejects.toThrow("a testnet wallet class cannot make a testnet4 wallet");
+    RegTestWallet.fromId(`watch:testnet4:${address}`, options),
+  ).rejects.toThrow("a regtest wallet class cannot make a testnet4 wallet");
   await expect(
     Wallet.fromId(`watch:scalenet:${address}`, { network: "scalenet" }),
   ).rejects.toThrow("Unknown network 'scalenet'");
@@ -160,7 +160,7 @@ test("an HD wallet of a registered network uses its key version and prefix", asy
 test("a registered network takes WIFs of its key version", async () => {
   const wallet = await Wallet.fromId(`wif:testnet4:${testnetWif}`, options);
   expect(wallet.privateKeyWif).toBe(testnetWif);
-  const chipnet = await TestNetWallet.fromWIF(testnetWif);
+  const chipnet = await Wallet.fromWIF(testnetWif, { network: "testnet" });
   expect(wallet.cashaddr).toBe(chipnet.cashaddr);
 
   await expect(

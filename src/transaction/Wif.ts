@@ -173,9 +173,10 @@ export function prepareInputs({
             }
           : undefined,
     };
-    const key =
-      walletCache.get(i.address)?.privateKey ??
-      (signingKey?.length ? signingKey : Uint8Array.from(Array(32)));
+    const key = walletCache.get(i.address)?.privateKey ?? signingKey;
+    if (!key?.length) {
+      throw new Error(`No private key for the input address ${i.address}`);
+    }
     const newInput = {
       outpointIndex: utxoIndex,
       outpointTransactionHash: utxoOutpointTransactionHash,
@@ -507,12 +508,10 @@ export async function getSuitableUtxos(
 }
 
 export function amountNotMetError(required: bigint, available: bigint) {
-  const e = new InsufficientFundsError(
+  return new InsufficientFundsError(
     `Amount required was not met, ${required} satoshis needed, ${available} satoshis available`,
-    { asset: "bch" },
+    { asset: "bch", required, available },
   );
-  e["data"] = { required, available };
-  return e;
 }
 
 /**
@@ -575,6 +574,8 @@ export function selectFungibleTokenUtxos(
       throw new InsufficientFundsError("Not enough token amount to send", {
         asset: "token",
         category,
+        required: requested,
+        available,
       });
     }
   }

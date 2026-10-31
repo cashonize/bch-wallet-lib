@@ -8,6 +8,8 @@ test("the entry exports the HD wallet's gap limit and branch constants", () => {
 
 test("the entry leaves out the wallet classes and helpers that are internal or removed", () => {
   for (const name of [
+    "TestNetWallet",
+    "TestNetHDWallet",
     "RegTestWallet",
     "RegTestHDWallet",
     "WatchWallet",
@@ -130,7 +132,6 @@ test("the entry exports the network, history and rate surface Cashonize uses and
     "ElectrumNetworkProvider",
     "ElectrumTimeoutError",
     "ExchangeRate",
-    "getHistory",
     "getNetworkProvider",
     "removeGlobalProvider",
     "setGlobalProvider",
@@ -146,6 +147,8 @@ test("the entry exports the network, history and rate surface Cashonize uses and
     "initProvider",
     "initProviders",
     "mine",
+    "getHistory",
+    "getTransactionHash",
   ]) {
     expect(entry, name).not.toHaveProperty(name);
   }

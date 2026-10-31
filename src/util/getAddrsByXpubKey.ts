@@ -33,7 +33,7 @@ export function getAddrsByXpubKey(
   return result;
 }
 
-export function derivePublicNodeCashaddr(xpub: string, path?: string): string {
+export function derivePublicNodeCashaddr(xpub: string, path: string): string {
   const publicParent = decodeHdPublicKey(xpub);
 
   if (typeof publicParent === "string") {
@@ -43,19 +43,13 @@ export function derivePublicNodeCashaddr(xpub: string, path?: string): string {
     publicParent.network === "mainnet" ? "bitcoincash" : "bchtest"
   ) as CashAddressNetworkPrefix;
 
-  let cashaddr;
-  if (typeof path === "string") {
-    const childNode = deriveHdPathRelative(publicParent.node, path);
-    if (typeof childNode === "string") {
-      throw new Error(childNode);
-    } else {
-      const childPkh = hash160(childNode.publicKey);
-      cashaddr = encodeCashAddress({
-        prefix,
-        type: CashAddressType.p2pkh,
-        payload: childPkh,
-      }).address;
-    }
+  const childNode = deriveHdPathRelative(publicParent.node, path);
+  if (typeof childNode === "string") {
+    throw new Error(childNode);
   }
-  return cashaddr;
+  return encodeCashAddress({
+    prefix,
+    type: CashAddressType.p2pkh,
+    payload: hash160(childNode.publicKey),
+  }).address;
 }

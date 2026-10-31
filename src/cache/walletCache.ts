@@ -304,10 +304,9 @@ export class SingleAddressWalletCache implements WalletCacheI {
   }
 }
 
-// HD cache records keep mainnet-js 3.1.7's form, which Cashonize users' storage holds and a rollback
-// reads: entries keyed `${walletId}-${index}-${change}` and an address -> {index, change} map. Only
-// the paths `0/index` and `1/index` have a place in it; others (more branches) are cached in memory
-// only.
+// HD cache records keep mainnet-js 3.1.7's form, which Cashonize users' storage holds: entries
+// keyed `${walletId}-${index}-${change}` and an address -> {index, change} map. Only the paths
+// `0/index` and `1/index` have a place in it; others (more branches) are cached in memory only.
 const STORED_PATH = /^([01])\/(\d+)$/;
 
 export class HDWalletCache implements WalletCacheI {
@@ -335,7 +334,7 @@ export class HDWalletCache implements WalletCacheI {
 
   public async init() {
     // a watch-only wallet's cache stays in memory: 3.1.7 never wrote one, its write threw on the
-    // missing private keys, so a rollback would leave it behind
+    // missing private keys
     if (!("privateKey" in this.hdNode)) return;
     this._storage = getStorage();
     await this._storage?.init();

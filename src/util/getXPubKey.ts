@@ -16,7 +16,6 @@ export function getXPubKey(
     seed = hexToBin(seed);
   }
   let hdNode = deriveHdPrivateNodeFromSeed(seed, {
-    assumeValidity: true, // TODO: we should switch to libauth's BIP39 implementation and set this to false
     throwErrors: true,
   });
 

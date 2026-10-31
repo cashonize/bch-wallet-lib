@@ -16,8 +16,9 @@ export interface SendRequestOptionsI {
    */
   tokenUtxoIds?: string[] | Utxo[];
   /**
-   * false: no token input matching and no token change, the outputs are the requests as given.
-   * The check that the transaction burns no token stays on
+   * @internal tokenGenesis, tokenMint and tokenBurn set it: false is no token input matching and
+   * no token change, the outputs are the requests as given. The check that the transaction burns
+   * no token stays on
    */
   checkTokenQuantities?: boolean; // true
   /**
@@ -49,8 +50,8 @@ export interface WalletFactoryOptions {
    */
   provider?: ElectrumNetworkProvider;
   /**
-   * The network of the wallet, for a network added with registerNetwork, on the mainnet classes
-   * (`HDWallet.fromId(id, { network: "scalenet" })`); the testnet and regtest classes fix theirs.
+   * The network of the wallet, mainnet when left out: a test network (`"testnet"` for chipnet) or
+   * one added with registerNetwork (`HDWallet.fromId(id, { network: "testnet" })`).
    */
   network?: Network;
 }

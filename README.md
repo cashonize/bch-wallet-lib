@@ -10,6 +10,39 @@ Status: early. Until 1.0, a minor version may change the API.
 npm install @cashonize/bch-wallet-lib
 ```
 
+## Usage
+
+```ts
+import {
+  BaseWallet,
+  createProvider,
+  HDWallet,
+  setGlobalProvider,
+} from "@cashonize/bch-wallet-lib";
+import { IndexedDBProvider } from "@cashonize/bch-wallet-lib/indexeddb";
+
+// optional: your own Electrum server instead of the built-in ones, before the first wallet
+setGlobalProvider(
+  "mainnet",
+  await createProvider("mainnet", "wss://bch.imaginary.cash:50004"),
+);
+
+// a new random HD wallet, kept in memory only (back up wallet.mnemonic)
+const wallet = await HDWallet.newRandom();
+const address = wallet.getDepositAddress();
+const balance = await wallet.getBalance();
+const { txId } = await wallet.send([
+  { cashaddr: "bitcoincash:qp...", value: 10_000n },
+]);
+await wallet.stop(); // closes its subscriptions
+
+// a wallet stored by name in the browser's IndexedDB: created on the first call, loaded after
+BaseWallet.StorageProvider = IndexedDBProvider;
+const stored = await HDWallet.named("main");
+```
+
+Amounts are bigints in satoshis. Chain data comes from one Electrum server at a time and is not verified.
+
 ## Entry points
 
 | Import                                | Contents                                                    |
@@ -34,6 +67,7 @@ pnpm lint           # oxlint, type-aware
 pnpm format         # oxfmt
 pnpm build          # tsc to dist/
 pnpm check:dist-imports  # after build: the entries import runtime dependencies only
+pnpm check:dist-types    # after build: the published declarations compile on their own
 ```
 
 ### Regtest without Docker

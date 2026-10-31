@@ -39,11 +39,7 @@ import { asSendRequestObject } from "../util/asSendRequestObject.js";
 import { checkUtxos, toOutpoint } from "../util/checkUtxos.js";
 import { deriveLockscript } from "../util/deriveLockscript.js";
 import { Limiter } from "../util/mapConcurrent.js";
-import {
-  getRuntimePlatform,
-  sumUtxoValue,
-  toTokenaddr,
-} from "../util/index.js";
+import { sumUtxoValue, toTokenaddr } from "../util/index.js";
 import { sumSendRequestAmounts } from "../util/sumSendRequestAmounts.js";
 import { tokenOutput } from "../util/tokenOutput.js";
 import { walletIdKind } from "../util/walletIdError.js";
@@ -307,7 +303,6 @@ export class BaseWallet {
     if (!name?.length) {
       throw Error("Named wallets must have a non-empty name");
     }
-    _checkContextSafety(this.network);
     this.name = name;
     const db = getStorageProvider(networkConfig(this.network).dbName);
 
@@ -327,44 +322,6 @@ export class BaseWallet {
         await db.close();
         return wallet;
       }
-    } else {
-      throw Error(
-        "No database was available or configured to store the named wallet.",
-      );
-    }
-  }
-
-  /**
-   * replaceNamed - Replace (recover) named wallet with a new walletId
-   *
-   * If wallet with a provided name does not exist yet, it will be created with a `walletId` supplied
-   * If wallet exists it will be overwritten without exception
-   *
-   * @param name   user friendly wallet alias
-   * @param walletId walletId options to steer the creation process
-   *
-   * @returns instantiated wallet
-   */
-  protected async replaceNamed(name: string, walletId: string): Promise<this> {
-    if (name.length === 0) {
-      throw Error("Named wallets must have a non-empty name");
-    }
-    _checkContextSafety(this.network);
-    this.name = name;
-    let db = getStorageProvider(networkConfig(this.network).dbName);
-
-    if (db) {
-      await db.init();
-      let savedWalletRecord = await db.getWallet(name);
-      await this.fromId(walletId);
-      if (savedWalletRecord) {
-        await db.updateWallet(name, walletId);
-      } else {
-        await db.addWallet(name, walletId);
-      }
-
-      await db.close();
-      return this;
     } else {
       throw Error(
         "No database was available or configured to store the named wallet.",
@@ -423,29 +380,6 @@ export class BaseWallet {
     options?: WalletFactoryOptions,
   ): Promise<InstanceType<T>> {
     return this.create(options).named(name) as Promise<InstanceType<T>>;
-  }
-
-  /**
-   * replaceNamed - replace (recover) named wallet with a new walletId
-   *
-   * If wallet with a provided name does not exist yet, it will be created with a `walletId` supplied
-   * If wallet exists it will be overwritten without exception
-   *
-   * @param name   user friendly wallet alias
-   * @param walletId walletId options to steer the creation process
-   * @param options   the wallet's provider
-   *
-   * @returns instantiated wallet, stored in the database of the class's network
-   */
-  public static async replaceNamed<T extends typeof BaseWallet>(
-    this: T,
-    name: string,
-    walletId: string,
-    options?: WalletFactoryOptions,
-  ): Promise<InstanceType<T>> {
-    return this.create(options).replaceNamed(name, walletId) as Promise<
-      InstanceType<T>
-    >;
   }
 
   protected fromId(_walletId: string): Promise<this> {
@@ -1250,9 +1184,15 @@ export class BaseWallet {
     try {
       settled = await settle(0n, initialEstimate);
     } catch (e) {
-      const shortfall: { required: bigint; available: bigint } | undefined =
-        e instanceof InsufficientFundsError ? e["data"] : undefined;
-      if (!shortfall) throw e;
+      if (
+        !(e instanceof InsufficientFundsError) ||
+        e.asset !== "bch" ||
+        e.required === undefined ||
+        e.available === undefined
+      ) {
+        throw e;
+      }
+      const shortfall = { required: e.required, available: e.available };
       const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
       const usable = [
         ...ensureUtxos,
@@ -1746,7 +1686,7 @@ export class BaseWallet {
       if (available < amount) {
         throw new InsufficientFundsError(
           `Not enough fungible tokens of category ${category} to burn ${amount}: ${available} available`,
-          { asset: "token", category },
+          { asset: "token", category, required: amount, available },
         );
       }
       tokenBurns.fungible[category] =
@@ -1810,23 +1750,6 @@ export class BaseWallet {
 
   //#endregion Cashtokens
 }
-
-/**
- * _checkContextSafety (internal) if running in nodejs, will disable saving
- * mainnet wallets on public servers if ALLOW_MAINNET_USER_WALLETS is set to false
- * @param network        the network of the wallet to save
- */
-export const _checkContextSafety = function (network: Network) {
-  if (getRuntimePlatform() === "node") {
-    if (process.env.ALLOW_MAINNET_USER_WALLETS === `false`) {
-      if (network === NetworkType.Mainnet) {
-        throw Error(
-          `Refusing to save wallet in an open public database, remove ALLOW_MAINNET_USER_WALLETS="false", if this service is secure and private`,
-        );
-      }
-    }
-  }
-};
 
 /**
  * getNamedWalletId - get the full wallet id from the database
@@ -1898,19 +1821,20 @@ export async function namedWalletExists(
 
 /**
  * saveNamedWallet - store a wallet id under a name, replacing the id stored under that name if
- * there is one: the row `replaceNamed` writes, without constructing the wallet, so no provider
- * is created and no subscription opened
+ * there is one, without constructing the wallet, so no provider is created and no subscription
+ * opened
  *
- * The id is checked for its form (a type a wallet class loads, a known network, a value), not
- * for its key: store ids that `toDbString()` returned, or that a wallet class loaded.
+ * The id is checked for its form (a type a wallet class loads, a known network, a value, and
+ * for a mnemonic its derivation path), not for its key: store ids that `toDbString()` returned,
+ * or that a wallet class loaded.
  *
  * @param name   user friendly wallet alias
  * @param walletId the wallet's id, as `toDbString()` returns it
  * @param dbName database to store it in, the one of the id's network ("bitcoincash", "bchtest",
  * "bchreg" or a registered network's) by default; another network's database is refused
  *
- * @throws {InvalidWalletIdError} if the id cannot be read, or if `dbName` is another network's
- * database
+ * @throws {InvalidWalletIdError} if the id cannot be read, if a `seed` or `hd` id holds a
+ * mnemonic without its derivation path, or if `dbName` is another network's database
  * @throws {Error} if no StorageProvider is configured
  */
 export async function saveNamedWallet(
@@ -1923,16 +1847,26 @@ export async function saveNamedWallet(
   }
   // the check deleteNamedWallet makes: a row it cannot read is one it cannot delete
   walletCacheIdFromWalletId(walletId);
-  const network = walletId.split(":")[1];
+  const [walletType, network, value, derivation] = walletId.split(":");
+  // without its path, a mnemonic's id would mean the default path in effect when it is loaded
+  if (
+    (walletType === "seed" || walletType === "hd") &&
+    value.includes(" ") &&
+    !derivation
+  ) {
+    throw new InvalidWalletIdError(
+      "A mnemonic's walletId must name its derivation path",
+      { kind: walletType, reason: "missing-value" },
+    );
+  }
   const networkDbName = networkConfig(network).dbName;
   const networkDbNames = knownNetworks().map((config) => config.dbName);
   if (dbName && dbName !== networkDbName && networkDbNames.includes(dbName)) {
     throw new InvalidWalletIdError(
       `a ${network} walletId cannot be stored in the database ${dbName}`,
-      { kind: walletIdKind(walletId.split(":")[0]), reason: "network" },
+      { kind: walletIdKind(walletType), reason: "network" },
     );
   }
-  _checkContextSafety(network);
 
   const db = getStorageProvider(dbName || networkDbName);
   if (!db) {

@@ -45,7 +45,7 @@ import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { InvalidWalletIdError } from "./errors.js";
+import { InvalidRequestError, InvalidWalletIdError } from "./errors.js";
 import { CancelFn, WalletFactoryOptions } from "./interface.js";
 import { networkPrefixError, walletTypeError } from "../util/walletIdError.js";
 
@@ -58,7 +58,7 @@ export interface HDWalletOptions {
    * path `N/i` (where `i` is the address index). Default `[0, 1]` -- deposit
    * (0) and change (1) -- matching the BIP-44 convention.
    *
-   * Must contain at least one branch.
+   * Must include the deposit (0) and change (1) branches.
    */
   branches?: number[];
   /** Initial per-branch indices (max-used index). */
@@ -126,7 +126,7 @@ export class HDWallet extends BaseWallet {
   private failedFetches = new Map<string, () => Promise<void>>();
   private refetching?: Promise<void>;
 
-  public get networkPrefix(): CashAddressNetworkPrefix {
+  public override get networkPrefix(): CashAddressNetworkPrefix {
     return networkConfig(this.network)
       .addressPrefix as CashAddressNetworkPrefix;
   }
@@ -145,7 +145,7 @@ export class HDWallet extends BaseWallet {
   /// If mnemonic or xPriv provided, the wallet will be able to sign transactions
   /// If xPub provided, the wallet will be watch-only
   /// This internal method is called by the various static constructors
-  protected async initialize({
+  protected override async initialize({
     name = "",
     branches,
     indices,
@@ -159,8 +159,14 @@ export class HDWallet extends BaseWallet {
       mnemonic = generateBip39Mnemonic();
     }
 
-    if (branches !== undefined && branches.length === 0) {
-      throw new Error("HDWallet: `branches` must contain at least one entry");
+    if (
+      branches !== undefined &&
+      !(branches.includes(DEPOSIT_BRANCH) && branches.includes(CHANGE_BRANCH))
+    ) {
+      throw new InvalidRequestError(
+        "HDWallet: `branches` must include the deposit (0) and change (1) branches",
+        { field: "branches", value: branches },
+      );
     }
 
     // @ts-ignore
@@ -185,7 +191,6 @@ export class HDWallet extends BaseWallet {
       checkForEmptySeed(seed);
 
       const rootNode = deriveHdPrivateNodeFromSeed(seed, {
-        assumeValidity: true,
         throwErrors: true,
       });
       const node = deriveHdPath(rootNode, this.derivation);
@@ -762,7 +767,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /** utxos Get unspent outputs of every tracked branch. */
-  public async getUtxos(): Promise<Utxo[]> {
+  public override async getUtxos(): Promise<Utxo[]> {
     await this.discovered();
 
     return this.collectUtxosFromBranches();
@@ -775,7 +780,7 @@ export class HDWallet extends BaseWallet {
   }
 
   // Gets balance by summing value in all utxos in sats, those of token utxos included
-  public async getBalance(): Promise<bigint> {
+  public override async getBalance(): Promise<bigint> {
     await this.discovered();
 
     return sumUtxoValue(this.collectUtxosFromBranches());
@@ -791,7 +796,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /**
-   * Get the address at the given branch and index. If `index` is `-1`
+   * @internal Get the address at the given branch and index. If `index` is `-1`
    * (the default), the next unused index on that branch is selected.
    *
    * Throws if the branch is not tracked by this wallet.
@@ -803,7 +808,7 @@ export class HDWallet extends BaseWallet {
     return this.walletCache.getByIndex(index, branch).address;
   }
 
-  /** Same as {@link getAddressByBranch} but returning the token-address form. */
+  /** @internal Same as {@link getAddressByBranch} but returning the token-address form. */
   public getTokenAddressByBranch(branch: number, index: number = -1): string {
     this.requireBranch(branch);
     const statuses = this.statuses.get(branch)!;
@@ -813,18 +818,17 @@ export class HDWallet extends BaseWallet {
 
   /// Get next unused deposit address (branch 0), or the address at the
   /// specified index. Convenience alias for `getAddressByBranch(0, index)`.
-  public getDepositAddress(index: number = -1): string {
+  public override getDepositAddress(index: number = -1): string {
     return this.getAddressByBranch(DEPOSIT_BRANCH, index);
   }
 
   /// Get next unused token deposit address (branch 0), or the token address
   /// at the specified index.
-  public getTokenDepositAddress(index: number = -1): string {
+  public override getTokenDepositAddress(index: number = -1): string {
     return this.getTokenAddressByBranch(DEPOSIT_BRANCH, index);
   }
 
   protected override getTokenDepositAddresses(count: number): string[] {
-    this.requireBranch(DEPOSIT_BRANCH);
     const statuses = this.statuses.get(DEPOSIT_BRANCH)!;
     return getNextUnusedIndices(count, statuses).map((index) =>
       this.getTokenDepositAddress(index),
@@ -832,29 +836,20 @@ export class HDWallet extends BaseWallet {
   }
 
   /// Get next unused change address (branch 1), or the address at the
-  /// specified index. When branch 1 is not
-  /// tracked, the deposit branch is used instead.
-  public getChangeAddress(index: number = -1): string {
-    if (!this.branches.includes(CHANGE_BRANCH)) {
-      return this.getDepositAddress(index);
-    }
+  /// specified index.
+  public override getChangeAddress(index: number = -1): string {
     return this.getAddressByBranch(CHANGE_BRANCH, index);
   }
 
-  /// The next `count` unused change addresses (branch 1), each its own. When
-  /// branch 1 is not tracked, the deposit branch is used instead.
+  /// The next `count` unused change addresses (branch 1), each its own.
   protected override getChangeAddresses(count: number): string[] {
-    const branch = this.branches.includes(CHANGE_BRANCH)
-      ? CHANGE_BRANCH
-      : DEPOSIT_BRANCH;
-    this.requireBranch(branch);
-    const statuses = this.statuses.get(branch)!;
+    const statuses = this.statuses.get(CHANGE_BRANCH)!;
     return getNextUnusedIndices(count, statuses).map((index) =>
-      this.getAddressByBranch(branch, index),
+      this.getChangeAddress(index),
     );
   }
 
-  public hasAddress(address: string): boolean {
+  public override hasAddress(address: string): boolean {
     return this.walletCache.get(address) !== undefined;
   }
 
@@ -912,7 +907,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /// override the base class fromId method implementation
-  protected async fromId(walletId: string): Promise<this> {
+  protected override async fromId(walletId: string): Promise<this> {
     const [walletType, networkGiven, arg1, arg2, arg3, arg4] =
       walletId.split(":");
 
@@ -977,7 +972,7 @@ export class HDWallet extends BaseWallet {
    *
    * @throws {Error} if called on BaseWallet
    */
-  public toDbString() {
+  public override toDbString() {
     if (this.walletType == WalletTypeEnum.Hd) {
       // Serialize indices for branches 0 and 1 only -- the persisted format
       // pre-dates arbitrary-branch tracking. Non-default branches are not
@@ -1051,7 +1046,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /** The wallet's transaction history, over every tracked branch. */
-  public async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
+  public override async getRawHistory(fromHeight: number = 0): Promise<TxI[]> {
     await this.discovered();
 
     const historyArrays: TxI[][] = [];
@@ -1086,15 +1081,6 @@ export class HDWallet extends BaseWallet {
       if (b.height <= 0 && a.height > 0) return 1;
       return b.height - a.height;
     });
-  }
-}
-
-/**
- * Class to manage a testnet wallet.
- */
-export class TestNetHDWallet extends HDWallet {
-  constructor() {
-    super(NetworkType.Testnet);
   }
 }
 

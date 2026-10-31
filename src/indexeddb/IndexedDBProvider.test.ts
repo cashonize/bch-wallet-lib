@@ -6,7 +6,6 @@ import {
   HDWallet,
   InvalidWalletIdError,
   saveNamedWallet,
-  TestNetWallet,
   Wallet,
 } from "../index.js";
 import { RegTestHDWallet } from "../wallet/HDWallet.js";
@@ -65,7 +64,7 @@ test("Store and retrieve a Testnet wallet", async () => {
   await db.init();
   // passing a name to newRandom should save the wallet,
   // but we want to save it manually in this case
-  let w1 = await TestNetWallet.newRandom();
+  let w1 = await Wallet.newRandom("", { network: "testnet" });
   w1.name = "dave";
   await db.addWallet(w1.name, w1.toDbString());
   let w2 = await db.getWallet("dave");
@@ -200,10 +199,10 @@ describe("namedWalletExists", () => {
     const failure = new Error("store unreadable");
     const close = vi.fn();
     class FailingProvider extends IndexedDBProvider {
-      async walletExists(): Promise<boolean> {
+      override async walletExists(): Promise<boolean> {
         throw failure;
       }
-      async close() {
+      override async close() {
         close();
         return super.close();
       }
@@ -230,16 +229,12 @@ describe("namedWalletExists", () => {
 });
 
 describe("saveNamedWallet", () => {
-  test("stores the row replaceNamed writes, replacing an existing one, and constructs no wallet", async () => {
+  test("stores the row, replacing an existing one, and constructs no wallet", async () => {
     BaseWallet.StorageProvider = IndexedDBProvider;
     const name = `save-${Math.random()}`;
     const first = await RegTestHDWallet.newRandom();
     const second = await RegTestWallet.newRandom();
-    const replaced = await RegTestHDWallet.replaceNamed(
-      `${name}-replaced`,
-      first.toDbString(),
-    );
-    await Promise.all([first.stop(), second.stop(), replaced.stop()]);
+    await Promise.all([first.stop(), second.stop()]);
     // every wallet takes its provider as it is constructed
     const construct = vi.spyOn(
       BaseWallet.prototype as unknown as { getNetworkProvider: () => unknown },
@@ -261,11 +256,10 @@ describe("saveNamedWallet", () => {
         name,
         wallet: second.toDbString(),
       });
-      // the same row as replaceNamed's, but for the name
       await saveNamedWallet(name, first.toDbString());
       expect(await db.getWallet(name)).toEqual({
-        ...(await db.getWallet(`${name}-replaced`)),
         name,
+        wallet: first.toDbString(),
       });
       expect(
         (await db.getWallets()).filter((row) => row.name === name),
@@ -283,9 +277,13 @@ describe("saveNamedWallet", () => {
     BaseWallet.StorageProvider = IndexedDBProvider;
     const name = `save-refused-${Math.random()}`;
     const mainnetId = `wif:mainnet:${"x".repeat(10)}`;
+    const mnemonic = "abandon ".repeat(11) + "about";
     for (const [walletId, dbName] of [
       ["named:regtest:other", undefined],
       ["hd:regtest", undefined],
+      // a mnemonic without its derivation path
+      [`hd:regtest:${mnemonic}`, undefined],
+      [`seed:regtest:${mnemonic}`, undefined],
       ["wif:nonet:abc", undefined],
       [mainnetId, "bchtest"],
       [mainnetId.replace("mainnet", "testnet"), "bchreg"],

@@ -28,7 +28,7 @@ import {
 } from "./model.js";
 import { HDWallet } from "./HDWallet.js";
 import { WatchWallet } from "./Watch.js";
-import { RegTestWallet, TestNetWallet, Wallet } from "./Wif.js";
+import { RegTestWallet, Wallet } from "./Wif.js";
 import { liveTests } from "#test/live.js";
 import { waitForBalance } from "#test/balances.js";
 
@@ -89,8 +89,9 @@ describe(`Test creation of wallet from walletId`, () => {
   });
 
   test("Get a testnet wallet from string id", async () => {
-    let w = await TestNetWallet.fromId(
+    let w = await Wallet.fromId(
       "wif:testnet:cPS12C2bpGHtKjS5NXNyWyTGGRMPk7D7pjp5JfgxRKWyFnWoDyZg",
+      { network: "testnet" },
     );
     expect(w.publicKeyCompressed!.length).toBe(33);
     expect(w.privateKey!.length).toBe(32);
@@ -110,8 +111,9 @@ describe(`Test creation of wallet from walletId`, () => {
   describe(`Errors from walletId`, () => {
     test("Expect Error passing testnet wallet to mainnet", async () => {
       await expect(
-        TestNetWallet.fromId(
+        Wallet.fromId(
           "wif:testnet:KysvoRyDkxQycBGj49K8oC3minAfoXnVmkcgx6UsZx3g2VvyGCAa",
+          { network: "testnet" },
         ),
       ).rejects.toThrow("WIF is for mainnet, expected testnet");
     });
@@ -144,7 +146,7 @@ describe(`Test creation of wallet from walletId`, () => {
           seed,
           "Unknown network prefix to a mainnet wallet",
         ],
-        // fromId is protected; replaceNamed and named reach it with a caller's or stored walletId
+        // fromId is protected; named reaches it with a stored walletId
         [
           async () => (new WatchWallet() as any).fromId(wif),
           wif,
@@ -325,7 +327,7 @@ describe(`Test creation of wallet from walletId`, () => {
       }
       // what the wallet makes of a key is the WIF's to say, not the id's
       await expect(
-        TestNetWallet.fromId(`wif:testnet:${wif}`),
+        Wallet.fromId(`wif:testnet:${wif}`, { network: "testnet" }),
       ).rejects.toBeInstanceOf(InvalidWifError);
     });
 
@@ -370,7 +372,7 @@ describe(`WIF validation`, () => {
   test("Errors never quote the WIF", async () => {
     const cases: [() => Promise<unknown>, string][] = [
       [() => Wallet.fromWIF(testnetWif), testnetWif],
-      [() => TestNetWallet.fromWIF(mainnetWif), mainnetWif],
+      [() => Wallet.fromWIF(mainnetWif, { network: "testnet" }), mainnetWif],
       [
         () => Wallet.fromWIF(encodePrivateKeyWif(key, "mainnetUncompressed")),
         encodePrivateKeyWif(key, "mainnetUncompressed"),
@@ -398,9 +400,9 @@ describe(`WIF validation`, () => {
     await expect(Wallet.fromWIF(mainnetUncompressed)).rejects.toThrow(
       "Uncompressed WIF private keys are not supported",
     );
-    await expect(TestNetWallet.fromWIF(testnetUncompressed)).rejects.toThrow(
-      "Uncompressed WIF private keys are not supported",
-    );
+    await expect(
+      Wallet.fromWIF(testnetUncompressed, { network: "testnet" }),
+    ).rejects.toThrow("Uncompressed WIF private keys are not supported");
     await expect(RegTestWallet.fromWIF(testnetUncompressed)).rejects.toThrow(
       "Uncompressed WIF private keys are not supported",
     );
@@ -432,7 +434,7 @@ describe(`WIF validation`, () => {
         { reason: "network", network: NetworkType.Testnet },
       ],
       [
-        () => TestNetWallet.fromWIF(mainnetWif),
+        () => Wallet.fromWIF(mainnetWif, { network: "testnet" }),
         { reason: "network", network: NetworkType.Mainnet },
       ],
       [
@@ -570,8 +572,9 @@ describe(`Mnemonic wallet creation`, () => {
 
 describe(`Watch only Wallets`, () => {
   test("Create a watch only testnet wallet from string id", async () => {
-    let w = await TestNetWallet.fromId(
+    let w = await Wallet.fromId(
       "watch:testnet:qppr9h7whx9pzucgqukhtlj8lvgvjlgr3g9ggtkq22",
+      { network: "testnet" },
     );
     expect(w.network).toBe("testnet");
     expect(w.networkPrefix).toBe("bchtest");
@@ -664,9 +667,9 @@ describe(`Watch only Wallets`, () => {
   (process.env.ALICE_TESTNET_WALLET_ID ? test : test.skip)(
     "Should send to testnet coins to a random address",
     async () => {
-      let alice = await TestNetWallet.fromId(
-        process.env.ALICE_TESTNET_WALLET_ID!,
-      );
+      let alice = await Wallet.fromId(process.env.ALICE_TESTNET_WALLET_ID!, {
+        network: "testnet",
+      });
       expect(alice.publicKeyHash.length).toBe(20);
       await alice.send([{ cashaddr: alice.cashaddr!, value: 720n }]);
       expect(await alice.getBalance()).toBeGreaterThan(5000n);
@@ -676,8 +679,9 @@ describe(`Watch only Wallets`, () => {
   (process.env.ALICE_TESTNET_ADDRESS ? test : test.skip)(
     "Should get the testnet wallet balance",
     async () => {
-      let alice = await TestNetWallet.fromId(
+      let alice = await Wallet.fromId(
         `watch:testnet:${process.env.ALICE_TESTNET_ADDRESS!}`,
+        { network: "testnet" },
       );
       const aliceBalance = await alice.getBalance();
       expect(aliceBalance).toBeGreaterThan(2000n);

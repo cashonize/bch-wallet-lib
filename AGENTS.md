@@ -56,7 +56,7 @@ Run one file: `USE_MOCK_PROVIDER=1 pnpm exec vitest run --config test/vitest.con
 
 ## Persistent storage is frozen
 
-Cashonize is a live wallet: its users' browsers hold data written by mainnet-js 3.1.7 (the wallet databases `bitcoincash`/`bchtest` at version 31, the `WalletCache` and electrum caches at version 1, the stored wallet ids, the `walletCache-…` keys and record shapes, the localStorage keys). The library must read all of it as it is, and keep writing it in a form that mainnet-js 3.1.7 can still read, so an app rollback doesn't lose wallets. No breaking change to database names, store names, versions, key formats, wallet id formats or record shapes. A new record type is allowed only when it is needed, never one that holds key material, and old records are never rewritten into a new form.
+Cashonize is a live wallet: its users' browsers hold data written by mainnet-js 3.1.7 (the wallet databases `bitcoincash`/`bchtest` at version 31, the `WalletCache` and electrum caches at version 1, the stored wallet ids, the `walletCache-…` keys and record shapes, the localStorage keys). The library must read all of it as it is, and keep writing it in the same form. No breaking change to database names, store names, versions, key formats, wallet id formats or record shapes. A new record type is allowed only when it is needed, never one that holds key material, and old records are never rewritten into a new form.
 
 ## Conventions
 

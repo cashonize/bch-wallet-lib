@@ -1,12 +1,12 @@
 // config
 export { Config } from "./config.js";
 export type { WalletDbEntryI } from "./db/interface.js";
+export type { default as StorageProvider } from "./db/StorageProvider.js";
 // cache
 export { pruneWalletCaches } from "./cache/walletCache.js";
 // Enum
 export { NetworkType } from "./enum.js";
 // history
-export { getHistory } from "./history/getHistory.js";
 export * from "./history/interface.js";
 // interfaces
 export { NFTCapability } from "./interface.js";
@@ -84,7 +84,6 @@ export {
   DEPOSIT_BRANCH,
   GAP_SIZE,
   HDWallet,
-  TestNetHDWallet,
 } from "./wallet/HDWallet.js";
 export type {
   CancelFn,
@@ -103,6 +102,4 @@ export type {
   SendRequestType,
   SendResponse,
 } from "./wallet/model.js";
-// transaction utilities
-export { getTransactionHash } from "./util/transaction.js";
-export { TestNetWallet, Wallet } from "./wallet/Wif.js";
+export { Wallet } from "./wallet/Wif.js";

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 (2026-10-31)
+
+- Sends compile libauth's P2PKH template directly instead of first running it through `importWalletTemplate`, which is meant for untrusted templates. That keeps libauth's generated template validator, about 78 KB minified, out of app bundles. Transactions are unchanged.
+
 ## 0.3.1 (2026-10-31)
 
 - `watchUtxos(callback, { onError })`: a failed read of the coins after the first is handed to `onError`, so an app can tell the user its view of the wallet may be out of date; the last coins reported stand until the next status change reads again. Without `onError` it goes to console.error, as before.

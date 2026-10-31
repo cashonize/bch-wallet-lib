@@ -17,6 +17,8 @@ import { InvalidRequestError } from "./errors.js";
 // CashTokens limits: fungible amounts are 64-bit signed, commitments up to 128 bytes (May 2026)
 const MAX_FUNGIBLE_AMOUNT = 2n ** 63n - 1n;
 const MAX_COMMITMENT_BYTES = 128;
+// 21 million BCH, the most an output can hold
+const MAX_SATOSHIS = 2_100_000_000_000_000n;
 
 const shown = (value: unknown) =>
   typeof value === "string" ||
@@ -96,6 +98,31 @@ export function toTokenAmount(amount: unknown): bigint {
   return result;
 }
 
+/** An output's satoshi value as a bigint; throws when it is not an integer from 1 to 21e14. */
+export function toSatoshiValue(value: unknown): bigint {
+  let result: bigint | undefined;
+  if (typeof value === "bigint") {
+    result = value;
+  } else if (typeof value === "number" && Number.isSafeInteger(value)) {
+    result = BigInt(value);
+  } else if (typeof value === "string" && /^-?[0-9]+$/.test(value)) {
+    result = BigInt(value);
+  }
+  if (result === undefined || result <= 0n || result > MAX_SATOSHIS) {
+    throw new InvalidRequestError(
+      `Invalid satoshi value: ${shown(value)}, expected an integer from 1 to ${MAX_SATOSHIS}`,
+      { field: "value", value },
+    );
+  }
+  return result;
+}
+
+// a token output's value, where none or 0 means the default (util/tokenOutput.ts)
+const toTokenOutputValue = (value: unknown): bigint | undefined =>
+  value === undefined || value === null || value === 0 || value === 0n
+    ? undefined
+    : toSatoshiValue(value);
+
 const hasNft = (nft: RequestNft | undefined) =>
   nft?.capability !== undefined || nft?.commitment !== undefined;
 
@@ -117,6 +144,7 @@ export function checkGenesisRequest(request: TokenGenesisRequest): void {
   const amount = toTokenAmount(request.amount);
   toTokenNft(request.nft);
   checkTokenOutput(amount, request.nft);
+  toTokenOutputValue(request.value);
 }
 
 /** Validates a mint request's token data, before the operation reads any coin. */
@@ -124,6 +152,7 @@ export function checkMintRequest(request: TokenMintRequest): void {
   toTokenCategory(request.category);
   toTokenNft(request.nft);
   checkTokenOutput(0n, request.nft);
+  toTokenOutputValue(request.value);
 }
 
 /** Validates a burn request's token data, before the operation reads any coin. */
@@ -151,7 +180,7 @@ export class SendRequest {
 
   constructor({ cashaddr, value }: { cashaddr: string; value: bigint }) {
     this.cashaddr = cashaddr;
-    this.value = BigInt(value);
+    this.value = toSatoshiValue(value);
   }
 }
 
@@ -246,7 +275,7 @@ export class TokenSendRequest {
     checkTokenaddr(cashaddr, Config.EnforceCashTokenReceiptAddresses);
 
     this.cashaddr = cashaddr;
-    this.value = value;
+    this.value = toTokenOutputValue(value);
   }
 }
 

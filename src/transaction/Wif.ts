@@ -248,15 +248,9 @@ export async function prepareOutputs(
     if (typeof outputLockingBytecode === "string")
       throw new Error(outputLockingBytecode);
 
-    const sendAmount = Number(output.value);
-    if (sendAmount % 1 !== 0) {
-      throw Error(
-        `Cannot send ${sendAmount} satoshis, (fractional sats do not exist, yet), please use an integer number.`,
-      );
-    }
     const lockedOutput: Output = {
       lockingBytecode: outputLockingBytecode.bytecode,
-      valueSatoshis: BigInt(sendAmount),
+      valueSatoshis: BigInt(output.value),
     };
     lockedOutputs.push(lockedOutput);
   }

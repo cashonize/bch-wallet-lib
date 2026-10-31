@@ -922,7 +922,8 @@ export class BaseWallet {
 
   /**
    * send Send some amount to an address
-   * this function processes the send requests, encodes the transaction, sends it to the network
+   * this function processes the send requests, encodes the transaction, sends it to the network.
+   * A BCH output below its dust limit is refused with InvalidRequestError before anything is built.
    * @returns the transaction id, the signed transaction and the token categories it spends or sends
    */
   public async send(
@@ -933,8 +934,24 @@ export class BaseWallet {
       | Array<SendRequest | TokenSendRequest | OpReturnData>,
     options?: SendRequestOptionsI,
   ): Promise<SendResponse> {
+    this.assertCanSign();
+    const sendRequests = asSendRequestObject(requests);
+    // an output below its dust limit is refused by the network, so not built at all
+    for (const request of sendRequests) {
+      if (!(request instanceof SendRequest)) continue;
+      const dustLimit = getDustThreshold({
+        lockingBytecode: deriveLockscript(request.cashaddr),
+        valueSatoshis: request.value,
+      });
+      if (request.value < dustLimit) {
+        throw new InvalidRequestError(
+          `A value of ${request.value} satoshis is below its output's dust limit of ${dustLimit}`,
+          { field: "value", value: request.value },
+        );
+      }
+    }
     const { encodedTransaction, categories } = await this.encodeTransaction(
-      requests,
+      sendRequests,
       undefined,
       options,
     );

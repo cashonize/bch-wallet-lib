@@ -22,10 +22,12 @@ export class InsufficientFundsError extends Error {
 }
 
 /**
- * Thrown before anything is built or fetched when a request's token data cannot go on chain as
- * given: a malformed category or commitment, a fungible amount out of range, or a token output
- * with neither fungible tokens nor an NFT. `field` names the request field (`category`,
- * `nft.commitment`, `amount`, `nft`), `value` holds what was given. Also thrown, before the
+ * Thrown before anything is built or fetched when a request cannot go on chain as given: a
+ * malformed category or commitment, a fungible amount out of range, a token output with neither
+ * fungible tokens nor an NFT, a satoshi value that is not an integer from 1 to 21e14 (a token
+ * output's 0 or none meaning its default), or a `send` output below its dust limit. `field` names
+ * the request field (`category`, `nft.commitment`, `amount`, `nft`, `value`), `value` holds what
+ * was given. Also thrown, before the
  * transaction is built, for a send option that cannot be honored, with `field` naming the
  * option: an `excludeUtxoIds` entry that is not a `txid:vout` outpoint, or a token coin in
  * `ensureUtxos` of a max send (`value` the offending `txid:vout`). A token genesis's extra token

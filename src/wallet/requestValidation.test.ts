@@ -3,6 +3,7 @@ import { getTokenUtxos } from "#test/balances.js";
 import { NFTCapability } from "../interface.js";
 import { InvalidRequestError } from "./errors.js";
 import {
+  SendRequest,
   TokenBurnRequest,
   TokenGenesisRequest,
   TokenMintRequest,
@@ -34,6 +35,43 @@ function invalid(build: () => unknown, field: string, value: unknown) {
 }
 
 describe("request constructors", () => {
+  test("a satoshi value must be an integer from 1 to 21e14", async () => {
+    const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
+    for (const bad of [0n, -1n, 1.5, 2_100_000_000_000_001n]) {
+      invalid(
+        () => new SendRequest({ cashaddr, value: bad as bigint }),
+        "value",
+        bad,
+      );
+    }
+    invalid(
+      () =>
+        new TokenSendRequest({ cashaddr, category, amount: 1n, value: -1n }),
+      "value",
+      -1n,
+    );
+    invalid(
+      () => new TokenGenesisRequest({ amount: 1n, value: 1.5 as any }),
+      "value",
+      1.5,
+    );
+    invalid(
+      () =>
+        new TokenMintRequest({
+          category,
+          nft: { capability: none, commitment: "" },
+          value: 2_100_000_000_000_001n,
+        }),
+      "value",
+      2_100_000_000_000_001n,
+    );
+    expect(new SendRequest({ cashaddr, value: 546 as any }).value).toBe(546n);
+    // a token output without a value, or of 0, holds the default
+    expect(
+      new TokenSendRequest({ cashaddr, category, amount: 1n, value: 0n }).value,
+    ).toBeUndefined();
+  });
+
   test("a category must be 64 hex characters", async () => {
     const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
     for (const bad of ["", "11".repeat(31), "11".repeat(33), "zz".repeat(32)]) {

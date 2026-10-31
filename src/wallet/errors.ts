@@ -47,7 +47,8 @@ export class InsufficientFundsError extends Error {
  * transaction is built, for a send option that cannot be honored, with `field` naming the
  * option: an `excludeUtxoIds` entry that is not a `txid:vout` outpoint, or a token coin in
  * `ensureUtxos` of a max send (`value` the offending `txid:vout`). A token genesis's extra token
- * output of a category it does not create is refused with `field` `sendRequests`.
+ * output of a category it does not create is refused with `field` `sendRequests`. Also thrown by
+ * an HD wallet set up with a `branches` list lacking the deposit (0) or change (1) branch.
  */
 export class InvalidRequestError extends Error {
   readonly field: string;

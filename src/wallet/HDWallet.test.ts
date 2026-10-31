@@ -26,6 +26,7 @@ import {
   RegTestHDWallet,
   TestNetHDWallet,
 } from "./HDWallet.js";
+import { InvalidRequestError } from "./errors.js";
 import { CancelFn } from "./interface.js";
 import { TokenMintRequest, TokenSendRequest } from "./model.js";
 import { RegTestWatchWallet } from "./Watch.js";
@@ -145,24 +146,14 @@ describe("HDWallet", () => {
     expect(w.getDepositAddress(0)).toBe(wallet.cashaddr);
   });
 
-  it("rejects an empty branches list", async () => {
-    const w = new HDWallet();
-    await expect((w as any).initialize({ branches: [] })).rejects.toThrow(
-      /at least one/i,
-    );
-  });
-
-  it("getChangeAddress falls back to deposit when branch 1 is not tracked", async () => {
-    const mnemonic =
-      "divide battle bulb improve hockey favorite charge save merit fatal frog cage";
-    const w = new HDWallet();
-    await (w as any).initialize({ mnemonic, branches: [0, 7] });
-
-    expect(w.getChangeAddress(0)).toBe(w.getDepositAddress(0));
-    expect(w["getChangeAddresses"](2)).toEqual([
-      w.getDepositAddress(0),
-      w.getDepositAddress(1),
-    ]);
+  it("refuses a branches list without the deposit or change branch", async () => {
+    for (const branches of [[], [0, 7], [1, 7]]) {
+      const w = new HDWallet();
+      await expect(
+        (w as any).initialize({ branches }),
+        JSON.stringify(branches),
+      ).rejects.toBeInstanceOf(InvalidRequestError);
+    }
   });
 
   it("plans the BCH change and every token change output on an address of its own", async () => {

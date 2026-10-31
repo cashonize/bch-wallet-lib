@@ -45,7 +45,7 @@ import { toError } from "../util/toError.js";
 import { runCallback } from "../util/watch.js";
 import { BaseWallet } from "./Base.js";
 import { WalletTypeEnum } from "./enum.js";
-import { InvalidWalletIdError } from "./errors.js";
+import { InvalidRequestError, InvalidWalletIdError } from "./errors.js";
 import { CancelFn, WalletFactoryOptions } from "./interface.js";
 import { networkPrefixError, walletTypeError } from "../util/walletIdError.js";
 
@@ -58,7 +58,7 @@ export interface HDWalletOptions {
    * path `N/i` (where `i` is the address index). Default `[0, 1]` -- deposit
    * (0) and change (1) -- matching the BIP-44 convention.
    *
-   * Must contain at least one branch.
+   * Must include the deposit (0) and change (1) branches.
    */
   branches?: number[];
   /** Initial per-branch indices (max-used index). */
@@ -159,8 +159,14 @@ export class HDWallet extends BaseWallet {
       mnemonic = generateBip39Mnemonic();
     }
 
-    if (branches !== undefined && branches.length === 0) {
-      throw new Error("HDWallet: `branches` must contain at least one entry");
+    if (
+      branches !== undefined &&
+      !(branches.includes(DEPOSIT_BRANCH) && branches.includes(CHANGE_BRANCH))
+    ) {
+      throw new InvalidRequestError(
+        "HDWallet: `branches` must include the deposit (0) and change (1) branches",
+        { field: "branches", value: branches },
+      );
     }
 
     // @ts-ignore
@@ -823,7 +829,6 @@ export class HDWallet extends BaseWallet {
   }
 
   protected override getTokenDepositAddresses(count: number): string[] {
-    this.requireBranch(DEPOSIT_BRANCH);
     const statuses = this.statuses.get(DEPOSIT_BRANCH)!;
     return getNextUnusedIndices(count, statuses).map((index) =>
       this.getTokenDepositAddress(index),
@@ -831,25 +836,16 @@ export class HDWallet extends BaseWallet {
   }
 
   /// Get next unused change address (branch 1), or the address at the
-  /// specified index. When branch 1 is not
-  /// tracked, the deposit branch is used instead.
+  /// specified index.
   public getChangeAddress(index: number = -1): string {
-    if (!this.branches.includes(CHANGE_BRANCH)) {
-      return this.getDepositAddress(index);
-    }
     return this.getAddressByBranch(CHANGE_BRANCH, index);
   }
 
-  /// The next `count` unused change addresses (branch 1), each its own. When
-  /// branch 1 is not tracked, the deposit branch is used instead.
+  /// The next `count` unused change addresses (branch 1), each its own.
   protected override getChangeAddresses(count: number): string[] {
-    const branch = this.branches.includes(CHANGE_BRANCH)
-      ? CHANGE_BRANCH
-      : DEPOSIT_BRANCH;
-    this.requireBranch(branch);
-    const statuses = this.statuses.get(branch)!;
+    const statuses = this.statuses.get(CHANGE_BRANCH)!;
     return getNextUnusedIndices(count, statuses).map((index) =>
-      this.getAddressByBranch(branch, index),
+      this.getChangeAddress(index),
     );
   }
 

@@ -235,8 +235,8 @@ describe.skipIf(!useMock)("a send on a slow server", () => {
     const start = Date.now();
     const response = await bob.send({ cashaddr: bob.cashaddr, value: 1000n });
     expect(Date.now() - start).toBeLessThan(15_000);
-    expect((await provider.getRawTransactionObject(response.txId)).txid).toBe(
-      response.txId,
+    expect(await provider.getRawTransaction(response.txId)).toMatch(
+      /^[0-9a-f]+$/,
     );
     expect(bob["watchCallbacks"]).toEqual([]);
     await bob.stop();

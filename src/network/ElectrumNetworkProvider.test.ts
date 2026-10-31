@@ -3,7 +3,6 @@ import { FakeServer } from "#test/fakeElectrumServer.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { Config } from "../config.js";
-import { RegTestWallet } from "../wallet/Wif.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
 import { type ElectrumServer, ElectrumTransport } from "./ElectrumTransport.js";
 import { createMockProvider } from "./MockNetworkProvider.js";
@@ -71,28 +70,6 @@ describe("getRawTransactions and getHeaders fan out bounded", () => {
   });
 });
 
-test("the input values of a transaction are read at most 10 at a time", async () => {
-  const miner = await RegTestWallet.fromWIF(process.env.PRIVATE_WIF!);
-  const bob = await RegTestWallet.newRandom();
-  for (let i = 0; i < 12; i++) {
-    await miner.send({ cashaddr: bob.cashaddr!, value: 3000n });
-  }
-  // 12 inputs from 12 transactions
-  const { txId } = await bob.sendMax(miner.getDepositAddress());
-
-  const provider = bob.provider as ElectrumNetworkProvider;
-  const { counts, restore } = countRequests(provider);
-  const transaction = await provider.getRawTransactionObject(txId!, true);
-  restore();
-
-  expect(transaction.vin.length).toBe(12);
-  expect(transaction.vin.every((input) => input.value === 3000 / 1e8)).toBe(
-    true,
-  );
-  expect(counts.byMethod["blockchain.transaction.get"]).toBe(13);
-  expect(counts.maxInFlight).toBe(10);
-});
-
 test("a transaction the server answers with another one is refused, rather than cached under the txid asked for", async () => {
   const provider = await createMockProvider();
   await provider.connect();
@@ -112,9 +89,6 @@ test("a transaction the server answers with another one is refused, rather than 
   const refusal = `with transaction ${other}`;
   await expect(provider.getRawTransaction(asked)).rejects.toThrow(refusal);
   await expect(provider.getRawTransactions([asked])).rejects.toThrow(refusal);
-  await expect(provider.getRawTransactionObject(asked)).rejects.toThrow(
-    refusal,
-  );
   expect(await provider.getRawTransaction(other)).toMatch(/^[0-9a-f]+$/);
 });
 
@@ -184,7 +158,6 @@ test("a cache write that fails does not fail the fetch", async () => {
       /^[0-9a-f]+$/,
     );
     expect(await provider.getRawTransaction(txId!)).toMatch(/^[0-9a-f]+$/);
-    expect((await provider.getRawTransactionObject(txId!)).txid).toBe(txId);
     expect((await provider.getHeaders([1])).get(1)?.height).toBe(1);
   } finally {
     Config.UseIndexedDBCache = cacheSetting;

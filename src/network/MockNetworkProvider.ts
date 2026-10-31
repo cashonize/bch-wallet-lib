@@ -43,7 +43,7 @@ export class MockNetworkProvider extends ElectrumNetworkProvider {
   private async doInit(): Promise<void> {
     // set_chain_tip creates headers for max(0, h-10)..h only (11 headers).
     // Fill headers for heights 0..189 so that UTXOs placed at lower heights
-    // have matching block headers for verbose transaction lookups.
+    // have matching block headers.
     for (let h = 0; h < 190; h++) {
       const hash = h.toString(16).padStart(64, "0");
       await this.mc.request("test.add_header", [hash, h, 1700000000 + h]);

@@ -1,5 +1,7 @@
 import { randomUtxo } from "@paryonusd/mem-cash";
+import { encodeTransaction } from "@bitauth/libauth";
 import { countRequests } from "#test/countRequests.js";
+import { getTransaction } from "#test/transaction.js";
 import { Config } from "../config.js";
 import { Network } from "../interface.js";
 import { RegTestWallet } from "../wallet/Wif.js";
@@ -101,12 +103,15 @@ async function sendWithRelayFee(
       new SendRequest({ cashaddr: bob.cashaddr, value: 10_000n }),
     );
 
-    const tx = await alice.provider.getRawTransactionObject(response.txId!);
-    const outputTotal = tx.vout.reduce(
-      (sum, output) => sum + BigInt(Math.round(output.value * 1e8)),
+    const tx = await getTransaction(alice.provider, response.txId!);
+    const outputTotal = tx.outputs.reduce(
+      (sum, output) => sum + output.valueSatoshis,
       0n,
     );
-    return { fee: 100_000_000n - outputTotal, size: tx.size };
+    return {
+      fee: 100_000_000n - outputTotal,
+      size: encodeTransaction(tx).length,
+    };
   } finally {
     removeGlobalProvider(Network.REGTEST);
   }

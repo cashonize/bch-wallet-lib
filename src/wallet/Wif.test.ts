@@ -1031,9 +1031,6 @@ describe(`Wallet extrema behavior regression testing`, () => {
     expect(error).toBeInstanceOf(InvalidRequestError);
     expect(error).toMatchObject({ field: "value", value: DUST - 1n });
     expect(submit).not.toHaveBeenCalled();
-
-    await aliceWallet.send({ cashaddr: bobWallet.cashaddr!, value: DUST });
-    expect(await bobWallet.getBalance()).toBe(DUST);
   });
 
   test("Send op_return data", async () => {

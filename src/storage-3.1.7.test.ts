@@ -18,7 +18,7 @@ import { parse, WalletCacheI } from "./cache/walletCache.js";
 import { Config } from "./config.js";
 import ExchangeRateProvider from "./db/ExchangeRateProvider.js";
 import IndexedDBProvider from "./indexeddb/IndexedDBProvider.js";
-import { Network } from "./interface.js";
+import { Network, type Utxo } from "./interface.js";
 import { removeGlobalProvider, setGlobalProvider } from "./network/default.js";
 import ElectrumNetworkProvider from "./network/ElectrumNetworkProvider.js";
 import { Transport } from "./network/Transport.js";
@@ -202,9 +202,11 @@ describe("data written by mainnet-js 3.1.7", () => {
     }
 
     for (const { dbName, name, expected } of walletRows) {
-      const WalletClass = classes[dbName][expected.kind];
+      const WalletClass = classes[dbName][expected.kind as "single" | "hd"];
       const wallet = await WalletClass.named(name);
-      await wallet["watchPromise"];
+      // both wallet kinds keep their first watch in a protected watchPromise
+      await (wallet as unknown as { watchPromise?: Promise<unknown> })
+        .watchPromise;
       wallets.set(`${dbName}/${name}`, wallet);
     }
   });
@@ -265,7 +267,7 @@ describe("data written by mainnet-js 3.1.7", () => {
       expect(wallet.toDbString()).toBe(expected.toDbString);
       expect(String(await wallet.getBalance())).toBe(expected.balance);
       const utxos = (await wallet.getUtxos()).map(
-        (utxo) => `${utxo.txid}:${utxo.vout}`,
+        (utxo: Utxo) => `${utxo.txid}:${utxo.vout}`,
       );
       expect(utxos.sort()).toEqual(expected.utxos);
 

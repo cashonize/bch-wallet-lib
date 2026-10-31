@@ -1388,7 +1388,7 @@ describe("HDWallet", () => {
 
     const previousValue = Config.EnforceCashTokenReceiptAddresses;
 
-    const wrap = (addr) => {
+    const wrap = (addr: string) => {
       return new Promise((resolve) => {
         resolve(new TokenSendRequest({ cashaddr: addr, category, amount: 1n }));
       });

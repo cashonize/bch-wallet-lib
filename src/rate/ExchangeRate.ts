@@ -58,11 +58,15 @@ const localStorageCache: RateCache = {
   },
 };
 
+const globalScope = globalThis as unknown as {
+  RATE?: Record<string, ExchangeRateI>;
+};
+
 const globalScopeCache: RateCache = {
-  read: async (symbol) => globalThis.RATE?.[symbol],
+  read: async (symbol) => globalScope.RATE?.[symbol],
   write: async (entry) => {
-    globalThis.RATE ??= {};
-    globalThis.RATE[entry.symbol] = entry;
+    globalScope.RATE ??= {};
+    globalScope.RATE[entry.symbol] = entry;
   },
 };
 
@@ -236,7 +240,7 @@ async function fetchRate(
   const data = (await response.json()) as {
     data: { code: string; rate: number }[];
   };
-  const rates = data.data.reduce(
+  const rates = data.data.reduce<Record<string, number>>(
     (acc, rate) => ({ ...acc, [rate.code.toLocaleLowerCase()]: rate.rate }),
     {},
   );

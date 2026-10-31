@@ -316,7 +316,8 @@ describe("fee estimated from the selected coins (mainnet-js#253)", () => {
     expect(error.message).toBe(
       "Amount required was not met, 5824 satoshis needed, 5000 satoshis available",
     );
-    expect(error.data).toEqual({ required: 5824n, available: 5000n });
+    expect(error.required).toBe(5824n);
+    expect(error.available).toBe(5000n);
   });
 });
 
@@ -359,10 +360,8 @@ describe("sendMax and the dust limit", () => {
       .catch((e) => e);
     expect(error).toBeInstanceOf(InsufficientFundsError);
     expect(error.asset).toBe("bch");
-    expect(error.data).toEqual({
-      required: 600n - max + 546n,
-      available: 600n,
-    });
+    expect(error.required).toBe(600n - max + 546n);
+    expect(error.available).toBe(600n);
     await expect(bob.sendMax(alice.cashaddr!)).rejects.toBeInstanceOf(
       InsufficientFundsError,
     );
@@ -379,10 +378,8 @@ describe("sendMax and the dust limit", () => {
       .sendMax(p2sh32, { broadcast: false })
       .catch((e) => e);
     expect(error).toBeInstanceOf(InsufficientFundsError);
-    expect(error.data).toEqual({
-      required: fee + 576n,
-      available: fee + 560n,
-    });
+    expect(error.required).toBe(fee + 576n);
+    expect(error.available).toBe(fee + 560n);
 
     const response = await bob.sendMax(alice.cashaddr!);
     expect(inputOutpoints(response.transaction)).toEqual(outpointsOf(coins));

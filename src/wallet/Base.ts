@@ -1244,9 +1244,15 @@ export class BaseWallet {
     try {
       settled = await settle(0n, initialEstimate);
     } catch (e) {
-      const shortfall: { required: bigint; available: bigint } | undefined =
-        e instanceof InsufficientFundsError ? e["data"] : undefined;
-      if (!shortfall) throw e;
+      if (
+        !(e instanceof InsufficientFundsError) ||
+        e.asset !== "bch" ||
+        e.required === undefined ||
+        e.available === undefined
+      ) {
+        throw e;
+      }
+      const shortfall = { required: e.required, available: e.available };
       const pinnedIds = new Set(ensureUtxos.map(toUtxoId));
       const usable = [
         ...ensureUtxos,
@@ -1740,7 +1746,7 @@ export class BaseWallet {
       if (available < amount) {
         throw new InsufficientFundsError(
           `Not enough fungible tokens of category ${category} to burn ${amount}: ${available} available`,
-          { asset: "token", category },
+          { asset: "token", category, required: amount, available },
         );
       }
       tokenBurns.fungible[category] =

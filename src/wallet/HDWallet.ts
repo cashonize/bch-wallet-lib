@@ -185,7 +185,6 @@ export class HDWallet extends BaseWallet {
       checkForEmptySeed(seed);
 
       const rootNode = deriveHdPrivateNodeFromSeed(seed, {
-        assumeValidity: true,
         throwErrors: true,
       });
       const node = deriveHdPath(rootNode, this.derivation);

@@ -110,7 +110,6 @@ export class Wallet extends WatchWallet {
       checkForEmptySeed(seed);
 
       const rootNode = deriveHdPrivateNodeFromSeed(seed, {
-        assumeValidity: true,
         throwErrors: true,
       });
       const childNode = deriveHdPath(rootNode, this.derivationPath);

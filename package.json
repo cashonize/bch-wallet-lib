@@ -34,7 +34,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "prepack": "pnpm build && pnpm check:dist-imports && pnpm check:dist-errors",
     "check:dist-imports": "node scripts/check-dist-imports.mjs",
     "check:dist-errors": "node scripts/check-dist-errors.mjs",

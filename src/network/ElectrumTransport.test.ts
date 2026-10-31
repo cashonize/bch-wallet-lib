@@ -317,6 +317,110 @@ describe("ElectrumTransport subscriptions", () => {
     expect(received).toHaveLength(2);
   });
 
+  describe("a subscription whose restore failed after a reconnect", () => {
+    const busy = { error: { code: -32600, message: "busy" } };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Runs the fake server's replies, which are timers too, a millisecond at a time
+    async function settled<T>(promise: Promise<T>): Promise<T> {
+      let done = false;
+      void promise.finally(() => (done = true)).catch(() => {});
+      for (let i = 0; i < 50 && !done; i++) {
+        await vi.advanceTimersByTimeAsync(1);
+      }
+      return promise;
+    }
+
+    // Subscribes addressA, drops the connection and reconnects; `reply` answers each
+    // address.subscribe by its call number, the first being the original subscribe
+    async function reconnectWith(
+      reply: (call: number) => { result: string } | typeof busy,
+    ) {
+      const fake = new FakeServer();
+      serveStatuses(fake);
+      fake.handlers.set("blockchain.address.subscribe", (_params, call) =>
+        reply(call),
+      );
+      fake.handlers.set("blockchain.relayfee", () => ({ result: 0.00001 }));
+      transport = new ElectrumTransport(asServer(fake), {
+        requestTimeout: 1_000,
+      });
+      const received: unknown[] = [];
+      const subscribing = transport.subscribe(
+        "blockchain.address.subscribe",
+        [addressA],
+        (d) => received.push(d),
+      );
+      const unsubscribe = await settled(subscribing);
+      fake.drop();
+      await settled(transport.request("blockchain.relayfee"));
+      const subscribes = () =>
+        fake.calls("blockchain.address.subscribe").length;
+      return { fake, received, unsubscribe, subscribes };
+    }
+
+    test("is made again after a request's timeout, and then with backoff until it comes back", async () => {
+      const { received, subscribes } = await reconnectWith((call) => {
+        if (call === 1) return { result: "first status" };
+        if (call <= 3) return busy;
+        return { result: "status after retry" };
+      });
+      expect(subscribes()).toBe(2);
+      expect(received).toHaveLength(1);
+
+      // the restore gets a request's timeout, then a retry; the next one 10 s after that
+      await vi.advanceTimersByTimeAsync(900);
+      expect(subscribes()).toBe(2);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(subscribes()).toBe(3);
+
+      await vi.advanceTimersByTimeAsync(9_500);
+      expect(subscribes()).toBe(3);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(subscribes()).toBe(4);
+      expect(received[1]).toEqual([addressA, "status after retry"]);
+
+      // restored, so no more attempts
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(subscribes()).toBe(4);
+      expect(received).toHaveLength(2);
+    });
+
+    test("is not made again once unsubscribed", async () => {
+      const { fake, unsubscribe, subscribes } = await reconnectWith((call) =>
+        call === 1 ? { result: "first status" } : busy,
+      );
+      await unsubscribe();
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(subscribes()).toBe(2);
+      expect(fake.calls("blockchain.address.unsubscribe")).toHaveLength(1);
+    });
+
+    test("is not made again once the transport is closed", async () => {
+      const { subscribes } = await reconnectWith((call) =>
+        call === 1 ? { result: "first status" } : busy,
+      );
+      await transport.close();
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(subscribes()).toBe(2);
+    });
+
+    test("a restore that came back costs no extra subscribe", async () => {
+      const { received, subscribes } = await reconnectWith((call) => ({
+        result: `status ${call}`,
+      }));
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(subscribes()).toBe(2);
+      expect(received).toHaveLength(2);
+    });
+  });
+
   // A caller that left a server closes its transport; a request still holding it must not open a
   // connection to that server again
   test("refuses to connect again once closed, so a late request fails instead of reconnecting", async () => {

@@ -14,6 +14,10 @@ import { NetworkType } from "../enum.js";
 import { getHistory } from "../history/getHistory.js";
 import { TransactionHistoryItem } from "../history/interface.js";
 import { Network, TxI, Utxo } from "../interface.js";
+import {
+  fetchAddressState,
+  highestConfirmedHeight,
+} from "../util/addressHistory.js";
 import { toCashaddr, toTokenaddr } from "../util/deriveCashaddr.js";
 import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { BaseWallet } from "./Base.js";
@@ -48,7 +52,7 @@ export class WatchWallet extends BaseWallet {
   private baseCancelFn?: CancelFn;
   /** Settles when the latest status watch is in place or has failed, and never rejects. */
   protected watchPromise?: Promise<void>;
-  private updatePromise?: Promise<void>;
+  private updatePromise?: Promise<unknown>;
   // the latest status watch, which rejects if it failed; reads await it through watched()
   private watch: Promise<void> = Promise.resolve();
   private watchFailed = false;
@@ -258,11 +262,12 @@ export class WatchWallet extends BaseWallet {
   /// Resolves to whether it applied the status, false when a newer notification's update overtook it.
   private async update(status: string | null): Promise<boolean> {
     const attempt = ++this.fetches;
+    let matches = true;
     if (status !== null && status !== this.status) {
       const update = this.fetchData(status, () => attempt === this.fetches);
       this.updatePromise = update.catch(() => {});
       try {
-        await update;
+        matches = await update;
       } catch (error) {
         // the newer fetch decides
         if (attempt !== this.fetches) return false;
@@ -272,54 +277,42 @@ export class WatchWallet extends BaseWallet {
     }
     // a newer notification's fetch has the address's state
     if (attempt !== this.fetches) return false;
-    this.status = status;
+    // a history that does not match the status keeps the previous one, so that the next
+    // notification fetches again
+    if (matches) this.status = status;
     this.notifyWatchCallbacks(status, this.cashaddr);
     return true;
   }
 
+  // Resolves to whether the history fetched matches the status
   private async fetchData(
-    status: string | null,
+    status: string,
     isLatest: () => boolean,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const addr = this.cashaddr;
-    const fromHeight = this.lastConfirmedHeight;
-
-    const [utxos, newHistory] = await Promise.all([
-      this.provider.getUtxos(addr),
-      this.provider.getHistory(addr, fromHeight),
-    ]);
-    if (!isLatest()) return;
-
-    // Merge: keep confirmed items below fromHeight, add new items
-    const confirmedFromHistory = this.rawHistory.filter(
-      (tx) => tx.height > 0 && tx.height < fromHeight,
-    );
-    const seen = new Set(confirmedFromHistory.map((tx) => tx.tx_hash));
-    const merged = [...confirmedFromHistory];
-    for (const tx of newHistory) {
-      if (!seen.has(tx.tx_hash)) {
-        seen.add(tx.tx_hash);
-        merged.push(tx);
-      }
-    }
-
-    this.lastConfirmedHeight = merged.reduce(
-      (max, tx) => (tx.height > 0 ? Math.max(max, tx.height) : max),
-      fromHeight,
-    );
-
-    // Update live state
-    this.utxos = utxos;
-    this.rawHistory = merged;
-
-    // Persist to cache
-    this.walletCache.setStatusAndUtxos(
-      addr,
+    const { utxos, history, matches } = await fetchAddressState(
+      (fromHeight) =>
+        Promise.all([
+          this.provider.getUtxos(addr),
+          this.provider.getHistory(addr, fromHeight),
+        ]),
       status,
-      utxos,
-      merged,
+      this.rawHistory,
       this.lastConfirmedHeight,
     );
+    if (!isLatest()) return matches;
+
+    this.lastConfirmedHeight = highestConfirmedHeight(history);
+    this.utxos = utxos;
+    this.rawHistory = history;
+    this.walletCache.setStatusAndUtxos(
+      addr,
+      matches ? status : this.status,
+      utxos,
+      history,
+      this.lastConfirmedHeight,
+    );
+    return matches;
   }
 
   private notifyWatchCallbacks(status: string | null, address: string) {

@@ -488,7 +488,7 @@ export async function getSuitableUtxos(
     amountRequired !== undefined && amountAvailable >= amountRequired;
   if (!alreadyEnough) {
     for (let i = 0; i < inputs.length; i++) {
-      if (amountRequired && amountAvailable > amountRequired) break;
+      if (amountRequired && amountAvailable >= amountRequired) break;
       if (usedIndices.has(i)) continue;
       const u = inputs[i];
       if (u.token) continue;

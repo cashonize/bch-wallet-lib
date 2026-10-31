@@ -4,6 +4,7 @@ import type { Utxo } from "../interface.js";
 import { TokenSendRequest } from "../wallet/model.js";
 import {
   buildP2pkhNonHdTransaction,
+  getSuitableUtxos,
   placeholderPrivateKeyBin,
   prepareInputs,
 } from "./Wif.js";
@@ -47,5 +48,20 @@ describe("errors are Error objects", () => {
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/token/i);
+  });
+});
+
+describe("getSuitableUtxos", () => {
+  const coin = (vout: number, satoshis: bigint): Utxo => ({
+    txid: "33".repeat(32),
+    vout,
+    satoshis,
+    address: "bchreg:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+  });
+
+  test("the top-up stops once the coins cover the amount exactly", async () => {
+    const coins = [coin(0, 500n), coin(1, 500n), coin(2, 500n)];
+    const selected = await getSuitableUtxos(coins, 1000n, []);
+    expect(selected.map((u) => u.vout)).toEqual([0, 1]);
   });
 });

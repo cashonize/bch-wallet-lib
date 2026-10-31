@@ -173,9 +173,10 @@ export function prepareInputs({
             }
           : undefined,
     };
-    const key =
-      walletCache.get(i.address)?.privateKey ??
-      (signingKey?.length ? signingKey : Uint8Array.from(Array(32)));
+    const key = walletCache.get(i.address)?.privateKey ?? signingKey;
+    if (!key?.length) {
+      throw new Error(`No private key for the input address ${i.address}`);
+    }
     const newInput = {
       outpointIndex: utxoIndex,
       outpointTransactionHash: utxoOutpointTransactionHash,

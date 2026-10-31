@@ -119,6 +119,24 @@ describe("request constructors", () => {
     }
   });
 
+  test("an NFT request without a commitment is refused rather than guessed", async () => {
+    const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
+    const nft = { capability: none } as any;
+    invalid(
+      () => new TokenSendRequest({ cashaddr, category, nft }),
+      "nft.commitment",
+      undefined,
+    );
+    // without a capability it stays a fungible-only request
+    const fungible = new TokenSendRequest({
+      cashaddr,
+      category,
+      amount: 5n,
+      nft: {} as any,
+    });
+    expect(fungible.nft?.commitment).toBeUndefined();
+  });
+
   test("a fungible amount must be from 0 to 2^63-1", async () => {
     const cashaddr = (await RegTestWallet.newRandom()).tokenaddr;
     for (const bad of [-1n, maxAmount + 1n, 1.5, "1e3"] as any[]) {

@@ -10,13 +10,13 @@ import {
 } from "./Wif.js";
 
 const category = "11".repeat(32);
+const p2pkh = encodeCashAddress({
+  prefix: "bchreg",
+  type: "p2pkh",
+  payload: new Uint8Array(20),
+}).address;
 describe("errors are Error objects", () => {
   const walletCache = { get: () => undefined } as unknown as WalletCache;
-  const p2pkh = encodeCashAddress({
-    prefix: "bchreg",
-    type: "p2pkh",
-    payload: new Uint8Array(20),
-  }).address;
   const utxo: Utxo = {
     txid: "22".repeat(32),
     vout: 1,
@@ -56,7 +56,7 @@ describe("getSuitableUtxos", () => {
     txid: "33".repeat(32),
     vout,
     satoshis,
-    address: "bchreg:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+    address: p2pkh,
   });
 
   test("the top-up stops once the coins cover the amount exactly", async () => {

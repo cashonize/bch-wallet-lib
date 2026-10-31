@@ -43,11 +43,18 @@ export function toTokenCategory(category: unknown): string {
 
 /**
  * The NFT with its commitment lowercased, a copy, so that a commitment in either case names the
- * wallet's coin; throws when the commitment is not even-length hex of at most 128 bytes.
+ * wallet's coin. Throws when an NFT names a capability but no commitment (an NFT without one has
+ * the empty commitment, ""), or when the commitment is not even-length hex of at most 128 bytes.
  */
 export function toTokenNft<T extends RequestNft>(
   nft: T | undefined,
 ): T | undefined {
+  if (nft?.capability !== undefined && nft.commitment === undefined) {
+    throw new InvalidRequestError(
+      'NFT commitment missing: pass "" for an NFT without one',
+      { field: "nft.commitment", value: undefined },
+    );
+  }
   if (nft?.commitment === undefined) return nft;
   const commitment: unknown = nft.commitment;
   // libauth's hexToBin reads an odd-length or non-hex string as other bytes ("abc" as ab0c)

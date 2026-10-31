@@ -16,8 +16,9 @@ export interface SendRequestOptionsI {
    */
   tokenUtxoIds?: string[] | Utxo[];
   /**
-   * false: no token input matching and no token change, the outputs are the requests as given.
-   * The check that the transaction burns no token stays on
+   * @internal tokenGenesis, tokenMint and tokenBurn set it: false is no token input matching and
+   * no token change, the outputs are the requests as given. The check that the transaction burns
+   * no token stays on
    */
   checkTokenQuantities?: boolean; // true
   /**

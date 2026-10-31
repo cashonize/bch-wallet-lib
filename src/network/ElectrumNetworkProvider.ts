@@ -522,7 +522,7 @@ export default class ElectrumNetworkProvider {
     ]);
   }
 
-  /** The server's minimum relay fee, in BCH per kB. */
+  /** @internal The server's minimum relay fee, in BCH per kB; read through getRelayFeeCache. */
   async getRelayFee(): Promise<number> {
     return this.performRequest<number>("blockchain.relayfee");
   }
@@ -573,8 +573,9 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Subscribe to an address's status: the callback gets `[cashaddr, status]`, first for the current
-   * status and then for every change.
+   * @internal Subscribe to an address's status: the callback gets `[cashaddr, status]`, first for
+   * the current status and then for every change. The wallets' watches and watchAddressStatus
+   * call it.
    */
   async subscribeToAddress(
     cashaddr: string,
@@ -588,8 +589,9 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Subscribe to a transaction's confirmation status: the callback gets `[txHash, confirmations]`,
-   * with null confirmations while the server does not know the transaction.
+   * @internal Subscribe to a transaction's confirmation status: the callback gets
+   * `[txHash, confirmations]`, with null confirmations while the server does not know the
+   * transaction. sendRawTransaction waits on it.
    */
   async subscribeToTransaction(
     txHash: string,
@@ -631,7 +633,10 @@ export default class ElectrumNetworkProvider {
     };
   }
 
-  /** Connect to the server; resolves when connected, rejects when no connection can be made. */
+  /**
+   * @internal Connect to the server; resolves when connected, rejects when no connection can be
+   * made. Every request connects first.
+   */
   async connect(): Promise<void> {
     await this.cache?.init();
     await this.transport.connect();

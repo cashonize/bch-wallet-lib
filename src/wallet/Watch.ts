@@ -43,6 +43,7 @@ export class WatchWallet extends BaseWallet {
   readonly publicKeyCompressed?: Uint8Array;
   readonly publicKeyHash!: Uint8Array;
   readonly cashaddr!: string;
+  /** @internal getTokenDepositAddress() returns it */
   readonly tokenaddr!: string;
 
   // Subscription-first infrastructure: single subscription shared by all watchers

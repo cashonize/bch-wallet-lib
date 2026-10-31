@@ -7,7 +7,6 @@ export { pruneWalletCaches } from "./cache/walletCache.js";
 // Enum
 export { NetworkType } from "./enum.js";
 // history
-export { getHistory } from "./history/getHistory.js";
 export * from "./history/interface.js";
 // interfaces
 export { NFTCapability } from "./interface.js";
@@ -104,6 +103,4 @@ export type {
   SendRequestType,
   SendResponse,
 } from "./wallet/model.js";
-// transaction utilities
-export { getTransactionHash } from "./util/transaction.js";
 export { TestNetWallet, Wallet } from "./wallet/Wif.js";

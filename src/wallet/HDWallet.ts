@@ -796,7 +796,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /**
-   * Get the address at the given branch and index. If `index` is `-1`
+   * @internal Get the address at the given branch and index. If `index` is `-1`
    * (the default), the next unused index on that branch is selected.
    *
    * Throws if the branch is not tracked by this wallet.
@@ -808,7 +808,7 @@ export class HDWallet extends BaseWallet {
     return this.walletCache.getByIndex(index, branch).address;
   }
 
-  /** Same as {@link getAddressByBranch} but returning the token-address form. */
+  /** @internal Same as {@link getAddressByBranch} but returning the token-address form. */
   public getTokenAddressByBranch(branch: number, index: number = -1): string {
     this.requireBranch(branch);
     const statuses = this.statuses.get(branch)!;

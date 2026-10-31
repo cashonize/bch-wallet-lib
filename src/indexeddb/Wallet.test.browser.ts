@@ -4,6 +4,7 @@ import {
   BaseWallet,
   convert,
   namedWalletExists,
+  saveNamedWallet,
   SignedMessage,
   TestNetWallet,
   Wallet,
@@ -150,17 +151,17 @@ describe("Wallet should function in the browser", () => {
         "seed:regtest:abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
       )
     ).toDbString();
-    await RegTestWallet.replaceNamed(name, seedId);
+    await saveNamedWallet(name, seedId);
     const w4 = await RegTestWallet.named(name);
 
-    const w5 = await RegTestWallet.replaceNamed(`${name}_nonexistent`, seedId);
+    await saveNamedWallet(`${name}_nonexistent`, seedId);
     const w6 = await RegTestWallet.named(`${name}_nonexistent`);
 
     expect(check1).toBe(false);
     expect(check2).toBe(true);
     expect(w4.toDbString()).not.toBe(w1.toDbString());
     expect(w4.toDbString()).toBe(seedId);
-    expect(w6.toDbString()).toBe(w5.toDbString());
+    expect(w6.toDbString()).toBe(seedId);
   });
 
   test("Test waiting and watching", async () => {

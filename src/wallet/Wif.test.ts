@@ -144,7 +144,7 @@ describe(`Test creation of wallet from walletId`, () => {
           seed,
           "Unknown network prefix to a mainnet wallet",
         ],
-        // fromId is protected; replaceNamed and named reach it with a caller's or stored walletId
+        // fromId is protected; named reaches it with a stored walletId
         [
           async () => (new WatchWallet() as any).fromId(wif),
           wif,

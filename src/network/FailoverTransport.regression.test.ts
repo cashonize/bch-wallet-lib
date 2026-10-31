@@ -387,7 +387,7 @@ describe("a tip that stops moving", () => {
         gracePeriod: 150,
         staleTipSeconds: 1,
       });
-      // a wallet's watchBlocks / getBlockHeight: the tip is learned from the subscription only
+      // a wallet's watchBlocks: the tip is learned from the subscription only
       await transport.subscribe("blockchain.headers.subscribe", [], () => {});
       expect(transport.server).toBe(a.url);
 

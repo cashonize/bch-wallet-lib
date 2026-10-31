@@ -165,52 +165,16 @@ test("a cache write that fails does not fail the fetch", async () => {
   }
 });
 
-describe("getBlockHeight's header subscription", () => {
-  function providerOn(fake: FakeServer) {
-    return new ElectrumNetworkProvider(
-      new ElectrumTransport(fake as unknown as ElectrumServer),
-    );
-  }
-  const header = { result: { height: 100, hex: "00" } };
+test("a disconnected provider rejects its requests rather than connecting again", async () => {
+  const fake = new FakeServer();
+  fake.handlers.set("blockchain.relayfee", () => ({ result: 0.00001 }));
+  const provider = new ElectrumNetworkProvider(
+    new ElectrumTransport(fake as unknown as ElectrumServer),
+  );
+  expect(await provider.getRelayFee()).toBe(0.00001);
 
-  test("concurrent first calls share one subscription", async () => {
-    const fake = new FakeServer();
-    fake.handlers.set("blockchain.headers.subscribe", () => header);
-    const provider = providerOn(fake);
-
-    const heights = await Promise.all([
-      provider.getBlockHeight(),
-      provider.getBlockHeight(),
-      provider.getBlockHeight(),
-    ]);
-    expect(heights).toEqual([100, 100, 100]);
-    expect(provider.subscriptions).toBe(1);
-    await provider.disconnect();
-  });
-
-  test("a failed subscribe is tried again by the next call", async () => {
-    const fake = new FakeServer();
-    fake.handlers.set("blockchain.headers.subscribe", (_params, call) =>
-      call === 1 ? { error: { code: -32600, message: "busy" } } : header,
-    );
-    const provider = providerOn(fake);
-
-    await expect(provider.getBlockHeight()).rejects.toThrow("busy");
-    expect(await provider.getBlockHeight()).toBe(100);
-    expect(provider.subscriptions).toBe(1);
-    await provider.disconnect();
-  });
-
-  test("a disconnected provider no longer answers with its last height", async () => {
-    const fake = new FakeServer();
-    fake.handlers.set("blockchain.headers.subscribe", () => header);
-    const provider = providerOn(fake);
-    expect(await provider.getBlockHeight()).toBe(100);
-
-    await provider.disconnect();
-    expect(provider.subscriptions).toBe(0);
-    await expect(provider.getBlockHeight()).rejects.toThrow(
-      "The electrum transport was closed.",
-    );
-  });
+  await provider.disconnect();
+  await expect(provider.getRelayFee()).rejects.toThrow(
+    "The electrum transport was closed.",
+  );
 });

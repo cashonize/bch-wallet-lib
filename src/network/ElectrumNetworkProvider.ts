@@ -36,9 +36,6 @@ const BROADCAST_STATUS_TIMEOUT = 30_000;
 export default class ElectrumNetworkProvider {
   private readonly transport: Transport;
   private subscriptionCount: number = 0;
-  private currentHeight: number = 0;
-  // Set before the subscribe is awaited, so that concurrent first calls share one subscription
-  private headerSubscription?: Promise<CancelFn>;
 
   private _cache: CacheProvider | undefined;
 
@@ -176,6 +173,14 @@ export default class ElectrumNetworkProvider {
     return results;
   }
 
+  /** The height of the server's chain tip, asked fresh on every call; follow it with watchBlocks. */
+  async getBlockHeight(): Promise<number> {
+    const tip = await this.performRequest<{ height: number }>(
+      "blockchain.headers.get_tip",
+    );
+    return tip.height;
+  }
+
   /**
    * Batch retrieve block headers by their heights.
    * @param heights Array of block heights.
@@ -238,32 +243,6 @@ export default class ElectrumNetworkProvider {
     }
 
     return results;
-  }
-
-  /** The current block height, kept up to date by a header subscription opened on the first call. */
-  async getBlockHeight(): Promise<number> {
-    if (!this.headerSubscription) {
-      const subscribing = this.subscribeToHeaders((header: HexHeaderI) => {
-        if (header.height > this.currentHeight) {
-          this.currentHeight = header.height;
-        }
-      });
-      this.headerSubscription = subscribing;
-      // A failed subscribe is tried again by the next call
-      subscribing.catch(() => {
-        if (this.headerSubscription === subscribing) {
-          this.headerSubscription = undefined;
-        }
-      });
-    }
-    await this.headerSubscription;
-
-    if (!this.currentHeight) {
-      throw new Error(
-        "Check failed for eventual inconsistency in subscription implementations.",
-      );
-    }
-    return this.currentHeight;
   }
 
   /**
@@ -551,15 +530,10 @@ export default class ElectrumNetworkProvider {
   }
 
   /**
-   * Close the connection and the provider's own header subscription, for good: a request made on
-   * the provider afterwards rejects rather than connecting again. A new provider connects anew.
+   * Close the connection for good: a request made on the provider afterwards rejects rather than
+   * connecting again. A new provider connects anew.
    */
   async disconnect(): Promise<boolean> {
-    const header = this.headerSubscription;
-    this.headerSubscription = undefined;
-    this.currentHeight = 0;
-    const cancel = await header?.catch(() => undefined);
-    await cancel?.();
     await this.transport.close();
     return true;
   }

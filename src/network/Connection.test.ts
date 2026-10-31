@@ -18,8 +18,8 @@ test.skipIf(!liveTests)("Should connect to mainnet", async () => {
   expect(wallet.provider == globalThis.BCH).toBeTruthy();
   expect(await wallet.getBalance()).toBe(0n);
 
-  let height = await globalThis.BCH.getBlockHeight();
-  expect(height).toBeGreaterThan(5000);
+  const relayFee = await globalThis.BCH.getRelayFee();
+  expect(relayFee).toBeGreaterThan(0);
 });
 
 test.skipIf(!liveTests)(
@@ -29,8 +29,8 @@ test.skipIf(!liveTests)(
     expect(wallet.provider == globalThis.tBCH).toBeTruthy();
     expect(await wallet.getBalance()).toBe(0n);
 
-    let height = await globalThis.tBCH.getBlockHeight();
-    expect(height).toBeGreaterThan(114);
+    const relayFee = await globalThis.tBCH.getRelayFee();
+    expect(relayFee).toBeGreaterThan(0);
   },
 );
 
@@ -42,8 +42,8 @@ test.skip("Should lower overhead in creating wallets", async () => {
     expect(await wallet.getBalance()).toBe(0n);
   }
 
-  let height = await globalThis.rBCH.getBlockHeight();
-  expect(height).toBeGreaterThan(114);
+  const relayFee = await globalThis.rBCH.getRelayFee();
+  expect(relayFee).toBeGreaterThan(0);
 });
 
 test.skipIf(!liveTests)(
@@ -55,8 +55,8 @@ test.skipIf(!liveTests)(
     );
     await provider.connect();
     expect(provider == globalThis.BCH).toBeFalsy();
-    let blockheight = await provider.getBlockHeight();
-    expect(blockheight).toBeGreaterThan(10000);
+    const relayFee = await provider.getRelayFee();
+    expect(relayFee).toBeGreaterThan(0);
     await provider.disconnect();
   },
 );

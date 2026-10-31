@@ -29,7 +29,7 @@ export interface ElectrumTransportOptions {
   requestTimeout?: number;
 }
 
-/** @internal FailoverTransport's view of a server's connection; not part of the exported options. */
+/** FailoverTransport's view of a server's connection; not part of the exported options. */
 export interface ElectrumTransportInternalOptions extends ElectrumTransportOptions {
   /**
    * Told when the connection is lost and when it is back, once per change. Not told about the first

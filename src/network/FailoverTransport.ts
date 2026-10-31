@@ -38,7 +38,7 @@ export interface FailoverTransportOptions extends ElectrumTransportOptions {
   onConnectionChange?: (connected: boolean) => void;
 }
 
-/** @internal The network's chain, which createFailoverProvider passes from the registry */
+/** The network's chain, which createFailoverProvider passes from the registry; not part of the exported options. */
 export interface FailoverTransportInternalOptions extends FailoverTransportOptions {
   chain?: ChainCheck;
 }

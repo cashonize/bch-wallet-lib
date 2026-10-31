@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 (2026-10-31)
 
 - A subscription electrum-cash failed to restore after a reconnect to the same server (an error response, such as a server limiting how fast it is asked) is made again, after a request's timeout and then backing off from 10 s to every 5 minutes, for as long as it exists. Before, its address stayed unwatched until the next reconnect.
 - `getBlockHeight()` calls made at once share one header subscription instead of each opening one, and a disconnected provider's `getBlockHeight()` rejects like its other calls rather than answering with the last height.

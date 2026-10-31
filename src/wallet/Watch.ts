@@ -354,10 +354,17 @@ export class WatchWallet extends BaseWallet {
     });
     const cancel = await this.watchStatus(() => statusResolve());
 
-    const timer = new Promise<void>((resolve) => setTimeout(resolve, timeout));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const idle = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeout);
+    });
 
-    await Promise.race([statusChange, timer]);
-    await cancel();
+    try {
+      await Promise.race([statusChange, idle]);
+    } finally {
+      clearTimeout(timer);
+      await cancel();
+    }
   }
 
   public override async stop() {

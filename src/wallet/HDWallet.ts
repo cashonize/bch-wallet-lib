@@ -703,18 +703,23 @@ export class HDWallet extends BaseWallet {
     });
 
     // Race status changes against idle timeout; reset timeout on each change
-    while (!isSatisfied()) {
-      const statusChange = new Promise<"status">((resolve) => {
-        statusResolve = () => resolve("status");
-      });
-      const idle = new Promise<"idle">((resolve) =>
-        setTimeout(resolve, timeout, "idle"),
-      );
+    try {
+      while (!isSatisfied()) {
+        const statusChange = new Promise<"status">((resolve) => {
+          statusResolve = () => resolve("status");
+        });
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const idle = new Promise<"idle">((resolve) => {
+          timer = setTimeout(resolve, timeout, "idle");
+        });
 
-      if ((await Promise.race([statusChange, idle])) === "idle") break;
+        const outcome = await Promise.race([statusChange, idle]);
+        clearTimeout(timer);
+        if (outcome === "idle") break;
+      }
+    } finally {
+      await cancel();
     }
-
-    await cancel();
   }
 
   /**

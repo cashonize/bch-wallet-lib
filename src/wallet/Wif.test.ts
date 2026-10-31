@@ -20,12 +20,7 @@ import {
   InvalidWifError,
 } from "./errors.js";
 import { CancelFn } from "./interface.js";
-import {
-  OpReturnData,
-  SendResponse,
-  TokenSendRequest,
-  toUtxoId,
-} from "./model.js";
+import { OpReturnData, SendResponse, toUtxoId } from "./model.js";
 import { HDWallet } from "./HDWallet.js";
 import { WatchWallet } from "./Watch.js";
 import { RegTestWallet, Wallet } from "./Wif.js";
@@ -735,7 +730,7 @@ describe(`Wallet subscriptions`, () => {
   test("Should watch then wait", async () => {
     const aliceWallet = await RegTestWallet.newRandom();
 
-    let cancel = await aliceWallet.watchBalance(() => {});
+    let cancel = await aliceWallet.watchUtxos(() => {});
 
     await cancel();
   });
@@ -758,7 +753,7 @@ describe(`Wallet subscriptions`, () => {
     await bobWallet.sendMax(aliceWallet.cashaddr!);
   });
 
-  test("Should watch balance, then wait for the balance, then cancel watch", async () => {
+  test("Should watch coins, then wait for the balance, then cancel watch", async () => {
     const aliceId = `wif:regtest:${process.env.PRIVATE_WIF!}`;
     const alice = await RegTestWallet.fromId(aliceId);
     const bob = await RegTestWallet.newRandom();
@@ -769,7 +764,7 @@ describe(`Wallet subscriptions`, () => {
       },
     ]);
 
-    let cancel = await bob.watchBalance(() => {});
+    let cancel = await bob.watchUtxos(() => {});
     let balance = await waitForBalance(bob, 2000n);
     expect(balance).toBe(2000n);
     await sent;
@@ -834,26 +829,13 @@ describe(`Wallet subscriptions`, () => {
       aliceWatchResult = true;
     });
 
-    let bobWatchResult = false;
-    let bobTransactionId = "";
+    let bobAddedTxIds: string[] = [];
     let bobWatchCancel: CancelFn;
-    bobWatchCancel = await bob["watchTransactionHashes"](async (txHash) => {
+    bobWatchCancel = await bob.watchUtxos(async ({ added }) => {
+      if (!added.length) return;
+      bobAddedTxIds = added.map((utxo) => utxo.txid);
+      expect(added.map((utxo) => utxo.satoshis)).toEqual([100_000n]);
       await bobWatchCancel?.();
-      bobWatchResult = true;
-      bobTransactionId = txHash;
-    });
-
-    let bobBalanceWatchResult = false;
-    let bobBalanceWatchCancel: CancelFn;
-    bobBalanceWatchCancel = await bob.watchBalance(async (balance) => {
-      // skip if balance is zero yet
-      if (!balance) {
-        return;
-      }
-
-      expect(balance).toBe(100_000n);
-      await bobBalanceWatchCancel?.();
-      bobBalanceWatchResult = true;
     });
 
     let blockWatchResult = false;
@@ -875,54 +857,8 @@ describe(`Wallet subscriptions`, () => {
 
     await delay(5000);
     expect(aliceWatchResult).toBe(true);
-    expect(bobWatchResult).toBe(true);
-    expect(bobTransactionId).toBe(sendResponse.txId);
-    expect(bobBalanceWatchResult).toBe(true);
+    expect(bobAddedTxIds).toEqual([sendResponse.txId]);
     expect(blockWatchResult).toBe(true);
-  });
-
-  test("Should report only transactions that are new after the watch started (mainnet-js#257)", async () => {
-    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
-    const bob = await RegTestWallet.newRandom();
-
-    // History before the watch: two confirmed fundings and an unconfirmed token genesis
-    await alice.send({ cashaddr: bob.cashaddr!, value: 10000n });
-    await alice.send({ cashaddr: bob.cashaddr!, value: 10000n });
-    await mine({ cashaddr: alice.cashaddr!, blocks: 1 });
-    const genesis = await bob.tokenGenesis({ amount: 100n });
-    const category = genesis.categories![0];
-    await delay(1000);
-    expect((await bob.getRawHistory()).length).toBe(3);
-
-    const hashes: string[] = [];
-    const transactions: string[] = [];
-    const tokenTransactions: string[] = [];
-    const cancels = [
-      await bob["watchTransactionHashes"]((txHash) => hashes.push(txHash)),
-      await bob["watchTransactions"]((tx) => transactions.push(tx.txid)),
-      await bob.watchTokenTransactions((tx) => tokenTransactions.push(tx.txid)),
-    ];
-    await delay(1000);
-    expect(hashes).toEqual([]);
-    expect(transactions).toEqual([]);
-    expect(tokenTransactions).toEqual([]);
-
-    const sendResponse = await bob.send(
-      new TokenSendRequest({
-        cashaddr: bob.getTokenDepositAddress(),
-        category,
-        amount: 100n,
-      }),
-    );
-    await delay(1000);
-    // confirming the new transaction and the genesis reports neither again
-    await mine({ cashaddr: alice.cashaddr!, blocks: 1 });
-    await delay(1000);
-    await Promise.all(cancels.map((cancel) => cancel()));
-
-    expect(hashes).toEqual([sendResponse.txId]);
-    expect(transactions).toEqual([sendResponse.txId]);
-    expect(tokenTransactions).toEqual([sendResponse.txId]);
   });
 });
 

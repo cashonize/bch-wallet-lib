@@ -4,6 +4,7 @@ import { removeGlobalProvider, setGlobalProvider } from "../network/default.js";
 import { BroadcastRejectedError } from "../network/errors.js";
 import { MockNetworkProvider } from "../network/MockNetworkProvider.js";
 import { delay } from "../util/delay.js";
+import { sumUtxoValue } from "../util/sumUtxoValue.js";
 import { RegTestHDWallet } from "./HDWallet.js";
 import { RegTestWatchWallet } from "./Watch.js";
 import { RegTestWallet } from "./Wif.js";
@@ -347,13 +348,13 @@ describe("a subscription that cannot be made", () => {
     const wallet = await RegTestHDWallet.newRandom();
     await wallet["watchPromise"];
     const balances: bigint[] = [];
-    await wallet.watchBalance((balance) => balances.push(balance));
+    await wallet.watchUtxos(({ utxos }) => balances.push(sumUtxoValue(utxos)));
 
     // the used address moves the gap, and its extension cannot subscribe
     refuse.address = true;
     await fund(wallet.getDepositAddress(15), 1_000n);
     await delay(300);
-    expect(balances).toEqual([]);
+    expect(balances).toEqual([0n]);
     await expect(wallet.getBalance()).rejects.toThrow("subscription refused");
 
     refuse.address = false;
@@ -383,8 +384,8 @@ describe("a single-address wallet's fetch that fails", () => {
     const wallet = await RegTestWallet.newRandom();
     expect(await wallet.getBalance()).toBe(0n);
     const balances: bigint[] = [];
-    await wallet.watchBalance((balance) => {
-      balances.push(balance);
+    await wallet.watchUtxos(({ utxos }) => {
+      balances.push(sumUtxoValue(utxos));
     });
 
     refuse.fetch = true;
@@ -392,12 +393,12 @@ describe("a single-address wallet's fetch that fails", () => {
     await delay(100);
     // the old state is not read as the current one
     await expect(wallet.getBalance()).rejects.toThrow("connection lost");
-    expect(balances).toEqual([]);
+    expect(balances).toEqual([0n]);
 
     refuse.fetch = false;
     expect(await wallet.getBalance()).toBe(5_000n);
     await delay(20);
-    expect(balances).toEqual([5_000n]);
+    expect(balances).toEqual([0n, 5_000n]);
     await fund(wallet.cashaddr, 7_000n);
     await delay(100);
     expect(await wallet.getBalance()).toBe(12_000n);

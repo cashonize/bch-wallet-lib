@@ -31,3 +31,16 @@ export function checkUtxos(utxoIds: UtxoId[], utxos: Utxo[]): Utxo[] {
 
   return result;
 }
+
+/** The coins of `current` not in `previous`, and those of `previous` gone from `current`, by outpoint. */
+export function diffUtxos(
+  previous: Utxo[],
+  current: Utxo[],
+): { added: Utxo[]; removed: Utxo[] } {
+  const previousOutpoints = new Set(previous.map(toOutpoint));
+  const currentOutpoints = new Set(current.map(toOutpoint));
+  return {
+    added: current.filter((utxo) => !previousOutpoints.has(toOutpoint(utxo))),
+    removed: previous.filter((utxo) => !currentOutpoints.has(toOutpoint(utxo))),
+  };
+}

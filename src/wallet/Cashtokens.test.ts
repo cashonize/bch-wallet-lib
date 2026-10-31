@@ -713,10 +713,10 @@ describe(`Test cashtokens`, () => {
     expect(tokenUtxos.length).toBe(1);
     expect(tokenUtxos[0].satoshis).toBe(5000n);
 
-    // set up before the send, since only transactions new after setup are reported
     let bobTxId = ".";
-    const txCancel = await bob.watchTokenTransactions((tx) => {
-      bobTxId = tx.txid;
+    const txCancel = await bob.watchUtxos(({ added }) => {
+      const tokenCoin = added.find((utxo) => utxo.token?.category === category);
+      if (tokenCoin) bobTxId = tokenCoin.txid;
     });
 
     const sending: Promise<SendResponse> = delay(0).then(() =>

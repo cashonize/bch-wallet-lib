@@ -628,8 +628,7 @@ export class HDWallet extends BaseWallet {
   }
 
   /**
-   * Watch wallet for any activity (status changes on any address)
-   * This is the foundation for watchWalletBalance and watchWalletTransactions
+   * Watch wallet for any activity (status changes on any address), the foundation of watchUtxos
    * @param callback - Called when any address in the wallet has a status change; its errors go to
    * console.error
    * @param options - `debounce` (ms, default 100); `immediate` reports each status at once and
@@ -654,7 +653,7 @@ export class HDWallet extends BaseWallet {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
-        // the Base watchers read in their callback, which rejects while discovery is failed
+        // watchUtxos reads in its callback, which rejects while discovery is failed
         runCallback(() => callback(pendingStatus, pendingAddress));
       }, debounce);
     };
@@ -720,39 +719,6 @@ export class HDWallet extends BaseWallet {
     } finally {
       await cancel();
     }
-  }
-
-  /**
-   * Watch wallet for new transactions (HD wallet override)
-   *
-   * Uses unfiltered history so that seenTxHashes always covers all known
-   * transactions, including those from newly discovered addresses when any
-   * tracked branch's index advances and widens getRawHistory's scope.
-   */
-  protected override async watchTransactionHashes(
-    callback: (txHash: string) => unknown,
-  ): Promise<CancelFn> {
-    // Seeded before subscribing so the history at setup is not reported as new
-    const existing = await this.getRawHistory();
-    const seenTxHashes = new Set(existing.map((tx) => tx.tx_hash));
-
-    return this.watchStatus(async () => {
-      const history = await this.getRawHistory();
-
-      const newTxHashes: string[] = [];
-
-      for (const tx of history) {
-        if (!seenTxHashes.has(tx.tx_hash)) {
-          seenTxHashes.add(tx.tx_hash);
-          newTxHashes.push(tx.tx_hash);
-        }
-      }
-
-      // each on its own, so that one failing does not keep the others from being reported
-      for (const txHash of newTxHashes) {
-        runCallback(() => callback(txHash));
-      }
-    });
   }
 
   /// Collect the cached UTXOs of every tracked branch.

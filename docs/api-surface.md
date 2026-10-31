@@ -61,16 +61,15 @@ Internal: `Wallet.tokenaddr` (`getTokenDepositAddress()` returns it), `HDWallet.
 
 ### Reading and watching
 
-| Member                                      | Who needs it                                                           |
-| ------------------------------------------- | ---------------------------------------------------------------------- |
-| `getUtxos()`                                | The one snapshot everything is computed from: `store.ts` and the tools |
-| `getBalance()`                              | **No consumer**: Cashonize sums its utxos; `watchBalance` runs on it   |
-| `getHistory({ count, concurrency })`        | `store.ts` `updateWalletHistory`, `identitiesStore.ts`                 |
-| `getRawHistory(fromHeight?)`                | The txids of the history: `store.ts`, `transactionIndex.ts`            |
-| `watchBalance(callback)`                    | `store.ts`, balance and CashConnect pushes                             |
-| `watchTokenTransactions(callback)`          | `store.ts` token notifications                                         |
-| `watchBlocks(callback, skipCurrentHeight?)` | `store.ts` tip and stale-server check                                  |
-| `CancelFn`                                  | `store.ts` holds the watches' cancels                                  |
+| Member                                      | Who needs it                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `getUtxos()`                                | The one snapshot everything is computed from: `store.ts` and the tools                                      |
+| `getBalance()`                              | **No consumer**: Cashonize sums its utxos                                                                   |
+| `getHistory({ count, concurrency })`        | `store.ts` `updateWalletHistory`, `identitiesStore.ts`                                                      |
+| `getRawHistory(fromHeight?)`                | The txids of the history: `store.ts`, `transactionIndex.ts`                                                 |
+| `watchUtxos(callback)`                      | Planned: replaces `store.ts`'s `watchBalance` and `watchTokenTransactions` and the CashConnect balance push |
+| `watchBlocks(callback, skipCurrentHeight?)` | `store.ts` tip and stale-server check                                                                       |
+| `CancelFn`                                  | `store.ts` holds the watches' cancels                                                                       |
 
 ### Spending
 

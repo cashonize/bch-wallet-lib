@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 (2026-10-31)
+
+- A subscription electrum-cash failed to restore after a reconnect to the same server (an error response, such as a server limiting how fast it is asked) is made again, after a request's timeout and then backing off from 10 s to every 5 minutes, for as long as it exists. Before, its address stayed unwatched until the next reconnect.
+- `getBlockHeight()` calls made at once share one header subscription instead of each opening one, and a disconnected provider's `getBlockHeight()` rejects like its other calls rather than answering with the last height.
+
 ## 0.2.1 (2026-10-30)
 
 - Networks beyond mainnet, chipnet (`testnet`) and regtest, such as testnet4, scalenet or testnet3, are added by the app with `registerNetwork({ name, addressPrefix, keyVersion, dbName, servers?, chain? })`, without a library change. Its wallets are made with the factory option `network` on the mainnet classes (`HDWallet.fromId(id, { network: "testnet4" })`), its named wallets go to its own database, and its caches, global provider and default servers (`DefaultProvider.servers[name]`, `ELECTRUM_<NAME>`) are its own. A name or database already taken is refused, so no network can share `bchtest` with chipnet. Register before loading a wallet of it and before `pruneWalletCaches`, which drops the cache records of networks it does not know. `networkConfig(name)` and `knownNetworks()` give each network's database name and address prefix. The built-in networks, their ids and databases are unchanged.

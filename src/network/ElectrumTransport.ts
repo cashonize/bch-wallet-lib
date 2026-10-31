@@ -59,6 +59,11 @@ const DEFAULT_REQUEST_TIMEOUT = 30_000;
 // fail with "already known" for a transaction that went through
 const NOT_RETRIED = new Set(["blockchain.transaction.broadcast"]);
 
+// electrum-cash only logs a subscription it failed to restore after a reconnect, and tries it again
+// on the next reconnect at the earliest, so the transport makes it again itself, backing off
+const RESTORE_RETRY_FIRST = 10_000;
+const RESTORE_RETRY_MAX = 300_000;
+
 interface Subscription {
   method: string;
   params: unknown[];
@@ -73,8 +78,9 @@ interface Subscription {
  *
  * With several servers, connect() tries them in the given order and the transport stays with the
  * first one that connects: electrum-cash reconnects to that server after a failure and restores its
- * subscriptions there. A closed transport refuses to connect again; moving to another server is
- * FailoverTransport's job.
+ * subscriptions there; a subscription whose restore did not come back is made again, backing off
+ * from 10 s to every 5 minutes, for as long as it exists. A closed transport refuses to connect
+ * again; moving to another server is FailoverTransport's job.
  *
  * A request that times out or loses its connection is sent once more (a broadcast is not), and
  * a late answer to the first attempt is taken as well; an error response from the server is not
@@ -91,6 +97,11 @@ export class ElectrumTransport implements Transport {
   private epoch = 0;
   private closed = false;
   private readonly subscriptions = new Map<string, Subscription>();
+  // The subscriptions the last reconnect has not delivered a status for yet, and the timer that
+  // makes them again; a new reconnect starts a new round
+  private unrestored = new Set<string>();
+  private restoreRound = 0;
+  private restoreTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     servers: ElectrumServer | ElectrumServer[],
@@ -135,6 +146,8 @@ export class ElectrumTransport implements Transport {
   async close(): Promise<void> {
     this.closed = true;
     this.epoch++;
+    clearTimeout(this.restoreTimer);
+    this.unrestored.clear();
     const client = this.client;
     this.client = undefined;
     this.connecting = undefined;
@@ -201,6 +214,7 @@ export class ElectrumTransport implements Transport {
       if (current.listeners.size > 0) return;
       if (this.subscriptions.get(key) !== current) return;
       this.subscriptions.delete(key);
+      this.unrestored.delete(key);
       // The listener is gone either way, so the server's confirmation is not waited for
       this.client
         ?.unsubscribe(method, ...(params as RPCParameter[]))
@@ -230,6 +244,8 @@ export class ElectrumTransport implements Transport {
         throw new Error("The electrum transport was closed while connecting.");
       }
       client.on("notification", this.route);
+      // Registered after the first connect, so it runs on reconnects only, before any restore is sent
+      client.on("connected", this.startRestoreRound);
       const onChange = this.onConnectionChange;
       if (onChange) {
         // electrum-cash also emits 'disconnected' when a request's own connect fails while the
@@ -335,6 +351,8 @@ export class ElectrumTransport implements Transport {
     const key = subscriptionKey(notification.method, params.slice(0, -1));
     const subscription = this.subscriptions.get(key);
     if (!subscription) return;
+    // A restored subscription delivers its status; so does one the server pushes, which it holds
+    this.unrestored.delete(key);
     subscription.latest = params;
     for (const listener of subscription.listeners) {
       // A throwing listener must not reach electrum-cash, which would drop the rest of the message
@@ -345,6 +363,58 @@ export class ElectrumTransport implements Transport {
       }
     }
   };
+
+  private startRestoreRound = (): void => {
+    clearTimeout(this.restoreTimer);
+    const round = ++this.restoreRound;
+    this.unrestored = new Set(this.subscriptions.keys());
+    // electrum-cash's own restore gets a request's timeout to come back
+    this.scheduleRestore(round, this.requestTimeout, RESTORE_RETRY_FIRST);
+  };
+
+  private scheduleRestore(round: number, wait: number, next: number): void {
+    if (this.unrestored.size === 0) return;
+    this.restoreTimer = setTimeout(() => {
+      this.restoreUnrestored(round)
+        .catch(() => {})
+        .finally(() => {
+          if (round !== this.restoreRound || this.closed) return;
+          this.scheduleRestore(
+            round,
+            next,
+            Math.min(next * 2, RESTORE_RETRY_MAX),
+          );
+        });
+    }, wait);
+  }
+
+  // One subscription at a time, as a server that refused a restore may be limiting how fast it is asked
+  private async restoreUnrestored(round: number): Promise<void> {
+    for (const key of this.unrestored) {
+      // While the connection is lost there is nothing to send; its reconnect starts a new round
+      if (round !== this.restoreRound || this.closed || !this.connected) {
+        return;
+      }
+      const subscription = this.subscriptions.get(key);
+      if (!subscription || !this.unrestored.has(key)) continue;
+      const { method, params } = subscription;
+      try {
+        // Like establishSubscription; route() takes the key out with the status it delivers
+        await this.withRetry(method, (client) =>
+          client.subscribe(method, ...(params as RPCParameter[])),
+        );
+      } catch {
+        // stays in unrestored for the next attempt
+        continue;
+      }
+      // Ended while it was made again, which put it back in electrum-cash's list to restore
+      if (!this.subscriptions.has(key)) {
+        this.client
+          ?.unsubscribe(method, ...(params as RPCParameter[]))
+          .catch(() => {});
+      }
+    }
+  }
 
   private createClient(server: ElectrumServer): Client {
     if (typeof server !== "string") {

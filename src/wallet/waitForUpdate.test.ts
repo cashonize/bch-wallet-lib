@@ -54,4 +54,49 @@ describe("waitForUpdate", () => {
     expect(wallet.getDepositAddress()).toBe(wallet.getDepositAddress(0));
     await wallet.stop();
   }, 5000);
+
+  // The idle timer used to stay behind when a status change ended the wait; spied rather than
+  // counted, as the wallet's own debounce may still be pending then
+  function idleTimers(timeout: number) {
+    const set = vi.spyOn(globalThis, "setTimeout");
+    const cleared = vi.spyOn(globalThis, "clearTimeout");
+    return {
+      leftBehind() {
+        const idle = set.mock.calls
+          .map((call, i) => ({ call, result: set.mock.results[i] }))
+          .filter(({ call }) => call[1] === timeout)
+          .map(({ result }) => result.value as unknown);
+        const clearedIds = cleared.mock.calls.map((call) => call[0] as unknown);
+        set.mockRestore();
+        cleared.mockRestore();
+        expect(idle.length).toBeGreaterThan(0);
+        return idle.filter((id) => !clearedIds.includes(id));
+      },
+    };
+  }
+
+  test("a single-address wallet's leaves no timer behind after a status change", async () => {
+    const wallet = await RegTestWallet.newRandom();
+    await wallet["watchPromise"];
+    const timers = idleTimers(60_000);
+    const waiting = wallet["waitForUpdate"]({ timeout: 60_000 });
+    await provider.mine(wallet.getDepositAddress(), 1);
+    await waiting;
+    expect(timers.leftBehind()).toEqual([]);
+    await wallet.stop();
+  }, 5000);
+
+  test("an HD wallet's leaves no timer behind once the target index is reached", async () => {
+    const wallet = await RegTestHDWallet.newRandom();
+    await wallet["watchPromise"];
+    const timers = idleTimers(60_000);
+    const waiting = wallet["waitForUpdate"]({
+      indices: { 0: 1 },
+      timeout: 60_000,
+    });
+    await provider.mine(wallet.getDepositAddress(0), 1);
+    await waiting;
+    expect(timers.leftBehind()).toEqual([]);
+    await wallet.stop();
+  }, 5000);
 });

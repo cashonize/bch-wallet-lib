@@ -46,7 +46,8 @@ export default class ElectrumNetworkProvider {
   private readonly transport: Transport;
   private subscriptionCount: number = 0;
   private currentHeight: number = 0;
-  private headerCancelFn?: CancelFn;
+  // Set before the subscribe is awaited, so that concurrent first calls share one subscription
+  private headerSubscription?: Promise<CancelFn>;
 
   private _cache: CacheProvider | undefined;
 
@@ -250,15 +251,21 @@ export default class ElectrumNetworkProvider {
 
   /** The current block height, kept up to date by a header subscription opened on the first call. */
   async getBlockHeight(): Promise<number> {
-    if (!this.headerCancelFn) {
-      this.headerCancelFn = await this.subscribeToHeaders(
-        (header: HexHeaderI) => {
-          if (header.height > this.currentHeight) {
-            this.currentHeight = header.height;
-          }
-        },
-      );
+    if (!this.headerSubscription) {
+      const subscribing = this.subscribeToHeaders((header: HexHeaderI) => {
+        if (header.height > this.currentHeight) {
+          this.currentHeight = header.height;
+        }
+      });
+      this.headerSubscription = subscribing;
+      // A failed subscribe is tried again by the next call
+      subscribing.catch(() => {
+        if (this.headerSubscription === subscribing) {
+          this.headerSubscription = undefined;
+        }
+      });
     }
+    await this.headerSubscription;
 
     if (!this.currentHeight) {
       throw new Error(
@@ -676,7 +683,11 @@ export default class ElectrumNetworkProvider {
    * the provider afterwards rejects rather than connecting again. A new provider connects anew.
    */
   async disconnect(): Promise<boolean> {
-    await this.headerCancelFn?.();
+    const header = this.headerSubscription;
+    this.headerSubscription = undefined;
+    this.currentHeight = 0;
+    const cancel = await header?.catch(() => undefined);
+    await cancel?.();
     await this.transport.close();
     return true;
   }

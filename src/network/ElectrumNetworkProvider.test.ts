@@ -1,9 +1,11 @@
 import { countRequests } from "#test/countRequests.js";
+import { FakeServer } from "#test/fakeElectrumServer.js";
 import { disconnectProviders, initProviders } from "#test/providers.js";
 import { IndexedDbCache } from "../cache/IndexedDbCache.js";
 import { Config } from "../config.js";
 import { RegTestWallet } from "../wallet/Wif.js";
 import ElectrumNetworkProvider from "./ElectrumNetworkProvider.js";
+import { type ElectrumServer, ElectrumTransport } from "./ElectrumTransport.js";
 import { createMockProvider } from "./MockNetworkProvider.js";
 
 beforeAll(async () => {
@@ -188,4 +190,54 @@ test("a cache write that fails does not fail the fetch", async () => {
     Config.UseIndexedDBCache = cacheSetting;
     vi.restoreAllMocks();
   }
+});
+
+describe("getBlockHeight's header subscription", () => {
+  function providerOn(fake: FakeServer) {
+    return new ElectrumNetworkProvider(
+      new ElectrumTransport(fake as unknown as ElectrumServer),
+    );
+  }
+  const header = { result: { height: 100, hex: "00" } };
+
+  test("concurrent first calls share one subscription", async () => {
+    const fake = new FakeServer();
+    fake.handlers.set("blockchain.headers.subscribe", () => header);
+    const provider = providerOn(fake);
+
+    const heights = await Promise.all([
+      provider.getBlockHeight(),
+      provider.getBlockHeight(),
+      provider.getBlockHeight(),
+    ]);
+    expect(heights).toEqual([100, 100, 100]);
+    expect(provider.subscriptions).toBe(1);
+    await provider.disconnect();
+  });
+
+  test("a failed subscribe is tried again by the next call", async () => {
+    const fake = new FakeServer();
+    fake.handlers.set("blockchain.headers.subscribe", (_params, call) =>
+      call === 1 ? { error: { code: -32600, message: "busy" } } : header,
+    );
+    const provider = providerOn(fake);
+
+    await expect(provider.getBlockHeight()).rejects.toThrow("busy");
+    expect(await provider.getBlockHeight()).toBe(100);
+    expect(provider.subscriptions).toBe(1);
+    await provider.disconnect();
+  });
+
+  test("a disconnected provider no longer answers with its last height", async () => {
+    const fake = new FakeServer();
+    fake.handlers.set("blockchain.headers.subscribe", () => header);
+    const provider = providerOn(fake);
+    expect(await provider.getBlockHeight()).toBe(100);
+
+    await provider.disconnect();
+    expect(provider.subscriptions).toBe(0);
+    await expect(provider.getBlockHeight()).rejects.toThrow(
+      "The electrum transport was closed.",
+    );
+  });
 });

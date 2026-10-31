@@ -634,7 +634,7 @@ describe("HDWallet", () => {
 
     expect(await hdWallet.getBalance()).toBe(49639n); // minus fees
 
-    expect(await hdWallet.getMaxAmountToSend()).toBe(49407n);
+    expect(await hdWallet.getMaxAmountToSend()).toBe(49443n);
     const charlie = await RegTestWallet.newRandom();
     await hdWallet.sendMax(charlie.cashaddr);
 
@@ -642,7 +642,7 @@ describe("HDWallet", () => {
     while ((await hdWallet.getBalance()) > 0n)
       await new Promise((r) => setTimeout(r, 50));
 
-    expect(await charlie.getBalance()).toBe(49407n);
+    expect(await charlie.getBalance()).toBe(49443n);
     expect(await hdWallet.getBalance()).toBe(0n);
   });
 

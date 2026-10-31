@@ -1,10 +1,12 @@
 import {
   AnyCompilerConfiguration,
   AuthenticationProgramStateCommon,
+  bigIntToCompactUint,
   CompilationContextBch,
   Compiler,
   cashAddressToLockingBytecode,
   encodeTransaction,
+  encodeTransactionOutputs,
   generateTransaction,
   hexToBin,
   importWalletTemplate,
@@ -766,6 +768,34 @@ export async function getFeeAmountSimple({
   const txSizeBytes = inputTotalSize + outputTotalSize + 16;
 
   return BigInt(Math.ceil(txSizeBytes * relayFeePerByteInSatoshi));
+}
+
+// A P2PKH input as this library signs it: outpoint, script length, a 65-byte Schnorr signature
+// and a 33-byte compressed key with their pushes, sequence
+const P2PKH_SCHNORR_INPUT_SIZE = 36 + 1 + 100 + 4;
+
+/**
+ * The fee of a transaction spending these coins to these outputs, with no change: exact for the
+ * library's own P2PKH inputs, which getFeeAmountSimple overcounts, and rounded as getFeeAmount
+ * rounds, so that the precise fee of the built transaction is not above it.
+ */
+export async function getFeeAmountWithoutChange({
+  utxos,
+  sendRequests,
+  relayFeePerByteInSatoshi,
+}: {
+  utxos: Utxo[];
+  sendRequests: Array<SendRequest | TokenSendRequest | OpReturnData>;
+  relayFeePerByteInSatoshi: number;
+}): Promise<bigint> {
+  const outputs = encodeTransactionOutputs(await prepareOutputs(sendRequests));
+  const txSizeBytes =
+    4 + // version
+    bigIntToCompactUint(BigInt(utxos.length)).length +
+    utxos.length * P2PKH_SCHNORR_INPUT_SIZE +
+    outputs.length +
+    4; // locktime
+  return BigInt(Math.ceil(txSizeBytes * relayFeePerByteInSatoshi + 1));
 }
 
 // precise fee estimation

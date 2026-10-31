@@ -391,3 +391,34 @@ describe("sendMax and the dust limit", () => {
     expect(await bob.getBalance()).toBe(0n);
   });
 });
+
+describe("the fee of a max send", () => {
+  const p2sh32 = encodeCashAddress({
+    prefix: "bchreg",
+    type: "p2sh",
+    payload: new Uint8Array(32).fill(1),
+  }).address;
+
+  // the max is sized for a P2SH32 output, 10 bytes above a P2PKH one; the estimate it replaced
+  // priced each input 7 bytes over and added a change output, 389 sats over at 50 coins
+  test.each([
+    { to: "P2PKH", over: 10 },
+    { to: "P2SH32", over: 0 },
+  ])(
+    "pays the fee of its size to a $to address, at most $over bytes over",
+    async ({ to, over }) => {
+      const { alice, bob, coins } = await fund(50, 1000n);
+      const response = await bob.sendMax(
+        to === "P2SH32" ? p2sh32 : alice.cashaddr!,
+      );
+      const { paid, expected } = await feeCheck(
+        bob,
+        response.transaction,
+        coins,
+      );
+      expect(paid - expected).toBeGreaterThanOrEqual(0n);
+      expect(paid - expected).toBeLessThanOrEqual(BigInt(over));
+      expect(await bob.getBalance()).toBe(0n);
+    },
+  );
+});

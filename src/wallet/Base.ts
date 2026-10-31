@@ -1420,7 +1420,8 @@ export class BaseWallet {
    *   @param  {object?} nft NFT capability and commitment
    *   @param  {string?} cashaddr destination address; defaults to wallet's token deposit address
    *   @param  {bigint?} value satoshi value to send alongside tokens; defaults to 1000
-   * @param  {SendRequestType | SendRequestType[]} sendRequests single or an array of extra send requests (OP_RETURN, value transfer, etc.) to include in genesis transaction
+   * @param  {SendRequestType | SendRequestType[]} sendRequests single or an array of extra send requests (OP_RETURN, value transfer, etc.) to include in genesis transaction;
+   *   a token output among them can only carry a category the genesis creates, others are refused with InvalidRequestError
    * @param  {SendRequestOptionsI} options Options of the send requests
    */
   public async tokenGenesis(
@@ -1436,9 +1437,9 @@ export class BaseWallet {
       throw new Error("tokenGenesis requires at least one request");
     }
     genesisRequests.forEach(checkGenesisRequest);
-    if (!Array.isArray(sendRequests)) {
-      sendRequests = [sendRequests];
-    }
+    const extraRequests = asSendRequestObject(
+      sendRequests as Parameters<typeof asSendRequestObject>[0],
+    );
 
     const { pool: utxos } = await this.getSpendPool(options);
 
@@ -1451,6 +1452,19 @@ export class BaseWallet {
     }
 
     const pinnedInputs = genesisInputs.slice(0, genesisRequests.length);
+    // a genesis selects no token coins, so an extra output can only carry a new category
+    const newCategories = pinnedInputs.map((val) => val.txid.toLowerCase());
+    for (const request of extraRequests) {
+      if (
+        request instanceof TokenSendRequest &&
+        !newCategories.includes(request.category)
+      ) {
+        throw new InvalidRequestError(
+          `A token genesis can only send the categories it creates, not ${request.category}`,
+          { field: "sendRequests", value: request.category },
+        );
+      }
+    }
     const depositAddresses = this.getTokenDepositAddresses(
       genesisRequests.filter((request) => !request.cashaddr).length,
     );
@@ -1465,9 +1479,6 @@ export class BaseWallet {
         }),
     );
 
-    const extraRequests = sendRequests as Array<
-      SendRequest | TokenSendRequest | OpReturnData
-    >;
     return this.sendTokenOperation(
       [...genesisSendRequests, ...extraRequests],
       {

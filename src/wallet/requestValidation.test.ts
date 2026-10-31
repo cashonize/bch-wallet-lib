@@ -422,3 +422,40 @@ describe("token operations validate plain request objects before reading any coi
     expect(utxo.token?.nft?.commitment).toBe(nft.commitment);
   });
 });
+
+describe("the extra outputs of a token genesis", () => {
+  test("refuse a category other than the new one, and send the new one", async () => {
+    const alice = await RegTestWallet.fromId(process.env.ALICE_ID!);
+    const bob = await RegTestWallet.newRandom();
+    const carol = await RegTestWallet.newRandom();
+    // bob's one coin, at vout 0, is the one the genesis spends
+    const { txId } = await alice.send({
+      cashaddr: bob.cashaddr,
+      value: 10_000n,
+    });
+    const submit = vi.spyOn(bob, "submitTransaction");
+
+    const error = await bob
+      .tokenGenesis({ amount: 100n }, [
+        new TokenSendRequest({
+          cashaddr: carol.tokenaddr,
+          category,
+          amount: 1n,
+        }),
+      ])
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidRequestError);
+    expect((error as InvalidRequestError).field).toBe("sendRequests");
+    expect(submit).not.toHaveBeenCalled();
+
+    await bob.tokenGenesis({ amount: 100n }, [
+      new TokenSendRequest({
+        cashaddr: carol.tokenaddr,
+        category: txId.toUpperCase(),
+        amount: 5n,
+      }),
+    ]);
+    const [utxo] = await getTokenUtxos(carol, txId);
+    expect(utxo.token?.amount).toBe(5n);
+  });
+});

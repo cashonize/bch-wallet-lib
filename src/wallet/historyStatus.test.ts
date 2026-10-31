@@ -138,3 +138,14 @@ describe.each(Object.entries(wallets))(
     });
   },
 );
+
+test("an HD address whose first history never matched its status is not handed out again", async () => {
+  const hd = await RegTestHDWallet.newRandom();
+  wallet = hd;
+  const address = hd.getDepositAddress();
+  await hd.getBalance();
+  transport.announced.set(address, "ff".repeat(32));
+  transport.set(address, [A]);
+  await vi.waitFor(async () => expect(await hd.getRawHistory()).toEqual([A]));
+  expect(hd.getDepositAddress()).not.toBe(address);
+});

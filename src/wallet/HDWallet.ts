@@ -560,8 +560,10 @@ export class HDWallet extends BaseWallet {
                 utxosArray[index] = utxos;
                 historyArray[index] = history;
                 // a history that does not match the status keeps the previous one, so that the
-                // next notification fetches again
+                // next notification fetches again; a previous null, which would mark the address
+                // unused and hand it out again, becomes "", a used status no server announces
                 if (matches) statuses[index] = status;
+                else if (statuses[index] === null) statuses[index] = "";
                 this.walletCache.setStatusAndUtxos(
                   addr,
                   statuses[index],

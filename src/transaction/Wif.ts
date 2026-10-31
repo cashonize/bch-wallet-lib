@@ -9,7 +9,6 @@ import {
   encodeTransactionOutputs,
   generateTransaction,
   hexToBin,
-  importWalletTemplate,
   Output,
   verifyTransactionTokens,
   walletTemplateP2pkhNonHd,
@@ -65,12 +64,8 @@ export async function buildP2pkhNonHdTransaction({
     throw new Error("Missing signing key when building transaction");
   }
 
-  const template = importWalletTemplate(walletTemplateP2pkhNonHd);
-  if (typeof template === "string") {
-    throw new Error("Transaction template error");
-  }
-
-  const compiler = walletTemplateToCompilerBch(template);
+  // libauth's own constant: no importWalletTemplate, which would pull its ajv validator into app bundles
+  const compiler = walletTemplateToCompilerBch(walletTemplateP2pkhNonHd);
   const inputAmount = sumUtxoValue(inputs);
 
   outputs = [...outputs, ...tokenChange];

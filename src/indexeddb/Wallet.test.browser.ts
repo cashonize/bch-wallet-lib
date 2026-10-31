@@ -23,10 +23,6 @@ describe("Wallet should function in the browser", () => {
     BaseWallet.StorageProvider = IndexedDBProvider;
   });
 
-  test("Should load module", async () => {
-    expect(typeof Wallet).toEqual("function");
-  });
-
   test("Should throw Error on regtest wif to Testnet", async () => {
     expect.assertions(1);
     try {

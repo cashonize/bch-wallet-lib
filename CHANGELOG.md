@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 (2026-10-31)
+
+- Breaking, to the API:
+  - `watchUtxos(callback)` replaces `watchBalance` and `watchTokenTransactions`: it calls back once with the current coins, then once per settled status change with `{ utxos, added, removed }`, keyed by outpoint, so a confirmation is in neither list. The library computes `added` and `removed` from its own snapshots, also across an HD wallet's debounce. The balance is a sum over `utxos`; new coins are in `added`.
+  - `provider.getRawTransactionObject` and the `ElectrumRawTransaction`, `ElectrumRawTransactionVinWithValues` and `ElectrumRawTransactionWithInputValues` types are removed: a verbose transaction's decoded fields were the server's word, unchecked against its hex. Read the hex with `getRawTransaction` and decode it with libauth. Verbose transactions already cached are left in place, unread.
+  - `TestNetWallet` and `TestNetHDWallet` are removed: a chipnet wallet is `Wallet` / `HDWallet` with `{ network: "testnet" }`, and stored chipnet wallets load that way unchanged.
+  - `replaceNamed` is removed: store an id with `saveNamedWallet` and load it with `named` or `fromId`. `saveNamedWallet` refuses a `seed` or `hd` id holding a mnemonic without its derivation path.
+  - `getTransactionHash` and the free `getHistory` are no longer exported (libauth's `hashTransaction` gives the same txid). Members with no consumer are gone from the published types: `Wallet.tokenaddr` (use `getTokenDepositAddress()`), `HDWallet.getAddressByBranch` / `getTokenAddressByBranch`, the `checkTokenQuantities` send option, the provider's `getRelayFee`, `subscribeToAddress`, `subscribeToTransaction`, `connect` and `subscriptions`, `ConcurrencyOptions.limiter`, and the wallet cache's `init`, `flush`, `getByPath` and `setStatusAndUtxos`. The regtest `mine()` is no longer part of the provider.
+  - `InsufficientFundsError` has typed `required` and `available` fields (satoshis for `bch`, fungible tokens for `token`) in place of the undeclared `data`.
+  - An HD wallet refuses a `branches` list without the deposit (0) or change (1) branch.
+- Fixes:
+  - The history no longer keeps a transaction a reorg dropped, or shows one sent back to the mempool as confirmed: an address's history is checked against the server's status for it, and fetched again in full when they differ.
+  - The max (`getMaxAmountToSend`, `sendMax`) is priced at the transaction's real size, no longer about 5% over the fee, and still covers any destination. A send that only every usable coin can fund spends them all at the precise fee, with a change output when its change is above dust and otherwise the leftover to the miners, where it used to fail with `InsufficientFundsError`.
+  - A send no longer adds one extra coin when the selected coins cover the amount exactly.
+- Stricter checks:
+  - Send values are checked up front: a whole number from 1 sat to 21 million BCH, and a BCH output below its dust limit is refused before anything is built, all with `InvalidRequestError`.
+  - An NFT request that names a capability but no commitment is refused with `InvalidRequestError`; pass `""` for an NFT without one.
+  - `tokenGenesis` refuses an extra token output of a category it does not create, before selecting coins.
+  - Signing throws when an input has no private key, instead of building with an all-zero key, and libauth checks the master key derived from a seed.
+- `provider.getBlockHeight()` asks the server for its tip (`blockchain.headers.get_tip`) on every call, instead of keeping a header subscription open.
+- The `StorageProvider` type is exported, and the README has a usage example.
+- The library no longer promises that mainnet-js 3.1.7 can read what it writes: there is no rollback. The 3.1.7 storage format still loads unchanged.
+
 ## 0.2.2 (2026-10-31)
 
 - A subscription electrum-cash failed to restore after a reconnect to the same server (an error response, such as a server limiting how fast it is asked) is made again, after a request's timeout and then backing off from 10 s to every 5 minutes, for as long as it exists. Before, its address stayed unwatched until the next reconnect.
